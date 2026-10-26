@@ -137,3 +137,18 @@ body.light-theme .season-highlight-card,body.light-theme .weekly-publication,bod
 .access-tools [hidden]{display:none!important}
 .login-dialog{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);color:var(--ink);padding:20px;width:min(360px,calc(100vw - 32px))}
 .login-dialog::backdrop{background:rgba(0,0,0,.45)}
+.team-label-input{display:block;width:calc(100% - 24px);margin:9px 12px 0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;font-size:12px;outline:none}
+.team-label-input:focus{border-color:var(--yellow);box-shadow:0 0 0 2px #ffc40025}
+.team-label-input:disabled{display:none}
+.art-controls{grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));margin-bottom:14px}
+.art-controls label[hidden]{display:none}
+.art-canvas{display:block;width:100%;max-width:360px;height:auto;margin:0 auto 14px;border-radius:12px;border:1px solid var(--line)}
+.art-canvas[hidden]{display:none}
+.team-logo{width:22px;height:22px;object-fit:contain;vertical-align:middle;margin-right:7px}
+.art-logos-box{margin-bottom:14px}
+.art-logos{display:grid;gap:8px;margin-top:6px}
+.art-logo-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.art-logo-row img,.art-logo-empty{width:36px;height:36px;object-fit:contain;border-radius:8px;border:1px solid var(--line)}
+.art-logo-row strong{flex:1;min-width:0;overflow-wrap:anywhere}
+.art-logo-row label{cursor:pointer}
+@media(max-width:620px){.view-tabs{flex-wrap:wrap}.view-tabs button{flex:1 1 30%}}

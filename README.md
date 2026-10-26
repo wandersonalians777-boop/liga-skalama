@@ -1,6 +1,6 @@
 # LIGA SKALAMA
 
-Site responsivo para organizar a noite de futsal: lista individual de 20 jogadores, quatro times sorteados, sequência ilimitada de partidas, cronômetro, artilharia acumulada, rankings de score, goleiros, histórico e regras.
+Site responsivo para organizar a noite de futsal: lista de jogadores (mínimo 10), de dois a quatro times de cinco sorteados, sequência ilimitada de partidas, cronômetro, artilharia acumulada, rankings de score, goleiros, histórico e regras.
 
 ## Rodar localmente
 
