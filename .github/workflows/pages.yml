@@ -33,6 +33,7 @@ jobs:
       - name: Gerar o site Next.js
         run: pnpm build
         env:
+          NEXT_PUBLIC_ASSET_VERSION: ${{ github.sha }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       - name: Preservar os arquivos estáticos do Next

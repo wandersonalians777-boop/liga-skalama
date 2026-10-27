@@ -10,6 +10,8 @@ export const viewport = {
   themeColor: '#f4f4f1',
 };
 
+const assetVersion = process.env.NEXT_PUBLIC_ASSET_VERSION || 'dev';
+
 // Definidas no build (.env.local ou variáveis do GitHub). Use só a chave pública anon/publishable.
 const ligaConfig = {
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -21,7 +23,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="pt-BR">
       <head>
-        <link rel="stylesheet" href="/liga-skalama/styles.css" />
+        <link rel="stylesheet" href={`/liga-skalama/styles.css?v=${assetVersion}`} />
         <script
           dangerouslySetInnerHTML={{
             __html: `window.LIGA_CONFIG=${JSON.stringify(ligaConfig).replace(/</g, '\\u003c')};`,
