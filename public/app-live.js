@@ -862,7 +862,7 @@
       const side = index === 0 ? "home" : "away", players = [...lineupForTeam(name, state.currentGame)];
       const loan = state.currentGame ? null : $("loan" + side[0].toUpperCase() + side.slice(1) + "Player").value;
       if (loan && !players.includes(loan)) players.push(loan);
-      return '<div><strong>' + escapeHtml(teamLabel(name)) + '</strong><ul>' + players.map((player) => {
+      return '<div class="match-preview-team" style="--team-color:' + colorOf(name).color + ';--team-ink:' + colorOf(name).ink + '"><strong>' + escapeHtml(teamLabel(name)) + '</strong><ul>' + players.map((player) => {
         const penalty = (state.incidents || []).find((item) => item.type === "hand" && item.gameId === state.currentGame?.id && item.player === player && Number(item.expiresAt) > Date.now());
         const countdown = penalty ? '<b class="suspension-badge">FORA · ' + clockText(Math.ceil((Number(penalty.expiresAt) - Date.now()) / 1000)) + '</b>' : "";
         return '<li>' + escapeHtml(displayName(player)) + (keeper(player) ? ' · Goleiro' : '') + (player === loan ? ' · emprestado' : '') + countdown + '</li>';
