@@ -893,6 +893,18 @@
     renderMatchPreview();
     renderKeeperChoices();
   }
+  function renderScoreGoalList(teamName, game) {
+    if (!game) return "";
+    return goals
+      .filter((goal) => goal.game_id === game.id && scoreTeam(goal, game) === teamName)
+      .map((goal) => {
+        const player = escapeHtml(displayName(goal.player_name || "Jogador"));
+        const minute = Math.max(0, Number(goal.minute) || 0);
+        const ownGoal = goal.own_goal ? '<b class="own-goal-mark" aria-label="Gol contra" title="Gol contra">C</b>' : "";
+        return '<span class="score-goal-item"><span class="score-goal-player">' + player + '</span><time>' + minute + '′</time>' + ownGoal + '</span>';
+      })
+      .join("");
+  }
   function renderTimer() {
     const timer = state.timer || freshTimer(state.timerMode),
       mode = state.currentGame
@@ -914,6 +926,8 @@
     $("scoreAwayName").textContent = teamLabel(away);
     $("scoreHome").textContent = hasGame ? currentScore(home) : 0;
     $("scoreAway").textContent = hasGame ? currentScore(away) : 0;
+    $("scoreHomeGoals").innerHTML = renderScoreGoalList(home, state.currentGame);
+    $("scoreAwayGoals").innerHTML = renderScoreGoalList(away, state.currentGame);
     $("timerDisplay").textContent = clockText(
       mode === "coca" ? Math.floor(elapsed) : remaining,
     );
