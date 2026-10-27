@@ -18,7 +18,7 @@ Sem essas variáveis o site abre em modo somente leitura, aguardando o banco com
 
 ## Organização dos jogos
 
-O primeiro jogo é **Time Águia × Time Sol**. O vencedor segue contra **Verde**, depois **Azul** e, em seguida, contra os times derrotados, em uma fila contínua sem limite de partidas. Se um time precisar jogar antes, selecione-o na fila e use **Trocar ordem**; o jogo adiantado assume a próxima posição e a sequência restante é preservada. O placar começa em zero para cada partida.
+O primeiro jogo é **Time Águia × Time Sol**. O vencedor segue contra **Verde**, depois **Azul** e, em seguida, contra os times derrotados, em uma fila contínua sem limite de partidas. Após cada partida, o vencedor fica automaticamente pré-selecionado para enfrentar o próximo time da fila; o organizador pode alterar os dois times antes de começar. O placar começa em zero para cada partida.
 
 Cada gol fica ligado à partida, com autor e minuto registrados. O placar separa o time do autor do time que recebe o ponto em um gol contra. O score de jogadores e goleiros é calculado automaticamente após cada partida; os rankings mostram as médias individuais e os gols sofridos por goleiro.
 

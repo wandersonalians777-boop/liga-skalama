@@ -8,6 +8,7 @@
   ];
   // 5 por time, de 2 a 4 times: 10–14 jogadores → 2 times, 15–19 → 3, 20+ → 4.
   const MIN_PLAYERS = 10;
+  const SCORE_RULES = Object.freeze({ assist: 0.5 });
   const startersFor = (total) =>
     Math.min(4, Math.floor(Math.max(total, MIN_PLAYERS) / 5)) * 5;
   // O nome interno ("Time Águia") segue como chave; o apelido é só exibição.
@@ -33,7 +34,11 @@
     state = null,
     goals = [],
     votes = [],
-    toastTimer = 0;
+    toastTimer = 0,
+    sharedStatePoll = null,
+    goalSubmitting = false,
+    warningSubmitting = false,
+    gameFinishing = false;
 
   function nextMonday() {
     const date = new Date();
@@ -49,6 +54,8 @@
       matchDate: nextMonday(),
       startTime: "",
       timerMode: "liga",
+      durationMinutes: 8,
+      scoreRules: { assist: SCORE_RULES.assist },
       roundId: null,
       lineups: null,
       absentPlayers: {},
@@ -176,52 +183,42 @@
     );
   }
   function applyEditLock() {
-    const locked =
-      (shared && !canManageShared) ||
-      (!shared && window.LIGA_CONFIG?.publicReadOnly === true);
+    const locked = (shared && !canManageShared) || (!shared && window.LIGA_CONFIG?.publicReadOnly === true);
     document.body.classList.toggle("public-read-only", locked);
-    document
-      .querySelectorAll("button,input,select,textarea")
-      .forEach((element) => {
-        if (
-          element.id === "themeToggle" ||
-          element.id === "adminAccessButton" ||
-          element.closest("#adminLogin") ||
-          element.closest("#artStudio") ||
-          element.hasAttribute("data-view-button")
-        )
-          return;
-        if (locked) {
-          if (!element.hasAttribute("data-access-locked")) {
-            element.dataset.accessWasDisabled = String(element.disabled);
-            element.setAttribute("data-access-locked", "");
-          }
-          element.disabled = true;
-        } else if (element.hasAttribute("data-access-locked")) {
-          delete element.dataset.accessWasDisabled;
-          element.removeAttribute("data-access-locked");
-        }
-      });
+    document.querySelectorAll("[data-organizer-only]").forEach((element) => { element.hidden = locked; });
+    const publicTeams = $("publicTeamsSection");
+    if (publicTeams) publicTeams.hidden = !locked || !(state?.teams || []).length;
+    document.querySelectorAll("button,input,select,textarea").forEach((element) => {
+      if (element.id === "themeToggle" || element.id === "adminAccessButton" || element.closest("#adminLogin") || element.closest("#artStudio") || element.hasAttribute("data-view-button")) return;
+      if (locked) {
+        if (!element.hasAttribute("data-access-locked")) { element.dataset.accessWasDisabled = String(element.disabled); element.setAttribute("data-access-locked", ""); }
+        element.disabled = true;
+      } else if (element.hasAttribute("data-access-locked")) {
+        element.disabled = element.dataset.accessWasDisabled === "true";
+        delete element.dataset.accessWasDisabled;
+        element.removeAttribute("data-access-locked");
+      }
+    });
     updateAccessUI();
+  }
+  async function refreshSharedState() {
+    if (!shared || !client) return;
+    const table = canManageShared ? "league_night" : "league_public";
+    const { data, error } = await client.from(table).select("state").eq("id", 1).maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error("O registro da rodada ainda não foi criado no banco.");
+    const next = normalizeState(data.state);
+    if (JSON.stringify(next) !== JSON.stringify(state)) { state = next; renderAll(); }
   }
   async function refreshAdminAccess(session) {
     adminSession = session || null;
     canManageShared = false;
     if (shared && adminSession?.user?.id) {
-      const { data, error } = await client
-        .from("league_admins")
-        .select("user_id")
-        .eq("user_id", adminSession.user.id)
-        .maybeSingle();
+      const { data, error } = await client.from("league_admins").select("user_id").eq("user_id", adminSession.user.id).maybeSingle();
       if (error) throw error;
       canManageShared = !!data;
     }
-    if (canManageShared)
-      document.querySelectorAll("[data-access-locked]").forEach((element) => {
-        element.disabled = element.dataset.accessWasDisabled === "true";
-        delete element.dataset.accessWasDisabled;
-        element.removeAttribute("data-access-locked");
-      });
+    await refreshSharedState();
     renderAll();
   }
   async function requestAdminAccess() {
@@ -347,32 +344,16 @@
     return state.currentGame?.number || (state.gameHistory || []).length + 1;
   }
   async function saveState(patch, successMessage = "Alteração salva.") {
-    if (
-      (shared && !canManageShared) ||
-      (!shared && window.LIGA_CONFIG?.publicReadOnly === true)
-    ) {
-      notify("Somente o organizador autorizado pode alterar os dados.", true);
-      return;
+    if ((shared && !canManageShared) || (!shared && window.LIGA_CONFIG?.publicReadOnly === true)) {
+      notify("Somente o organizador autorizado pode alterar os dados.", true); return false;
     }
     const next = { ...state, ...patch };
-    state = next;
-    renderAll();
     if (!shared) {
-      localSave();
-      notify(`${successMessage} (somente neste navegador)`);
-      return;
+      state = next; renderAll(); localSave(); notify(successMessage + " (somente neste navegador)"); return true;
     }
-    const { error } = await client
-      .from("league_night")
-      .upsert({ id: 1, state: next, updated_at: new Date().toISOString() });
-    if (error) {
-      notify(
-        "Não foi possível salvar no banco compartilhado: " + error.message,
-        true,
-      );
-      return;
-    }
-    notify(successMessage);
+    const { error } = await client.from("league_night").upsert({ id: 1, state: next, updated_at: new Date().toISOString() });
+    if (error) { notify("Não foi possível salvar no banco compartilhado: " + error.message, true); return false; }
+    state = next; renderAll(); notify(successMessage); return true;
   }
   async function refreshGoals() {
     if (!shared) return;
@@ -400,94 +381,41 @@
   }
   async function setupShared() {
     const config = window.LIGA_CONFIG || {};
-    if (
-      !config.supabaseUrl ||
-      !config.supabaseAnonKey ||
-      !window.supabase?.createClient
-    )
-      return false;
-    client = window.supabase.createClient(
-      config.supabaseUrl,
-      config.supabaseAnonKey,
-    );
+    if (!config.supabaseUrl || !config.supabaseAnonKey || !window.supabase?.createClient) return false;
+    client = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
     const { data: sessionInfo } = await client.auth.getSession();
     adminSession = sessionInfo?.session || null;
     if (adminSession?.user?.id) {
-      const { data: admin, error: adminError } = await client
-        .from("league_admins")
-        .select("user_id")
-        .eq("user_id", adminSession.user.id)
-        .maybeSingle();
+      const { data: admin, error: adminError } = await client.from("league_admins").select("user_id").eq("user_id", adminSession.user.id).maybeSingle();
       if (adminError) throw adminError;
       canManageShared = !!admin;
     }
     shared = true;
-    let { data, error } = await client
-      .from("league_night")
-      .select("state")
-      .eq("id", 1)
-      .maybeSingle();
+    const source = canManageShared ? "league_night" : "league_public";
+    let { data, error } = await client.from(source).select("state").eq("id", 1).maybeSingle();
     if (error) throw error;
     if (data) state = normalizeState(data.state);
     else if (canManageShared) {
-      const starter = initialState();
-      const { error: insertError } = await client
-        .from("league_night")
-        .insert({ id: 1, state: starter });
+      const { error: insertError } = await client.from("league_night").insert({ id: 1, state: initialState() });
       if (insertError && insertError.code !== "23505") throw insertError;
-      const result = await client
-        .from("league_night")
-        .select("state")
-        .eq("id", 1)
-        .single();
+      const result = await client.from("league_night").select("state").eq("id", 1).single();
       if (result.error) throw result.error;
       state = normalizeState(result.data.state);
-    } else
-      throw new Error(
-        "O banco ainda não foi inicializado. O administrador precisa configurar o registro inicial.",
-      );
+    } else throw new Error("O banco ainda não foi inicializado. O administrador precisa criar o registro inicial.");
     client.auth.onAuthStateChange((_event, session) => {
-      setTimeout(
-        () =>
-          refreshAdminAccess(session).catch((error) => {
-            canManageShared = false;
-            notify(
-              "Não foi possível validar o acesso de edição: " + error.message,
-              true,
-            );
-            renderAll();
-          }),
-        0,
-      );
+      setTimeout(() => refreshAdminAccess(session).catch((error) => {
+        canManageShared = false;
+        notify("Não foi possível validar o acesso de edição: " + error.message, true);
+        renderAll();
+      }), 0);
     });
     updateAccessUI();
-    setConnection(
-      canManageShared
-        ? "Banco online · organizador"
-        : "Banco online · leitura pública",
-      true,
-    );
     await refreshGoals();
-    client
-      .channel("liga-skalama-live")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "league_night" },
-        (payload) => {
-          if (payload.new?.state) {
-            state = normalizeState(payload.new.state);
-            renderAll();
-          }
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "goals" },
-        refreshGoals,
-      )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") updateAccessUI();
-      });
+    client.channel("liga-skalama-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "goals" }, refreshGoals)
+      .subscribe((status) => { if (status === "SUBSCRIBED") updateAccessUI(); });
+    if (sharedStatePoll) clearInterval(sharedStatePoll);
+    sharedStatePoll = setInterval(() => refreshSharedState().catch((error) => console.warn("Falha ao atualizar a rodada compartilhada:", error)), 6000);
     renderAll();
     return true;
   }
@@ -536,18 +464,22 @@
     );
   }
   function renderTeams() {
-    const grid = $("teamsGrid");
-    if (!state.teams?.length)
-      grid.innerHTML =
-        '<div class="empty-state">Adicione pelo menos 10 jogadores e faça o sorteio.</div>';
-    else
-      grid.innerHTML = state.teams
-        .map((team, index) => {
-          const color = teamColors[index] || teamColors[0];
-          const players = lineupForTeam(team.name);
-          return `<article class="team-card"><header class="team-head" style="--team-color:${color.color};--team-ink:${color.ink}"><span>${teamLogos[team.name] ? `<img class="team-logo" src="${teamLogos[team.name]}" alt="">` : ""}${escapeHtml(teamLabel(team.name))}</span><small>${color.name} · ${players.length} JOGADORES</small></header><input class="team-label-input" data-team-label="${escapeHtml(team.name)}" maxlength="30" placeholder="Nome do time (opcional)" aria-label="Nome do ${escapeHtml(team.name)} (opcional)" value="${escapeHtml(state.teamLabels?.[team.name] || "")}"><ol>${players.map((name) => `<li>${escapeHtml(displayName(name))}${keeper(name) ? ' <b class="keeper-mark">*</b>' : ""}</li>`).join("")}</ol></article>`;
-        })
-        .join("");
+    const grid = $("teamsGrid"), publicGrid = $("publicTeamsGrid"), teams = state.teams || [];
+    if (!teams.length) {
+      grid.innerHTML = '<div class="empty-state">Adicione pelo menos 10 nomes e faça o sorteio.</div>';
+      if (publicGrid) publicGrid.innerHTML = '<p class="empty-state">Os times aparecerão depois do sorteio.</p>';
+      return;
+    }
+    const markup = teams.map((team, index) => {
+      const color = teamColors[index] || teamColors[0], players = lineupForTeam(team.name), short = players.length === 4;
+      const items = players.map((name) => '<li>' + escapeHtml(displayName(name)) + (keeper(name) ? ' <b class="keeper-mark">*</b>' : '') + '</li>').join('');
+      return '<article class="team-card ' + (short ? 'team-card-short' : '') + '"><header class="team-head" style="--team-color:' + color.color + ';--team-ink:' + color.ink + '"><span>' + (teamLogos[team.name] ? '<img class="team-logo" src="' + teamLogos[team.name] + '" alt="">' : '') + escapeHtml(teamLabel(team.name)) + '</span><small>' + players.length + ' JOGADORES' + (short ? ' · VAGA' : '') + '</small></header><input class="team-label-input" data-team-label="' + escapeHtml(team.name) + '" maxlength="30" placeholder="Nome do time (opcional)" aria-label="Nome do ' + escapeHtml(team.name) + ' (opcional)" value="' + escapeHtml(state.teamLabels?.[team.name] || '') + '"><ol>' + items + '</ol></article>';
+    }).join('');
+    grid.innerHTML = markup;
+    if (publicGrid) publicGrid.innerHTML = teams.map((team, index) => {
+      const color = teamColors[index] || teamColors[0], players = lineupForTeam(team.name);
+      return '<article class="public-team-card"><header style="--team-color:' + color.color + ';--team-ink:' + color.ink + '"><strong>' + escapeHtml(teamLabel(team.name)) + '</strong><span>' + players.length + ' jogadores</span></header><ol>' + players.map((name) => '<li>' + escapeHtml(displayName(name)) + (keeper(name) ? ' <b class="keeper-mark">*</b>' : '') + '</li>').join('') + '</ol></article>';
+    }).join('');
   }
   function renderLineupAdjustments() {
     const details = $("lineupAdjustDetails"),
@@ -559,7 +491,8 @@
     const lineups = Object.fromEntries(
         teams.map((team) => [team.name, [...lineupForTeam(team.name)]]),
       ),
-      absent = state.absentPlayers || {};
+      absent = state.absentPlayers || {},
+      playing = new Set([state.currentGame?.home, state.currentGame?.away].filter(Boolean));
     if (!teams.length) {
       grid.innerHTML =
         '<p class="empty-state">Sorteie os times para ajustar as escalações.</p>';
@@ -572,7 +505,7 @@
           pool = teams
             .filter(
               (other) =>
-                other.name !== team.name && lineups[other.name].length > 5,
+                other.name !== team.name && !playing.has(other.name) && lineups[other.name].length > 4,
             )
             .flatMap((other) => lineups[other.name])
             .filter(
@@ -600,14 +533,14 @@
                 '" data-absence-player="' +
                 escapeHtml(name) +
                 '" ' +
-                (state.currentGame || players.length <= 4 ? "disabled" : "") +
+                (playing.has(team.name) || players.length <= 4 ? "disabled" : "") +
                 ">Ausente</button></li>",
             )
             .join("") +
           '</ul><div class="lineup-transfer"><select data-transfer-player="' +
           escapeHtml(team.name) +
           '" ' +
-          (state.currentGame || players.length >= capacity || !pool.length
+          (playing.has(team.name) || players.length >= capacity || !pool.length
             ? "disabled"
             : "") +
           '><option value="">' +
@@ -631,7 +564,7 @@
           '</select><button type="button" class="button button-outline" data-transfer-to="' +
           escapeHtml(team.name) +
           '" ' +
-          (state.currentGame || players.length >= capacity || !pool.length
+          (playing.has(team.name) || players.length >= capacity || !pool.length
             ? "disabled"
             : "") +
           ">Puxar jogador</button></div></article>"
@@ -639,7 +572,7 @@
       })
       .join("");
     const absentRows = Object.entries(absent),
-      openTeams = teams.filter((team) => lineups[team.name].length < capacity);
+      openTeams = teams.filter((team) => !playing.has(team.name) && lineups[team.name].length < capacity);
     absentBox.innerHTML = absentRows.length
       ? "<p>Jogadores fora da escalação: " +
         absentRows
@@ -652,7 +585,7 @@
               '</span><select data-return-team="' +
               escapeHtml(name) +
               '" ' +
-              (state.currentGame || !openTeams.length ? "disabled" : "") +
+              (!openTeams.length ? "disabled" : "") +
               '><option value="">' +
               (openTeams.length ? "Escolha uma vaga" : "Sem vaga aberta") +
               "</option>" +
@@ -673,12 +606,12 @@
               '</select><button type="button" data-restore-player="' +
               escapeHtml(name) +
               '" ' +
-              (state.currentGame || !openTeams.length ? "disabled" : "") +
+              (!openTeams.length ? "disabled" : "") +
               ">Preencher vaga</button></span>",
           )
           .join("") +
         "</p>"
-      : '<p class="help-text">Todos os times precisam ter pelo menos cinco jogadores para iniciar. No modo Coca, as reservas permitem chegar a oito por equipe.</p>';
+      : '<p class="help-text">Cada equipe pode iniciar com quatro ou cinco jogadores. No modo Coca, pode chegar a oito.</p>';
     grid.querySelectorAll("[data-transfer-to]").forEach((button) =>
       button.addEventListener("click", () => {
         const target = button.dataset.transferTo,
@@ -686,7 +619,7 @@
             (item) => item.dataset.transferPlayer === target,
           ),
           player = select?.value;
-        if (!player || state.currentGame) return;
+        if (!player) return;
         const next = Object.fromEntries(
           teams.map((team) => [team.name, [...lineups[team.name]]]),
         );
@@ -694,7 +627,10 @@
         if (
           !source ||
           next[target].length >= capacity ||
-          next[source.name].length <= 5 ||
+          next[source.name].length <= 4 ||
+          playing.has(source.name) ||
+          playing.has(target) ||
+          teams.reduce((count, team) => count + next[team.name].filter((name) => name === player).length, 0) !== 1 ||
           (keeper(player) && next[target].some(keeper))
         )
           return;
@@ -711,12 +647,12 @@
     );
     grid.querySelectorAll("[data-absence-player]").forEach((button) =>
       button.addEventListener("click", () => {
-        if (state.currentGame) return;
         const team = button.dataset.absenceTeam,
           player = button.dataset.absencePlayer,
           next = Object.fromEntries(
             teams.map((item) => [item.name, [...lineups[item.name]]]),
           );
+        if (playing.has(team) || next[team].length <= 4) return;
         next[team] = next[team].filter((name) => name !== player);
         saveState(
           { lineups: next, absentPlayers: { ...absent, [player]: team } },
@@ -730,7 +666,7 @@
           target = [...absentBox.querySelectorAll("[data-return-team]")].find(
             (item) => item.dataset.returnTeam === player,
           )?.value;
-        if (state.currentGame || !target || lineups[target].length >= capacity)
+        if (!target || playing.has(target) || lineups[target].length >= capacity)
           return;
         const next = Object.fromEntries(
           teams.map((item) => [item.name, [...lineups[item.name]]]),
@@ -893,45 +829,35 @@
         ).length
       : 0;
   }
+  function renderMatchPreview() {
+    const home = $("matchHome")?.value || state.currentGame?.home || state.pendingMatch?.home;
+    const away = $("matchAway")?.value || state.currentGame?.away || state.pendingMatch?.away;
+    const target = $("matchLineupPreview");
+    if (!target) return;
+    if (!home || !away || home === away) { target.innerHTML = '<p class="empty-state">Escolha dois times diferentes para ver a escalação.</p>'; return; }
+    target.innerHTML = [home, away].map((name) => '<div><strong>' + escapeHtml(teamLabel(name)) + '</strong><ul>' + lineupForTeam(name, state.currentGame).map((player) => '<li>' + escapeHtml(displayName(player)) + (keeper(player) ? ' · Goleiro' : '') + '</li>').join('') + '</ul></div>').join('');
+  }
   function renderQueueControls() {
-    const queue = $("queueSelect"),
-      current = state.currentGame,
-      pending = state.pendingMatch;
-    let options = [];
-    if (current) options = state.challengeQueue || [];
-    else if (pending)
-      options = [pending.away, ...(state.challengeQueue || [])].filter(
-        (name, index, all) => name && all.indexOf(name) === index,
-      );
-    const markup = options.length
-      ? options
-          .map(
-            (name) =>
-              '<option value="' +
-              escapeHtml(name) +
-              '">' +
-              escapeHtml(teamLabel(name)) +
-              "</option>",
-          )
-          .join("")
-      : '<option value="">Sem time na fila</option>';
-    const selected = queue.value;
-    if (queue.innerHTML !== markup) queue.innerHTML = markup;
-    if (options.includes(selected)) queue.value = selected;
-    queue.disabled = !options.length;
-    $("moveQueue").disabled = !options.length;
-    $("beginGame").disabled = !!current || !pending || !state.teams?.length;
-    const mode = state.timerMode || "liga";
+    const current = state.currentGame, pending = state.pendingMatch;
+    const allTeams = (state.teams || []).map((team) => team.name);
+    const homeSelect = $("matchHome"), awaySelect = $("matchAway");
+    for (const [select, chosen, label] of [[homeSelect, current?.home || pending?.home, "Escolha o primeiro time"], [awaySelect, current?.away || pending?.away, "Escolha o segundo time"]]) {
+      const selected = select.value;
+      namesForSelect(select, allTeams, label);
+      const value = !current && allTeams.includes(selected) ? selected : chosen;
+      if (value && allTeams.includes(value)) select.value = value;
+      select.disabled = !!current || allTeams.length < 2;
+    }
+    const home = homeSelect.value, away = awaySelect.value;
+    $("beginGame").disabled = !!current || !pending || !home || !away || home === away || allTeams.length < 2;
+    const mode = state.timerMode || "liga", duration = Math.min(180, Math.max(1, Number(state.durationMinutes) || 8));
     $("timerMode").value = mode;
     $("timerMode").disabled = !!current;
-    $("beginGame").textContent =
-      mode === "coca" ? "Começar jogo · 00:00" : "Começar jogo · 8:00";
-    $("nextMatchPreview").textContent = pending
-      ? "Próximo jogo: " +
-        teamLabel(pending.home) +
-        " × " +
-        teamLabel(pending.away)
-      : "Sorteie os times para preparar a primeira partida.";
+    $("durationMinutes").value = String(duration);
+    $("durationMinutes").disabled = !!current || mode === "coca";
+    $("beginGame").textContent = mode === "coca" ? "Começar jogo · 00:00" : "Começar jogo · " + clockText(duration * 60);
+    $("nextMatchPreview").textContent = home && away && home !== away ? "Confronto escolhido: " + teamLabel(home) + " × " + teamLabel(away) : pending ? "Escolha dois times diferentes para preparar a partida." : "Sorteie os times para preparar a partida.";
+    renderMatchPreview();
   }
   function renderTimer() {
     const timer = state.timer || freshTimer(state.timerMode),
@@ -983,7 +909,7 @@
       ? "Retomar agora"
       : "Pausar · saldo " +
         clockText(Math.floor(Math.max(0, limit - used) / 1000));
-    $("finishGame").disabled = !hasGame;
+    $("finishGame").disabled = !hasGame || gameFinishing;
     const tied = hasGame && currentScore(home) === currentScore(away);
     // Pênaltis só quando há exatamente um time esperando; nos outros empates o jogo encerra direto.
     $("tieBreakerLabel").classList.toggle(
@@ -1006,124 +932,100 @@
     if (selected === home || selected === away) choice.value = selected;
   }
   function renderGoalOptions() {
-    const teams = selectedTeams(),
-      players = [
-        ...lineupForTeam(teams.home?.name, state.currentGame),
-        ...lineupForTeam(teams.away?.name, state.currentGame),
-      ];
-    namesForSelect(
-      $("goalScorer"),
-      state.currentGame ? players : [],
-      state.currentGame ? "Escolha quem fez o gol" : "Comece um jogo primeiro",
-    );
-    $("ownGoal").disabled = !state.currentGame;
-
-    namesForSelect(
-      $("incidentPlayer"),
-      state.currentGame ? state.roster || [] : [],
-      state.currentGame
-        ? "Escolha o jogador envolvido"
-        : "Comece um jogo primeiro",
-    );
-    const player = $("goalScorer").value,
-      game = state.currentGame;
-    $("addGoal").disabled = !game || !player;
-    $("removeGoal").disabled =
-      !game ||
-      !player ||
-      !goals.some((g) => g.player_name === player && g.game_id === game.id);
+    const game = state.currentGame, teamSelect = $("goalTeam"), scorerSelect = $("goalScorer"), assistSelect = $("goalAssist"), teams = selectedTeams();
+    const currentTeam = teamSelect.value;
+    namesForSelect(teamSelect, game ? [game.home, game.away] : [], game ? "Time que marcou" : "Comece um jogo primeiro");
+    if (game) teamSelect.value = [game.home, game.away].includes(currentTeam) ? currentTeam : game.home;
+    const scoringTeam = teamSelect.value, otherTeam = scoringTeam === game?.home ? game?.away : game?.home;
+    const scorerNames = game ? $("ownGoal").checked ? lineupForTeam(otherTeam, game) : lineupForTeam(scoringTeam, game) : [];
+    const previousScorer = scorerSelect.value;
+    namesForSelect(scorerSelect, scorerNames, game ? "Escolha quem fez o gol" : "Comece um jogo primeiro");
+    if (scorerNames.includes(previousScorer)) scorerSelect.value = previousScorer;
+    $("ownGoal").disabled = !game;
+    const assistNames = game ? lineupForTeam(scoringTeam, game).filter((name) => name !== scorerSelect.value) : [];
+    const previousAssist = assistSelect.value;
+    namesForSelect(assistSelect, assistNames, assistNames.length ? "Assistência (opcional)" : "Sem assistência");
+    if (assistNames.includes(previousAssist)) assistSelect.value = previousAssist;
+    const players = game ? [...lineupForTeam(game.home, game), ...lineupForTeam(game.away, game)] : [];
+    namesForSelect($("incidentPlayer"), players, game ? "Escolha o jogador envolvido" : "Comece um jogo primeiro");
+    namesForSelect($("warningPlayer"), players, game ? "Escolha o jogador" : "Comece um jogo primeiro");
+    const goalButton = $("addGoal");
+    if (goalButton) goalButton.disabled = !game || !scorerSelect.value || goalSubmitting;
+    $("removeGoal").disabled = !game || !scorerSelect.value || !goals.some((g) => g.player_name === scorerSelect.value && g.game_id === game.id);
+    $("openGoalDialog").disabled = !game;
+    $("openWarningDialog").disabled = !game;
+    $("addWarning").disabled = !game || !$("warningPlayer").value || warningSubmitting;
   }
   function renderKeeperChoices() {
-    const teams = selectedTeams();
-    for (const [side, team] of [
-      ["Home", teams.home],
-      ["Away", teams.away],
-    ]) {
-      const select = $("keeper" + side),
-        label = $("keeper" + side + "Label"),
-        game = state.currentGame,
-        pending = state.pendingMatch,
-        teamName =
-          game?.[side.toLowerCase()] ||
-          pending?.[side.toLowerCase()] ||
-          "Time " + side,
-        players = lineupForTeam(teamName, game),
-        name = players.find(keeper);
-      label.firstChild.textContent = "Goleiro · " + teamLabel(teamName);
-      if (name) {
-        select.innerHTML =
-          '<option value="' +
-          escapeHtml(name) +
-          '">' +
-          escapeHtml(displayName(name)) +
-          " · automático (*)</option>";
-        select.value = name;
-        select.disabled = true;
-      } else {
-        const previous = select.value;
-        namesForSelect(
-          select,
-          players,
-          players.length
-            ? "Escolha o goleiro deste time"
-            : "Sorteie os times primeiro",
-        );
-        if (players.includes(previous)) select.value = previous;
-        select.disabled = !!game || !players.length;
-      }
+    const game = state.currentGame;
+    for (const [side, selectId, labelId] of [["home", "keeperHome", "keeperHomeLabel"], ["away", "keeperAway", "keeperAwayLabel"]]) {
+      const select = $(selectId), label = $(labelId), teamName = game?.[side] || $(side === "home" ? "matchHome" : "matchAway").value || state.pendingMatch?.[side];
+      const players = lineupForTeam(teamName, game), preferred = players.find(keeper), current = game?.[side + "Keeper"];
+      label.firstChild.textContent = "Goleiro · " + teamLabel(teamName || (side === "home" ? "Time 1" : "Time 2"));
+      namesForSelect(select, players, players.length ? "Escolha quem vai para o gol" : "Escolha os times primeiro");
+      const selected = current || (players.includes(select.value) ? select.value : preferred);
+      if (selected && players.includes(selected)) select.value = selected;
+      select.disabled = !!game || !players.length;
     }
   }
   function performanceForGame(game, homeScore, awayScore, gameGoals) {
-    const stats = [];
-    for (const team of (state.teams || []).filter(
-      (team) => team.name === game.home || team.name === game.away,
-    )) {
-      const teamPlayers = lineupForTeam(team.name, game),
-        isHome = team.name === game.home,
-        goalsFor = isHome ? homeScore : awayScore,
-        goalsAgainst = isHome ? awayScore : homeScore,
-        result =
-          goalsFor > goalsAgainst
-            ? "vitória"
-            : goalsFor < goalsAgainst
-              ? "derrota"
-              : "empate",
-        delta = result === "vitória" ? 1.5 : result === "derrota" ? -1.5 : 0.5,
-        goalie = isHome ? game.homeKeeper : game.awayKeeper;
+    const stats = [], assistPoints = Math.max(0, Number(state.scoreRules?.assist ?? SCORE_RULES.assist));
+    for (const team of (state.teams || []).filter((item) => item.name === game.home || item.name === game.away)) {
+      const teamPlayers = lineupForTeam(team.name, game), isHome = team.name === game.home, goalsFor = isHome ? homeScore : awayScore, goalsAgainst = isHome ? awayScore : homeScore;
+      const result = goalsFor > goalsAgainst ? "vitória" : goalsFor < goalsAgainst ? "derrota" : "empate", delta = result === "vitória" ? 1.5 : result === "derrota" ? -1.5 : 0.5, goalie = isHome ? game.homeKeeper : game.awayKeeper;
       for (const player of teamPlayers) {
-        const isKeeper = player === goalie,
-          scored = gameGoals.filter(
-            (g) => g.player === player && !g.ownGoal,
-          ).length,
-          ownGoals = gameGoals.filter(
-            (g) => g.player === player && g.ownGoal,
-          ).length;
-        const score = Math.max(
-          0,
-          Math.min(
-            10,
-            7 +
-              delta +
-              (isKeeper ? scored : Math.min(scored, 2)) -
-              (isKeeper
-                ? 1.5 * Math.min(goalsAgainst, 2)
-                : 0.5 * goalsAgainst) -
-              2 * ownGoals,
-          ),
-        );
-        stats.push({
-          player,
-          team: team.name,
-          role: isKeeper ? "goleiro" : "linha",
-          score: Number(score.toFixed(1)),
-          result,
-          goalsFor: scored,
-          goalsAgainst,
-          ownGoals,
-        });
+        const isKeeper = player === goalie, scored = gameGoals.filter((goal) => goal.player === player && !goal.ownGoal).length, ownGoals = gameGoals.filter((goal) => goal.player === player && goal.ownGoal).length, assists = gameGoals.filter((goal) => (goal.assistedBy || goal.assisted_by) === player).length;
+        const score = Math.max(0, Math.min(10, 7 + delta + (isKeeper ? scored : Math.min(scored, 2)) + assists * assistPoints - (isKeeper ? 1.5 * Math.min(goalsAgainst, 2) : 0.5 * goalsAgainst) - 2 * ownGoals));
+        stats.push({ player, team: team.name, role: isKeeper ? "goleiro" : "linha", score: Number(score.toFixed(1)), result, goalsFor: scored, assists, goalsAgainst, ownGoals });
       }
     }
     return stats;
+  }
+  function standingsForGames(games, teamMeta = new Map()) {
+    const rows = new Map(), seen = new Set();
+    const ensure = (name, label) => {
+      if (!rows.has(name)) rows.set(name, { name, label: label || name, points: 0, wins: 0, draws: 0, losses: 0, played: 0, gf: 0, ga: 0 });
+      else if (label) rows.get(name).label = label;
+      return rows.get(name);
+    };
+    for (const game of games || []) {
+      const identity = game.id || game.number + '|' + game.home + '|' + game.away + '|' + game.finishedAt;
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      const home = ensure(game.home, game.homeLabel || teamMeta.get(game.home)), away = ensure(game.away, game.awayLabel || teamMeta.get(game.away));
+      const hs = Number(game.homeScore) || 0, as = Number(game.awayScore) || 0;
+      home.played++; away.played++; home.gf += hs; home.ga += as; away.gf += as; away.ga += hs;
+      if (hs > as) { home.wins++; home.points += 3; away.losses++; }
+      else if (as > hs) { away.wins++; away.points += 3; home.losses++; }
+      else { home.draws++; away.draws++; home.points++; away.points++; }
+    }
+    return [...rows.values()].map((row) => ({ ...row, gd: row.gf - row.ga })).sort((a,b) => b.points-a.points || b.gd-a.gd || b.gf-a.gf || a.label.localeCompare(b.label,'pt-BR'));
+  }
+  function standingsTable(rows, emptyText) {
+    if (!rows.length) return '<p class="empty-state">' + emptyText + '</p>';
+    return '<div class="table-scroll"><table class="standings-table"><thead><tr><th>#</th><th>Time</th><th>Pts</th><th>V</th><th>E</th><th>D</th><th>J</th><th>SG</th></tr></thead><tbody>' + rows.map((row,index) => '<tr class="' + (index < 3 ? 'standings-top standings-top-' + (index+1) : '') + '"><td>' + (index+1) + '</td><th>' + escapeHtml(row.label) + '</th><td>' + row.points + '</td><td>' + row.wins + '</td><td>' + row.draws + '</td><td>' + row.losses + '</td><td>' + row.played + '</td><td>' + (row.gd > 0 ? '+' : '') + row.gd + '</td></tr>').join('') + '</tbody></table></div>';
+  }
+  function renderStandings() {
+    const roundId = state.roundId || state.currentGame?.roundId;
+    const games = roundId ? (state.gameHistory || []).filter((game) => game.roundId === roundId) : [];
+    const rows = standingsForGames(games, new Map((state.teams || []).map((team) => [team.name, teamLabel(team.name)])));
+    $("roundStandings").innerHTML = standingsTable(rows, "A classificação será atualizada após a primeira partida concluída.");
+  }
+  function renderHistoricalStandings() {
+    const host = $("pastRoundStandings");
+    if (!host) return;
+    const groups = new Map();
+    for (const game of state.gameHistory || []) {
+      const key = game.roundId || 'legacy-' + (game.matchDate || 'sem-data');
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(game);
+    }
+    const entries = [...groups.entries()].reverse();
+    host.innerHTML = entries.length ? entries.map(([key, games], index) => {
+      const date = games.map((game) => game.matchDate).find(Boolean);
+      const rows = standingsForGames(games);
+      return '<details class="past-round"><summary>' + (date ? new Date(date + 'T12:00:00').toLocaleDateString('pt-BR') : 'Rodada anterior ' + (entries.length-index)) + ' · ' + games.length + ' partidas</summary>' + standingsTable(rows, 'Sem resultados finalizados nesta rodada.') + '</details>';
+    }).join('') : '<p class="empty-state">As classificações das rodadas anteriores aparecerão aqui.</p>';
   }
   function renderScoreRankings() {
     const all = (state.gameHistory || []).flatMap(
@@ -1419,61 +1321,14 @@
   }
   function renderIndividualStats() {
     const totals = new Map();
-    for (const game of state.gameHistory || [])
-      for (const p of game.performance || []) {
-        const row = totals.get(p.player) || {
-          player: p.player,
-          role: p.role,
-          score: 0,
-          games: 0,
-          goals: 0,
-          goalsAgainst: 0,
-          wins: 0,
-          draws: 0,
-          losses: 0,
-        };
-        row.score += Number(p.score) || 0;
-        row.games++;
-        row.goals += Number(p.goalsFor) || 0;
-        row.goalsAgainst += Number(p.goalsAgainst) || 0;
-        if (p.result === "vitória") row.wins++;
-        else if (p.result === "empate") row.draws++;
-        else row.losses++;
-        totals.set(p.player, row);
-      }
-    const rows = [...totals.values()].sort(
-      (a, b) =>
-        b.score / b.games - a.score / a.games ||
-        a.player.localeCompare(b.player, "pt-BR"),
-    );
-    $("individualStats").innerHTML = rows.length
-      ? "<table><thead><tr><th>Jogador</th><th>Função</th><th>Jogos</th><th>Score médio</th><th>Gols</th><th>Sofridos</th><th>V-E-D</th></tr></thead><tbody>" +
-        rows
-          .map(
-            (row) =>
-              "<tr><td>" +
-              escapeHtml(displayName(row.player)) +
-              "</td><td>" +
-              row.role +
-              "</td><td>" +
-              row.games +
-              "</td><td>" +
-              (row.score / row.games).toFixed(1).replace(".", ",") +
-              "</td><td>" +
-              row.goals +
-              "</td><td>" +
-              row.goalsAgainst +
-              "</td><td>" +
-              row.wins +
-              "-" +
-              row.draws +
-              "-" +
-              row.losses +
-              "</td></tr>",
-          )
-          .join("") +
-        "</tbody></table>"
-      : '<p class="empty-state">As estatísticas individuais aparecem após as partidas finalizadas.</p>';
+    for (const game of state.gameHistory || []) for (const p of game.performance || []) {
+      const row = totals.get(p.player) || { player: p.player, role: p.role, score: 0, games: 0, goals: 0, assists: 0, goalsAgainst: 0, wins: 0, draws: 0, losses: 0 };
+      row.score += Number(p.score) || 0; row.games++; row.goals += Number(p.goalsFor) || 0; row.assists += Number(p.assists) || 0; row.goalsAgainst += Number(p.goalsAgainst) || 0;
+      if (p.result === "vitória") row.wins++; else if (p.result === "empate") row.draws++; else row.losses++;
+      totals.set(p.player, row);
+    }
+    const rows = [...totals.values()].sort((a,b) => b.score/b.games-a.score/a.games || a.player.localeCompare(b.player,"pt-BR"));
+    $("individualStats").innerHTML = rows.length ? "<table><thead><tr><th>Jogador</th><th>Função</th><th>Jogos</th><th>Score médio</th><th>Gols</th><th>Assist.</th><th>Sofridos</th><th>V-E-D</th></tr></thead><tbody>" + rows.map((row) => "<tr><td>" + escapeHtml(displayName(row.player)) + "</td><td>" + row.role + "</td><td>" + row.games + "</td><td>" + (row.score/row.games).toFixed(1).replace(".",",") + "</td><td>" + row.goals + "</td><td>" + row.assists + "</td><td>" + row.goalsAgainst + "</td><td>" + row.wins + "-" + row.draws + "-" + row.losses + "</td></tr>").join("") + "</tbody></table>" : '<p class="empty-state">As estatísticas individuais aparecem após as partidas finalizadas.</p>';
   }
   function weekStart(date) {
     const result = new Date(
@@ -1554,6 +1409,7 @@
               (g) =>
                 "<li><span>⚽ " +
                 escapeHtml(displayName(g.player)) +
+                (g.assistedBy ? " · assistência de " + escapeHtml(displayName(g.assistedBy)) : "") +
                 (g.ownGoal ? " · gol contra" : "") +
                 " · ponto para " +
                 escapeHtml(g.scoringTeam || g.team) +
@@ -1574,6 +1430,8 @@
                 p.result +
                 " · gols " +
                 p.goalsFor +
+                " · assistências " +
+                (p.assists || 0) +
                 " · sofridos " +
                 p.goalsAgainst +
                 " · contra " +
@@ -1583,11 +1441,15 @@
                 "</b></li>",
             )
             .join("") || "<li>Sem score individual registrado.</li>";
+        const eventRows = (game.incidents || []).map((item) => '<li>' + escapeHtml(item.type === 'warning' ? (item.warningType || 'Advertência') : (incidentLabels[item.type] || item.type)) + ' · ' + escapeHtml(displayName(item.player || '')) + ' · ' + (item.minute || 0) + '′</li>').join('') || '<li>Sem advertências ou ocorrências registradas</li>';
+        const homePlayers = game.homePlayers || [], awayPlayers = game.awayPlayers || [];
+        const lineups = '<details class="history-lineups"><summary>Ver escalações e goleiros</summary><p><strong>' + escapeHtml(game.homeLabel || game.home) + '</strong> · Goleiro: ' + escapeHtml(displayName(game.homeKeeper || 'não registrado')) + '</p><ul>' + homePlayers.map((name) => '<li>' + escapeHtml(displayName(name)) + '</li>').join('') + '</ul><p><strong>' + escapeHtml(game.awayLabel || game.away) + '</strong> · Goleiro: ' + escapeHtml(displayName(game.awayKeeper || 'não registrado')) + '</p><ul>' + awayPlayers.map((name) => '<li>' + escapeHtml(displayName(name)) + '</li>').join('') + '</ul></details>';
         return (
           '<article class="history-game"><header><strong>JOGO ' +
           game.number +
           " · " +
           (game.timerMode === "coca" ? "MODO COCA" : "MODO LIGA") +
+          (game.durationMinutes ? " · " + game.durationMinutes + " MIN" : "") +
           "</strong><span>" +
           new Date(game.finishedAt).toLocaleTimeString("pt-BR", {
             hour: "2-digit",
@@ -1611,9 +1473,9 @@
           (game.winner === "Empate"
             ? "Empate"
             : "🏆 Vencedor: " + escapeHtml(historyWinner(game))) +
-          "</p><ul>" +
+          "</p>" + lineups + "<ul>" +
           goalRows +
-          '</ul><details class="history-performance"><summary>Ver score e estatísticas individuais</summary><ul>' +
+          '</ul><details class="history-incidents"><summary>Advertências e ocorrências</summary><ul>' + eventRows + '</ul></details><details class="history-performance"><summary>Ver score e estatísticas individuais</summary><ul>' +
           stats +
           "</ul></details></article>"
         );
@@ -1671,59 +1533,35 @@
           .join("")
       : '<p class="empty-state">Nenhum gol registrado.</p>';
   }
-  const incidentLabels = {
-    foul: "Falta",
-    penalty: "Pênalti",
-    hand: "Mão intencional · 1 minuto fora",
-    keeper: "Bola recuada para o goleiro",
-    other: "Outra ocorrência",
-  };
+  const incidentLabels = { foul: "Falta", penalty: "Pênalti", hand: "Mão intencional · 1 minuto fora", keeper: "Bola recuada para o goleiro", other: "Outra ocorrência", warning: "Advertência" };
   function renderIncidents() {
-    const list = $("incidentList"),
-      entries = state.incidents || [];
-    if (!entries.length) {
-      list.innerHTML =
-        '<p class="empty-state">Nenhuma ocorrência registrada nesta rodada.</p>';
-      return;
-    }
-    list.innerHTML = [...entries]
-      .reverse()
-      .map((item) => {
-        const active = item.expiresAt && item.expiresAt > Date.now();
-        const left = active
-          ? Math.ceil((item.expiresAt - Date.now()) / 1000)
-          : 0;
-        const status = item.expiresAt
-          ? active
-            ? `Retorno em 00:${String(left).padStart(2, "0")}`
-            : "Liberado para retornar"
-          : "Registrado";
-        return `<article class="incident-row"><div><strong>${escapeHtml(incidentLabels[item.type] || item.type)} · ${escapeHtml(displayName(item.player || "Sem jogador associado"))}</strong><small>${escapeHtml(item.note || "Sem observação")} · ${new Date(item.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</small></div><span class="incident-status ${item.expiresAt && !active ? "done" : ""}">${status}</span></article>`;
-      })
-      .join("");
+    const list = $("incidentList"), entries = state.incidents || [];
+    if (!entries.length) { list.innerHTML = '<p class="empty-state">Nenhuma ocorrência registrada nesta partida.</p>'; return; }
+    list.innerHTML = [...entries].reverse().map((item) => {
+      const active = item.expiresAt && item.expiresAt > Date.now(), left = active ? Math.ceil((item.expiresAt-Date.now())/1000) : 0;
+      const status = item.expiresAt ? active ? 'Retorno em 00:' + String(left).padStart(2,'0') : 'Liberado para retornar' : 'Registrado';
+      const label = item.type === 'warning' ? (item.warningType || 'Advertência') : (incidentLabels[item.type] || item.type);
+      const time = item.createdAt ? new Date(item.createdAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '—';
+      return '<article class="incident-row"><div><strong>' + escapeHtml(label) + ' · ' + escapeHtml(displayName(item.player || 'Sem jogador associado')) + '</strong><small>' + escapeHtml(item.note || 'Minuto ' + (item.minute || 0)) + ' · ' + time + '</small></div><span class="incident-status ' + (item.expiresAt && !active ? 'done' : '') + '">' + status + '</span></article>';
+    }).join('');
   }
   async function addIncident() {
-    const type = $("incidentType").value,
-      player = $("incidentPlayer").value;
-    if (!player) {
-      notify("Escolha o jogador envolvido.", true);
-      return;
-    }
-    const item = {
-      id: crypto.randomUUID(),
-      type,
-      player,
-      note: $("incidentNote").value.trim(),
-      createdAt: new Date().toISOString(),
-      expiresAt: type === "hand" ? Date.now() + 60000 : null,
-    };
-    await saveState(
-      { incidents: [...(state.incidents || []), item] },
-      type === "hand"
-        ? `${player} ficará fora por 1 minuto.`
-        : "Ocorrência registrada.",
-    );
+    const type = $("incidentType").value, player = $("incidentPlayer").value, game = state.currentGame;
+    if (!game || !player || ![...(game.homePlayers || []), ...(game.awayPlayers || [])].includes(player)) { notify("Escolha um jogador da partida em andamento.", true); return; }
+    const item = { id: crypto.randomUUID(), gameId: game.id, minute: Math.max(1, Math.ceil(timerElapsed()/60)), type, player, note: $("incidentNote").value.trim(), createdAt: new Date().toISOString(), expiresAt: type === "hand" ? Date.now()+60000 : null };
+    await saveState({ incidents: [...(state.incidents || []), item] }, type === "hand" ? displayName(player) + " ficará fora por 1 minuto." : "Ocorrência registrada no minuto " + item.minute + ".");
     $("incidentNote").value = "";
+  }
+  async function addWarning() {
+    if (warningSubmitting) return;
+    const game = state.currentGame, player = $("warningPlayer").value, warningType = $("warningType").value;
+    if (!game || !player || !warningType || ![...(game.homePlayers || []), ...(game.awayPlayers || [])].includes(player)) { notify("Selecione um jogador da partida e o tipo de advertência.", true); return; }
+    warningSubmitting = true; $("addWarning").disabled = true;
+    const item = { id: crypto.randomUUID(), gameId: game.id, minute: Math.max(1, Math.ceil(timerElapsed()/60)), type: "warning", warningType, player, createdAt: new Date().toISOString(), expiresAt: null };
+    try {
+      const saved = await saveState({ incidents: [...(state.incidents || []), item] }, "Advertência registrada no minuto " + item.minute + ".");
+      if (saved && $("warningDialog").open) $("warningDialog").close();
+    } finally { warningSubmitting = false; renderGoalOptions(); }
   }
   function renderRoster() {
     const roster = state.roster || [],
@@ -1771,6 +1609,8 @@
       $("matchDate").value = state.matchDate || "";
     if (document.activeElement !== $("startTime"))
       $("startTime").value = state.startTime || "";
+    if (document.activeElement !== $("assistScoreRule")) $("assistScoreRule").value = String(Number(state.scoreRules?.assist ?? SCORE_RULES.assist));
+    document.querySelectorAll(".assist-rule-display").forEach((node) => { node.textContent = "+" + Number(state.scoreRules?.assist ?? SCORE_RULES.assist).toFixed(1); });
     renderRoster();
     renderTeams();
     renderFixtures();
@@ -1780,8 +1620,10 @@
     renderGoalOptions();
     renderGoals();
     renderScoreRankings();
+    renderStandings();
     renderKeeperChoices();
     renderHistory();
+    renderHistoricalStandings();
     renderIncidents();
     renderSeasonHighlights();
     renderIndividualStats();
@@ -2181,6 +2023,8 @@
     }
   }
   function setView(view) {
+    const locked = (shared && !canManageShared) || (!shared && window.LIGA_CONFIG?.publicReadOnly === true);
+    if (locked && view === "elenco") view = "home";
     document
       .querySelectorAll("[data-view]")
       .forEach((element) =>
@@ -2241,17 +2085,8 @@
       "Jogador removido. Sorteie novamente quando a lista estiver pronta.",
     );
   }
-  function freshTimer(mode = "liga") {
-    return {
-      mode,
-      duration: 480,
-      endsAt: null,
-      runningSince: null,
-      elapsedBeforeRun: 0,
-      remainingAtPause: null,
-      pauseStartedAt: null,
-      pauseUsedMs: 0,
-    };
+  function freshTimer(mode = "liga", duration = 480) {
+    return { mode, duration, endsAt: null, runningSince: null, elapsedBeforeRun: 0, remainingAtPause: null, pauseStartedAt: null, pauseUsedMs: 0 };
   }
   async function drawTeams() {
     try {
@@ -2326,95 +2161,22 @@
   }
   async function beginGame() {
     const pending = state.pendingMatch;
-    if (state.currentGame || !pending) {
-      notify("Sorteie os times antes de iniciar a partida.", true);
-      return;
-    }
-    const homePlayers = [...lineupForTeam(pending.home)],
-      awayPlayers = [...lineupForTeam(pending.away)];
-    const playMode = state.timerMode || "liga",
-      maxPlayers = playMode === "coca" ? 8 : 5;
-    if (
-      (state.teams || []).some((team) => lineupForTeam(team.name).length < 5) ||
-      homePlayers.length < 5 ||
-      awayPlayers.length < 5 ||
-      homePlayers.length > maxPlayers ||
-      awayPlayers.length > maxPlayers
-    ) {
-      notify(
-        "Todos os times precisam ter pelo menos cinco jogadores; o limite é cinco na Liga e oito no Coca.",
-        true,
-      );
-      return;
-    }
-    const homeKeeper = $("keeperHome").value,
-      awayKeeper = $("keeperAway").value;
-    if (!homeKeeper || !awayKeeper) {
-      notify("Defina um goleiro para cada time antes de começar.", true);
-      return;
-    }
-    const mode = state.timerMode || $("timerMode").value || "liga",
-      now = Date.now(),
-      currentGame = {
-        id: crypto.randomUUID(),
-        roundId: state.roundId || null,
-        number: (state.gameHistory || []).length + 1,
-        home: pending.home,
-        away: pending.away,
-        homePlayers,
-        awayPlayers,
-        homeKeeper,
-        awayKeeper,
-        timerMode: mode,
-        startedAt: now,
-      };
-    const timer =
-      mode === "coca"
-        ? { ...freshTimer(mode), runningSince: now }
-        : { ...freshTimer(mode), endsAt: now + 480000 };
-    await saveState(
-      { currentGame, timer, incidents: [] },
-      "Jogo " +
-        currentGame.number +
-        " iniciado: " +
-        pending.home +
-        " × " +
-        pending.away +
-        ".",
-    );
-  }
-  async function moveQueue() {
-    const chosen = $("queueSelect").value;
-    if (!chosen) return;
-    if (state.currentGame) {
-      const queue = [...(state.challengeQueue || [])],
-        index = queue.indexOf(chosen);
-      if (index < 0) return;
-      queue.splice(index, 1);
-      queue.unshift(chosen);
-      await saveState(
-        { challengeQueue: queue },
-        `${chosen} foi adiantado na fila. A sequência restante foi mantida.`,
-      );
-      return;
-    }
-    const pending = state.pendingMatch;
-    if (!pending) return;
-    const candidates = [pending.away, ...(state.challengeQueue || [])].filter(
-        (name, index, all) => name && all.indexOf(name) === index,
-      ),
-      index = candidates.indexOf(chosen);
-    if (index < 0) return;
-    const order = [...candidates];
-    order.splice(index, 1);
-    order.unshift(chosen);
-    await saveState(
-      {
-        pendingMatch: { ...pending, away: order.shift() },
-        challengeQueue: order,
-      },
-      `${chosen} foi adiantado. O próximo jogo foi trocado e a fila continua na mesma ordem.`,
-    );
+    if (state.currentGame || !pending) { notify("Sorteie os times antes de iniciar a partida.", true); return; }
+    const home = $("matchHome").value, away = $("matchAway").value, teams = state.teams || [];
+    if (!home || !away || home === away || !teams.some((team) => team.name === home) || !teams.some((team) => team.name === away)) { notify("Escolha dois times diferentes e válidos.", true); return; }
+    const homePlayers = [...lineupForTeam(home)], awayPlayers = [...lineupForTeam(away)], mode = state.timerMode || "liga", maxPlayers = mode === "coca" ? 8 : 5;
+    if (homePlayers.length < 4 || awayPlayers.length < 4 || homePlayers.length > maxPlayers || awayPlayers.length > maxPlayers) { notify("Cada time precisa ter de quatro a " + maxPlayers + " jogadores neste modo.", true); return; }
+    const homeKeeper = $("keeperHome").value, awayKeeper = $("keeperAway").value;
+    if (!homeKeeper || !awayKeeper || !homePlayers.includes(homeKeeper) || !awayPlayers.includes(awayKeeper)) { notify("Defina um goleiro que esteja escalado em cada time.", true); return; }
+    const durationMinutes = Number($("durationMinutes").value);
+    if (mode === "liga" && (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 180)) { notify("A duração deve ser de 1 a 180 minutos.", true); return; }
+    const now = Date.now(), duration = mode === "coca" ? 0 : durationMinutes * 60;
+    const currentGame = { id: crypto.randomUUID(), roundId: state.roundId || null, number: (state.gameHistory || []).length + 1, home, away, homePlayers, awayPlayers, homeKeeper, awayKeeper, timerMode: mode, durationMinutes: mode === "coca" ? null : durationMinutes, startedAt: now };
+    const order = [...(state.challengeQueue || []), pending.home, pending.away, ...teams.map((team) => team.name)].filter((name,index,all) => name && name !== home && name !== away && all.indexOf(name) === index);
+    const nextQueue = order;
+    const nextPending = { home, away };
+    const timer = mode === "coca" ? { ...freshTimer(mode), runningSince: now } : { ...freshTimer(mode, duration), endsAt: now + duration * 1000 };
+    await saveState({ currentGame, timer, pendingMatch: nextPending, challengeQueue: nextQueue, durationMinutes }, "Jogo " + currentGame.number + " iniciado: " + home + " × " + away + ".");
   }
   async function pauseTimer() {
     if (!state.currentGame) return;
@@ -2483,65 +2245,30 @@
     }
   }
   async function addGoal() {
-    const player = $("goalScorer").value,
-      game = state.currentGame,
-      ownGoal = $("ownGoal").checked;
-    if (!game || !player) {
-      notify("Escolha quem fez o gol.", true);
-      return;
-    }
-    const team = teamForPlayer(player),
-      scoringTeam = ownGoal
-        ? team === game.home
-          ? game.away
-          : game.home
-        : team,
-      elapsed = Math.max(0, Math.floor(timerElapsed())),
-      minute = Math.max(1, Math.ceil(elapsed / 60));
-    const goal = {
-      player_name: player,
-      team_name: team,
-      score_team_name: scoringTeam,
-      own_goal: ownGoal,
-      match_number: game.number,
-      game_id: game.id,
-      minute,
-    };
-    if (
-      (shared && !canManageShared) ||
-      (!shared && window.LIGA_CONFIG?.publicReadOnly === true)
-    ) {
-      notify("Somente o organizador pode registrar gols.", true);
-      return;
-    }
-    if (shared) {
-      const { error } = await client.from("goals").insert(goal);
-      if (error) {
-        notify("Não foi possível registrar o gol: " + error.message, true);
-        return;
+    if (goalSubmitting) return;
+    const game = state.currentGame, player = $("goalScorer").value, scoringTeam = $("goalTeam").value, assistedBy = $("goalAssist").value || null, ownGoal = $("ownGoal").checked;
+    if (!game || !player || ![game.home, game.away].includes(scoringTeam)) { notify("Escolha o time e o autor do gol.", true); return; }
+    const actualTeam = teamForPlayer(player), expectedAuthorTeam = ownGoal ? (scoringTeam === game.home ? game.away : game.home) : scoringTeam;
+    if (actualTeam !== expectedAuthorTeam || (assistedBy && (assistedBy === player || !lineupForTeam(scoringTeam, game).includes(assistedBy)))) { notify("Confira o autor e a assistência do gol.", true); return; }
+    if ((shared && !canManageShared) || (!shared && window.LIGA_CONFIG?.publicReadOnly === true)) { notify("Somente o organizador pode registrar gols.", true); return; }
+    const elapsed = Math.max(0, Math.floor(timerElapsed())), minute = Math.max(1, Math.ceil(elapsed / 60));
+    const goal = { id: crypto.randomUUID(), player_name: player, team_name: actualTeam, score_team_name: scoringTeam, own_goal: ownGoal, assisted_by: assistedBy, match_number: game.number, game_id: game.id, minute };
+    goalSubmitting = true; $("addGoal").disabled = true;
+    try {
+      if (shared) {
+        const { error } = await client.from("goals").insert(goal);
+        if (error) throw error;
+        await refreshGoals();
+      } else {
+        goals.push({ ...goal, created_at: new Date().toISOString() });
+        localSave(); renderGoals(); renderTimer(); renderGoalOptions();
       }
-      await refreshGoals();
-    } else {
-      goals.push({
-        ...goal,
-        id: crypto.randomUUID(),
-        created_at: new Date().toISOString(),
-      });
-      localSave();
-      renderGoals();
-      renderTimer();
-      renderGoalOptions();
-    }
-    $("ownGoal").checked = false;
-    notify(
-      (ownGoal ? "Gol contra de " : "Gol de ") +
-        displayName(player) +
-        " · ponto para " +
-        scoringTeam +
-        " · " +
-        minute +
-        "′.",
-    );
+      $("ownGoal").checked = false; $("goalAssist").value = "";
+      if ($("goalDialog").open) $("goalDialog").close();
+      notify((ownGoal ? "Gol contra de " : "Gol de ") + displayName(player) + (assistedBy ? " · assistência de " + displayName(assistedBy) : "") + " · ponto para " + teamLabel(scoringTeam) + " · " + minute + "′.");
+    } catch (error) {
+      notify("Não foi possível registrar o gol: " + error.message, true);
+    } finally { goalSubmitting = false; renderGoalOptions(); }
   }
   async function removeSelectedGoal() {
     const player = $("goalScorer").value,
@@ -2578,7 +2305,9 @@
   }
   async function finishGame() {
     const current = state.currentGame;
-    if (!current) return;
+    if (!current || gameFinishing) return;
+    gameFinishing = true;
+    $("finishGame").disabled = true;
     const homeScore = currentScore(current.home),
       awayScore = currentScore(current.away);
     // Empate: com 2+ times fora saem os dois; com 1 fora, pênaltis; sem ninguém fora, jogam de novo.
@@ -2594,6 +2323,8 @@
         : "Empate";
     if (!winner) {
       notify("Empate: escolha quem venceu nos pênaltis para encerrar.", true);
+      gameFinishing = false;
+      renderTimer();
       return;
     }
     const loser = winner === current.home ? current.away : current.home,
@@ -2605,6 +2336,7 @@
           team: g.team_name,
           scoringTeam: scoreTeam(g, current),
           ownGoal: !!g.own_goal,
+          assistedBy: g.assisted_by || null,
           minute: Number(g.minute) || 1,
           created_at: g.created_at,
         }));
@@ -2624,6 +2356,7 @@
         awayScore,
         winner,
         goals: gameGoals,
+        incidents: [...(state.incidents || [])],
         performance,
         durationSeconds,
         finishedAt: new Date().toISOString(),
@@ -2639,7 +2372,10 @@
       queue = [...waiting];
       next = { home: current.home, away: current.away };
     }
-    await saveState(
+    try {
+      $("matchHome").value = next.home || "";
+      $("matchAway").value = next.away || "";
+      await saveState(
       {
         gameHistory: [...(state.gameHistory || []), entry],
         currentGame: null,
@@ -2657,7 +2393,8 @@
         " × " +
         teamLabel(next.away) +
         ".",
-    );
+      );
+    } finally { gameFinishing = false; renderTimer(); }
   }
   function setTheme(theme) {
     const light = theme === "light";
@@ -2718,10 +2455,6 @@
         document.body.classList.contains("light-theme") ? "dark" : "light",
       ),
     );
-    $("queueSelect").addEventListener("change", () => {
-      $("moveQueue").disabled = !$("queueSelect").value;
-    });
-    $("moveQueue").addEventListener("click", moveQueue);
     $("beginGame").addEventListener("click", beginGame);
     $("pauseTimer").addEventListener("click", pauseTimer);
     $("addGoal").addEventListener("click", addGoal);
@@ -2736,12 +2469,7 @@
       renderKeeperChoices();
     });
     $("finishGame").addEventListener("click", finishGame);
-    $("timerMode").addEventListener("change", (e) =>
-      saveState(
-        { timerMode: e.target.value },
-        "Modo do cronômetro atualizado.",
-      ),
-    );
+    $("timerMode").addEventListener("change", (e) => { saveState({ timerMode: e.target.value }, "Modo do cronômetro atualizado."); renderQueueControls(); renderLineupAdjustments(); });
     $("addIncident").addEventListener("click", addIncident);
     $("adminAccessButton").addEventListener("click", requestAdminAccess);
     $("addReserveToTeam").addEventListener("click", addReservePlayer);
