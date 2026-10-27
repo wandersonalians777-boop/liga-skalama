@@ -1,7 +1,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const teamColors = [
-    { name: "Águia", color: "#2183c5", ink: "#ffffff" },
+    { name: "Águia", color: "#f28c28", ink: "#14120a" },
     { name: "Sol", color: "#ffc400", ink: "#14120a" },
     { name: "Verde", color: "#2b8a50", ink: "#ffffff" },
     { name: "Azul", color: "#334fa0", ink: "#ffffff" },
