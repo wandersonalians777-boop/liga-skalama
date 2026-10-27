@@ -862,7 +862,11 @@
       const side = index === 0 ? "home" : "away", players = [...lineupForTeam(name, state.currentGame)];
       const loan = state.currentGame ? null : $("loan" + side[0].toUpperCase() + side.slice(1) + "Player").value;
       if (loan && !players.includes(loan)) players.push(loan);
-      return '<div><strong>' + escapeHtml(teamLabel(name)) + '</strong><ul>' + players.map((player) => '<li>' + escapeHtml(displayName(player)) + (keeper(player) ? ' · Goleiro' : '') + (player === loan ? ' · emprestado' : '') + '</li>').join('') + '</ul></div>';
+      return '<div><strong>' + escapeHtml(teamLabel(name)) + '</strong><ul>' + players.map((player) => {
+        const penalty = (state.incidents || []).find((item) => item.type === "hand" && item.gameId === state.currentGame?.id && item.player === player && Number(item.expiresAt) > Date.now());
+        const countdown = penalty ? '<b class="suspension-badge">FORA · ' + clockText(Math.ceil((Number(penalty.expiresAt) - Date.now()) / 1000)) + '</b>' : "";
+        return '<li>' + escapeHtml(displayName(player)) + (keeper(player) ? ' · Goleiro' : '') + (player === loan ? ' · emprestado' : '') + countdown + '</li>';
+      }).join('') + '</ul></div>';
     }).join('');
   }
   function renderQueueControls() {
@@ -1578,6 +1582,7 @@
       const time = item.createdAt ? new Date(item.createdAt).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : "—";
       return '<article class="incident-row"><div><strong>' + escapeHtml(label) + " · " + escapeHtml(displayName(item.player || "Sem jogador associado")) + '</strong><small>' + escapeHtml(item.note || "Minuto " + (item.minute || 0)) + " · " + time + '</small></div><span class="incident-status ' + (item.type === "hand" && !active ? "done" : "") + '">' + status + '</span></article>';
     }).join("");
+    if (state.currentGame && (state.incidents || []).some((item) => item.type === "hand" && item.gameId === state.currentGame.id)) renderMatchPreview();
     const suspended = (state.incidents || []).filter((item) => item.type === "hand" && item.gameId === state.currentGame?.id && Number(item.expiresAt) > Date.now()).map((item) => item.player).sort().join("|");
     if (suspended !== suspensionSignature) { suspensionSignature = suspended; renderGoalOptions(); renderKeeperChoices(); }
   }
