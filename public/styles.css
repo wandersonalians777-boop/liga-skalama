@@ -186,3 +186,10 @@ body.light-theme .live-team-picker label,body.light-theme .action-dialog label{c
 .scoreboard>div:nth-of-type(2) .score-goal-list{justify-content:start;text-align:left}
 .scoreboard>div:nth-of-type(2) .score-goal-item{justify-content:flex-start}
 
+
+
+/* Apply each team's identity color to the full lineup preview card. */
+.match-lineup-preview>.match-preview-team{background:var(--team-color);border-color:var(--team-color);color:var(--team-ink)}
+.match-lineup-preview>.match-preview-team strong{color:var(--team-ink)}
+.match-lineup-preview>.match-preview-team ul{color:var(--team-ink);opacity:.94}
+.match-lineup-preview>.match-preview-team li{border-color:color-mix(in srgb,var(--team-ink) 22%,transparent)}
