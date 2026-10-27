@@ -178,3 +178,11 @@ body.light-theme .live-team-picker label,body.light-theme .action-dialog label{c
 .score-goal-item{justify-content:flex-start}
 @media(max-width:580px){.scoreboard{gap:8px}.scoreboard>div{column-gap:6px;min-width:0}.score-goal-list{max-width:28vw}.score-goal-item{gap:3px;font-size:9px}.score-goal-player{max-width:70px}.own-goal-mark{width:14px;height:14px;font-size:9px}}
 
+/* Show each team's scorer list on the outside of its score. */
+.scoreboard>div:first-of-type{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"team team" "scorers score";text-align:right}
+.scoreboard>div:nth-of-type(2){grid-template-columns:auto minmax(0,1fr);grid-template-areas:"team team" "score scorers";text-align:left}
+.scoreboard>div:first-of-type .score-goal-list{justify-content:end;text-align:right}
+.scoreboard>div:first-of-type .score-goal-item{justify-content:flex-end}
+.scoreboard>div:nth-of-type(2) .score-goal-list{justify-content:start;text-align:left}
+.scoreboard>div:nth-of-type(2) .score-goal-item{justify-content:flex-start}
+
