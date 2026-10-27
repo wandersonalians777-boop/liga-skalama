@@ -6,19 +6,14 @@
     { name: "Verde", color: "#2b8a50", ink: "#ffffff" },
     { name: "Azul", color: "#334fa0", ink: "#ffffff" },
   ];
-  // 5 por time, de 2 a 4 times: 10–14 jogadores → 2 times, 15–19 → 3, 20+ → 4.
+  // 10–15 formam 2 ou 3 times; 16–19 formam 4 times com todos os jogadores; a partir de 20, quatro times titulares e reservas.
   const MIN_PLAYERS = 10;
   const SCORE_RULES = Object.freeze({ assist: 0.5 });
-  const startersFor = (total) =>
-    Math.min(4, Math.floor(Math.max(total, MIN_PLAYERS) / 5)) * 5;
+  const startersFor = (total) => total >= 16 ? Math.min(20, total) : Math.floor(Math.max(total, MIN_PLAYERS) / 5) * 5;
   // O nome interno ("Time Águia") segue como chave; o apelido é só exibição.
   const teamLabel = (name) => state?.teamLabels?.[name] || name;
   const historyWinner = (game) =>
-    (game.winner === game.home
-      ? game.homeLabel
-      : game.winner === game.away
-        ? game.awayLabel
-        : "") || game.winner;
+    (game.winner === game.home ? gameTeamLabel(game, "home") : game.winner === game.away ? gameTeamLabel(game, "away") : "") || game.winner;
 
   const clientId =
     localStorage.getItem("liga-skalama-client") ||
@@ -37,7 +32,8 @@
     toastTimer = 0,
     sharedStatePoll = null,
     goalSubmitting = false,
-    warningSubmitting = false,
+    incidentSubmitting = false,
+    suspensionSignature = "",
     gameFinishing = false;
 
   function nextMonday() {
@@ -419,16 +415,11 @@
     renderAll();
     return true;
   }
-  function namesForSelect(select, names, placeholder) {
+  function namesForSelect(select, names, placeholder, labelFor = displayName) {
     const current = select.value;
     select.innerHTML =
-      `<option value="">${escapeHtml(placeholder)}</option>` +
-      names
-        .map(
-          (name) =>
-            `<option value="${escapeHtml(name)}">${escapeHtml(displayName(name))}${keeper(name) ? " · 🧤 Goleiro" : ""}</option>`,
-        )
-        .join("");
+      '<option value="">' + escapeHtml(placeholder) + '</option>' +
+      names.map((name) => '<option value="' + escapeHtml(name) + '">' + escapeHtml(labelFor(name)) + (keeper(name) ? " · 🧤 Goleiro" : "") + "</option>").join("");
     if (names.includes(current)) select.value = current;
     select.disabled = names.length === 0;
   }
@@ -462,6 +453,38 @@
       )?.name ||
       ""
     );
+  }
+  function isPlayerSuspended(player, game = state.currentGame) {
+    if (!player || !game) return false;
+    return (state.incidents || []).some((item) => item.gameId === game.id && item.type === "hand" && item.player === player && Number(item.expiresAt) > Date.now());
+  }
+  function gameTeamLabel(game, side) {
+    const name = game && game[side];
+    if (!name) return "";
+    return game.roundId && game.roundId === state.roundId ? teamLabel(name) : (game[side + "Label"] || teamLabel(name));
+  }
+  function renderLoanControls() {
+    const home = $("matchHome").value, away = $("matchAway").value, teams = state.teams || [];
+    for (const side of ["home", "away"]) {
+      const select = $("loan" + side[0].toUpperCase() + side.slice(1) + "Player");
+      const destination = side === "home" ? home : away;
+      const roster = lineupForTeam(destination);
+      const needed = !state.currentGame && !!destination && roster.length === 4;
+      select.hidden = !needed;
+      select.parentElement.hidden = !needed;
+      select.disabled = !needed;
+      if (!needed) { select.value = ""; continue; }
+      const otherLoan = $("loan" + (side === "home" ? "Away" : "Home") + "Player").value;
+      const candidates = teams.filter((team) => team.name !== home && team.name !== away)
+        .flatMap((team) => lineupForTeam(team.name).filter((player) => !(state.absentPlayers || {})[player] && player !== otherLoan).map((player) => ({ player, source: team.name })));
+      const previous = select.value;
+      select.innerHTML = '<option value="">Sem empréstimo</option>' + candidates.map((item) => '<option value="' + escapeHtml(item.player) + '">' + escapeHtml(displayName(item.player) + " · de " + teamLabel(item.source)) + '</option>').join("");
+      if (candidates.some((item) => item.player === previous)) select.value = previous;
+    }
+    const wrap = $("loanPlayerControls");
+    wrap.hidden = $("loanHomePlayer").hidden && $("loanAwayPlayer").hidden;
+    const note = $("loanHelp");
+    if (note) note.textContent = wrap.hidden ? "" : "Empréstimo válido só nesta partida. A escalação original continua igual.";
   }
   function renderTeams() {
     const grid = $("teamsGrid"), publicGrid = $("publicTeamsGrid"), teams = state.teams || [];
@@ -835,7 +858,12 @@
     const target = $("matchLineupPreview");
     if (!target) return;
     if (!home || !away || home === away) { target.innerHTML = '<p class="empty-state">Escolha dois times diferentes para ver a escalação.</p>'; return; }
-    target.innerHTML = [home, away].map((name) => '<div><strong>' + escapeHtml(teamLabel(name)) + '</strong><ul>' + lineupForTeam(name, state.currentGame).map((player) => '<li>' + escapeHtml(displayName(player)) + (keeper(player) ? ' · Goleiro' : '') + '</li>').join('') + '</ul></div>').join('');
+    target.innerHTML = [home, away].map((name, index) => {
+      const side = index === 0 ? "home" : "away", players = [...lineupForTeam(name, state.currentGame)];
+      const loan = state.currentGame ? null : $("loan" + side[0].toUpperCase() + side.slice(1) + "Player").value;
+      if (loan && !players.includes(loan)) players.push(loan);
+      return '<div><strong>' + escapeHtml(teamLabel(name)) + '</strong><ul>' + players.map((player) => '<li>' + escapeHtml(displayName(player)) + (keeper(player) ? ' · Goleiro' : '') + (player === loan ? ' · emprestado' : '') + '</li>').join('') + '</ul></div>';
+    }).join('');
   }
   function renderQueueControls() {
     const current = state.currentGame, pending = state.pendingMatch;
@@ -843,7 +871,7 @@
     const homeSelect = $("matchHome"), awaySelect = $("matchAway");
     for (const [select, chosen, label] of [[homeSelect, current?.home || pending?.home, "Escolha o primeiro time"], [awaySelect, current?.away || pending?.away, "Escolha o segundo time"]]) {
       const selected = select.value;
-      namesForSelect(select, allTeams, label);
+      namesForSelect(select, allTeams, label, teamLabel);
       const value = !current && allTeams.includes(selected) ? selected : chosen;
       if (value && allTeams.includes(value)) select.value = value;
       select.disabled = !!current || allTeams.length < 2;
@@ -857,7 +885,9 @@
     $("durationMinutes").disabled = !!current || mode === "coca";
     $("beginGame").textContent = mode === "coca" ? "Começar jogo · 00:00" : "Começar jogo · " + clockText(duration * 60);
     $("nextMatchPreview").textContent = home && away && home !== away ? "Confronto escolhido: " + teamLabel(home) + " × " + teamLabel(away) : pending ? "Escolha dois times diferentes para preparar a partida." : "Sorteie os times para preparar a partida.";
+    renderLoanControls();
     renderMatchPreview();
+    renderKeeperChoices();
   }
   function renderTimer() {
     const timer = state.timer || freshTimer(state.timerMode),
@@ -932,39 +962,42 @@
     if (selected === home || selected === away) choice.value = selected;
   }
   function renderGoalOptions() {
-    const game = state.currentGame, teamSelect = $("goalTeam"), scorerSelect = $("goalScorer"), assistSelect = $("goalAssist"), teams = selectedTeams();
+    const game = state.currentGame, teamSelect = $("goalTeam"), scorerSelect = $("goalScorer"), assistSelect = $("goalAssist");
     const currentTeam = teamSelect.value;
-    namesForSelect(teamSelect, game ? [game.home, game.away] : [], game ? "Time que marcou" : "Comece um jogo primeiro");
+    namesForSelect(teamSelect, game ? [game.home, game.away] : [], game ? "Time que recebe o ponto" : "Comece um jogo primeiro", teamLabel);
     if (game) teamSelect.value = [game.home, game.away].includes(currentTeam) ? currentTeam : game.home;
-    const scoringTeam = teamSelect.value, otherTeam = scoringTeam === game?.home ? game?.away : game?.home;
-    const scorerNames = game ? $("ownGoal").checked ? lineupForTeam(otherTeam, game) : lineupForTeam(scoringTeam, game) : [];
+    const scoringTeam = teamSelect.value, authorTeam = $("ownGoal").checked ? (scoringTeam === game?.home ? game.away : game?.home) : scoringTeam;
+    const scorerNames = game ? lineupForTeam(authorTeam, game).filter((name) => !isPlayerSuspended(name, game)) : [];
     const previousScorer = scorerSelect.value;
     namesForSelect(scorerSelect, scorerNames, game ? "Escolha quem fez o gol" : "Comece um jogo primeiro");
     if (scorerNames.includes(previousScorer)) scorerSelect.value = previousScorer;
     $("ownGoal").disabled = !game;
-    const assistNames = game ? lineupForTeam(scoringTeam, game).filter((name) => name !== scorerSelect.value) : [];
+    const assistNames = game && !$("ownGoal").checked ? lineupForTeam(scoringTeam, game).filter((name) => name !== scorerSelect.value && !isPlayerSuspended(name, game)) : [];
     const previousAssist = assistSelect.value;
     namesForSelect(assistSelect, assistNames, assistNames.length ? "Assistência (opcional)" : "Sem assistência");
     if (assistNames.includes(previousAssist)) assistSelect.value = previousAssist;
     const players = game ? [...lineupForTeam(game.home, game), ...lineupForTeam(game.away, game)] : [];
     namesForSelect($("incidentPlayer"), players, game ? "Escolha o jogador envolvido" : "Comece um jogo primeiro");
-    namesForSelect($("warningPlayer"), players, game ? "Escolha o jogador" : "Comece um jogo primeiro");
     const goalButton = $("addGoal");
-    if (goalButton) goalButton.disabled = !game || !scorerSelect.value || goalSubmitting;
+    if (goalButton) goalButton.disabled = !game || !scorerSelect.value || goalSubmitting || isPlayerSuspended(scorerSelect.value, game);
     $("removeGoal").disabled = !game || !scorerSelect.value || !goals.some((g) => g.player_name === scorerSelect.value && g.game_id === game.id);
     $("openGoalDialog").disabled = !game;
-    $("openWarningDialog").disabled = !game;
-    $("addWarning").disabled = !game || !$("warningPlayer").value || warningSubmitting;
+    $("addIncident").disabled = !game || incidentSubmitting;
   }
   function renderKeeperChoices() {
     const game = state.currentGame;
     for (const [side, selectId, labelId] of [["home", "keeperHome", "keeperHomeLabel"], ["away", "keeperAway", "keeperAwayLabel"]]) {
       const select = $(selectId), label = $(labelId), teamName = game?.[side] || $(side === "home" ? "matchHome" : "matchAway").value || state.pendingMatch?.[side];
-      const players = lineupForTeam(teamName, game), preferred = players.find(keeper), current = game?.[side + "Keeper"];
+      const players = game ? lineupForTeam(teamName, game) : [...lineupForTeam(teamName)];
+      if (!game && players.length === 4) {
+        const loan = $("loan" + side[0].toUpperCase() + side.slice(1) + "Player").value;
+        if (loan && !players.includes(loan)) players.push(loan);
+      }
+      const preferred = players.find(keeper), current = game?.[side + "Keeper"];
       label.firstChild.textContent = "Goleiro · " + teamLabel(teamName || (side === "home" ? "Time 1" : "Time 2"));
-      namesForSelect(select, players, players.length ? "Escolha quem vai para o gol" : "Escolha os times primeiro");
+      namesForSelect(select, players.filter((player) => !isPlayerSuspended(player, game)), players.length ? "Escolha quem vai para o gol" : "Escolha os times primeiro");
       const selected = current || (players.includes(select.value) ? select.value : preferred);
-      if (selected && players.includes(selected)) select.value = selected;
+      if (selected && players.includes(selected) && !isPlayerSuspended(selected, game)) select.value = selected;
       select.disabled = !!game || !players.length;
     }
   }
@@ -992,7 +1025,7 @@
       const identity = game.id || game.number + '|' + game.home + '|' + game.away + '|' + game.finishedAt;
       if (seen.has(identity)) continue;
       seen.add(identity);
-      const home = ensure(game.home, game.homeLabel || teamMeta.get(game.home)), away = ensure(game.away, game.awayLabel || teamMeta.get(game.away));
+      const home = ensure(game.home, teamMeta.get(game.home) || gameTeamLabel(game, "home")), away = ensure(game.away, teamMeta.get(game.away) || gameTeamLabel(game, "away"));
       const hs = Number(game.homeScore) || 0, as = Number(game.awayScore) || 0;
       home.played++; away.played++; home.gf += hs; home.ga += as; away.gf += as; away.ga += hs;
       if (hs > as) { home.wins++; home.points += 3; away.losses++; }
@@ -1372,13 +1405,13 @@
                 .map(
                   (game) =>
                     "<p><span>" +
-                    escapeHtml(game.homeLabel || game.home) +
+                    escapeHtml(gameTeamLabel(game, "home")) +
                     " <b>" +
                     game.homeScore +
                     " × " +
                     game.awayScore +
                     "</b> " +
-                    escapeHtml(game.awayLabel || game.away) +
+                    escapeHtml(gameTeamLabel(game, "away")) +
                     "</span><small>" +
                     (game.winner === "Empate"
                       ? "Empate"
@@ -1443,7 +1476,7 @@
             .join("") || "<li>Sem score individual registrado.</li>";
         const eventRows = (game.incidents || []).map((item) => '<li>' + escapeHtml(item.type === 'warning' ? (item.warningType || 'Advertência') : (incidentLabels[item.type] || item.type)) + ' · ' + escapeHtml(displayName(item.player || '')) + ' · ' + (item.minute || 0) + '′</li>').join('') || '<li>Sem advertências ou ocorrências registradas</li>';
         const homePlayers = game.homePlayers || [], awayPlayers = game.awayPlayers || [];
-        const lineups = '<details class="history-lineups"><summary>Ver escalações e goleiros</summary><p><strong>' + escapeHtml(game.homeLabel || game.home) + '</strong> · Goleiro: ' + escapeHtml(displayName(game.homeKeeper || 'não registrado')) + '</p><ul>' + homePlayers.map((name) => '<li>' + escapeHtml(displayName(name)) + '</li>').join('') + '</ul><p><strong>' + escapeHtml(game.awayLabel || game.away) + '</strong> · Goleiro: ' + escapeHtml(displayName(game.awayKeeper || 'não registrado')) + '</p><ul>' + awayPlayers.map((name) => '<li>' + escapeHtml(displayName(name)) + '</li>').join('') + '</ul></details>';
+        const lineups = '<details class="history-lineups"><summary>Ver escalações e goleiros</summary><p><strong>' + escapeHtml(gameTeamLabel(game, "home")) + '</strong> · Goleiro: ' + escapeHtml(displayName(game.homeKeeper || 'não registrado')) + '</p><ul>' + homePlayers.map((name) => '<li>' + escapeHtml(displayName(name)) + ((game.loans || []).some((loan) => loan.player === name) ? ' · emprestado' : '') + '</li>').join('') + '</ul><p><strong>' + escapeHtml(gameTeamLabel(game, "away")) + '</strong> · Goleiro: ' + escapeHtml(displayName(game.awayKeeper || 'não registrado')) + '</p><ul>' + awayPlayers.map((name) => '<li>' + escapeHtml(displayName(name)) + ((game.loans || []).some((loan) => loan.player === name) ? ' · emprestado' : '') + '</li>').join('') + '</ul></details>';
         return (
           '<article class="history-game"><header><strong>JOGO ' +
           game.number +
@@ -1460,7 +1493,7 @@
           '</span></header><div class="history-score"><span class="' +
           (homeWinner ? "winner-team" : "") +
           '">' +
-          escapeHtml(game.homeLabel || game.home) +
+          escapeHtml(gameTeamLabel(game, "home")) +
           "</span><b>" +
           game.homeScore +
           " × " +
@@ -1468,7 +1501,7 @@
           '</b><span class="' +
           (awayWinner ? "winner-team" : "") +
           '">' +
-          escapeHtml(game.awayLabel || game.away) +
+          escapeHtml(gameTeamLabel(game, "away")) +
           '</span></div><p class="history-winner">' +
           (game.winner === "Empate"
             ? "Empate"
@@ -1536,32 +1569,31 @@
   const incidentLabels = { foul: "Falta", penalty: "Pênalti", hand: "Mão intencional · 1 minuto fora", keeper: "Bola recuada para o goleiro", other: "Outra ocorrência", warning: "Advertência" };
   function renderIncidents() {
     const list = $("incidentList"), entries = state.incidents || [];
-    if (!entries.length) { list.innerHTML = '<p class="empty-state">Nenhuma ocorrência registrada nesta partida.</p>'; return; }
-    list.innerHTML = [...entries].reverse().map((item) => {
-      const active = item.expiresAt && item.expiresAt > Date.now(), left = active ? Math.ceil((item.expiresAt-Date.now())/1000) : 0;
-      const status = item.expiresAt ? active ? 'Retorno em 00:' + String(left).padStart(2,'0') : 'Liberado para retornar' : 'Registrado';
-      const label = item.type === 'warning' ? (item.warningType || 'Advertência') : (incidentLabels[item.type] || item.type);
-      const time = item.createdAt ? new Date(item.createdAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '—';
-      return '<article class="incident-row"><div><strong>' + escapeHtml(label) + ' · ' + escapeHtml(displayName(item.player || 'Sem jogador associado')) + '</strong><small>' + escapeHtml(item.note || 'Minuto ' + (item.minute || 0)) + ' · ' + time + '</small></div><span class="incident-status ' + (item.expiresAt && !active ? 'done' : '') + '">' + status + '</span></article>';
-    }).join('');
+    if (!entries.length) { suspensionSignature = ""; list.innerHTML = '<p class="empty-state">Nenhuma ocorrência registrada nesta partida.</p>'; return; }
+    list.innerHTML = [...entries].filter((item) => !state.currentGame || !item.gameId || item.gameId === state.currentGame.id).reverse().map((item) => {
+      const active = item.type === "hand" && item.gameId === state.currentGame?.id && Number(item.expiresAt) > Date.now();
+      const left = active ? Math.ceil((Number(item.expiresAt) - Date.now()) / 1000) : 0;
+      const status = item.type === "hand" ? active ? "Retorno em " + clockText(left) : "Liberado para retornar" : "Registrado";
+      const label = item.type === "warning" ? (item.warningType || "Advertência") : (incidentLabels[item.type] || item.type);
+      const time = item.createdAt ? new Date(item.createdAt).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : "—";
+      return '<article class="incident-row"><div><strong>' + escapeHtml(label) + " · " + escapeHtml(displayName(item.player || "Sem jogador associado")) + '</strong><small>' + escapeHtml(item.note || "Minuto " + (item.minute || 0)) + " · " + time + '</small></div><span class="incident-status ' + (item.type === "hand" && !active ? "done" : "") + '">' + status + '</span></article>';
+    }).join("");
+    const suspended = (state.incidents || []).filter((item) => item.type === "hand" && item.gameId === state.currentGame?.id && Number(item.expiresAt) > Date.now()).map((item) => item.player).sort().join("|");
+    if (suspended !== suspensionSignature) { suspensionSignature = suspended; renderGoalOptions(); renderKeeperChoices(); }
   }
   async function addIncident() {
-    const type = $("incidentType").value, player = $("incidentPlayer").value, game = state.currentGame;
+    if (incidentSubmitting) return;
+    const selectedType = $("incidentType").value, player = $("incidentPlayer").value, game = state.currentGame;
+    const warningTypes = { warning_verbal: "Advertência verbal", warning_yellow: "Cartão amarelo", warning_red: "Cartão vermelho" };
+    const type = warningTypes[selectedType] ? "warning" : selectedType;
     if (!game || !player || ![...(game.homePlayers || []), ...(game.awayPlayers || [])].includes(player)) { notify("Escolha um jogador da partida em andamento.", true); return; }
-    const item = { id: crypto.randomUUID(), gameId: game.id, minute: Math.max(1, Math.ceil(timerElapsed()/60)), type, player, note: $("incidentNote").value.trim(), createdAt: new Date().toISOString(), expiresAt: type === "hand" ? Date.now()+60000 : null };
-    await saveState({ incidents: [...(state.incidents || []), item] }, type === "hand" ? displayName(player) + " ficará fora por 1 minuto." : "Ocorrência registrada no minuto " + item.minute + ".");
-    $("incidentNote").value = "";
-  }
-  async function addWarning() {
-    if (warningSubmitting) return;
-    const game = state.currentGame, player = $("warningPlayer").value, warningType = $("warningType").value;
-    if (!game || !player || !warningType || ![...(game.homePlayers || []), ...(game.awayPlayers || [])].includes(player)) { notify("Selecione um jogador da partida e o tipo de advertência.", true); return; }
-    warningSubmitting = true; $("addWarning").disabled = true;
-    const item = { id: crypto.randomUUID(), gameId: game.id, minute: Math.max(1, Math.ceil(timerElapsed()/60)), type: "warning", warningType, player, createdAt: new Date().toISOString(), expiresAt: null };
+    const item = { id: crypto.randomUUID(), gameId: game.id, minute: Math.max(1, Math.ceil(timerElapsed()/60)), type, player, note: $("incidentNote").value.trim(), createdAt: new Date().toISOString(), expiresAt: type === "hand" ? Date.now() + 60000 : null };
+    if (type === "warning") item.warningType = warningTypes[selectedType];
+    incidentSubmitting = true; $("addIncident").disabled = true;
     try {
-      const saved = await saveState({ incidents: [...(state.incidents || []), item] }, "Advertência registrada no minuto " + item.minute + ".");
-      if (saved && $("warningDialog").open) $("warningDialog").close();
-    } finally { warningSubmitting = false; renderGoalOptions(); }
+      const saved = await saveState({ incidents: [...(state.incidents || []), item] }, type === "hand" ? displayName(player) + " ficará fora por 1 minuto." : type === "warning" ? item.warningType + " registrada." : "Ocorrência registrada no minuto " + item.minute + ".");
+      if (saved) $("incidentNote").value = "";
+    } finally { incidentSubmitting = false; renderGoalOptions(); }
   }
   function renderRoster() {
     const roster = state.roster || [],
@@ -1720,13 +1752,13 @@
             '">Jogo ' +
             game.number +
             " · " +
-            escapeHtml(game.homeLabel || game.home) +
+            escapeHtml(gameTeamLabel(game, "home")) +
             " " +
             game.homeScore +
             " × " +
             game.awayScore +
             " " +
-            escapeHtml(game.awayLabel || game.away) +
+            escapeHtml(gameTeamLabel(game, "away")) +
             "</option>",
         )
         .join("");
@@ -2115,7 +2147,7 @@
       return;
     const starterTotal = startersFor(state.roster.length);
     const teams = ["Time Águia", "Time Sol", "Time Verde", "Time Azul"]
-      .slice(0, starterTotal / 5)
+      .slice(0, Math.ceil(starterTotal / 5))
       .map((name) => ({ name, players: [] }));
     const starters = state.roster.slice(0, starterTotal),
       reserves = state.roster.slice(starterTotal),
@@ -2165,13 +2197,23 @@
     const home = $("matchHome").value, away = $("matchAway").value, teams = state.teams || [];
     if (!home || !away || home === away || !teams.some((team) => team.name === home) || !teams.some((team) => team.name === away)) { notify("Escolha dois times diferentes e válidos.", true); return; }
     const homePlayers = [...lineupForTeam(home)], awayPlayers = [...lineupForTeam(away)], mode = state.timerMode || "liga", maxPlayers = mode === "coca" ? 8 : 5;
+    const homeLoan = $("loanHomePlayer").value, awayLoan = $("loanAwayPlayer").value;
+    const loans = [];
+    for (const [teamName, loan, players] of [[home, homeLoan, homePlayers], [away, awayLoan, awayPlayers]]) {
+      if (!loan) continue;
+      const source = (state.teams || []).find((team) => team.name !== home && team.name !== away && lineupForTeam(team.name).includes(loan));
+      if (players.length !== 4 || !source || players.includes(loan) || (state.absentPlayers || {})[loan]) { notify("O empréstimo deve vir de um time fora do confronto e completar uma equipe com quatro jogadores.", true); return; }
+      players.push(loan);
+      loans.push({ player: loan, fromTeam: source.name, toTeam: teamName });
+    }
+    if (new Set([...homePlayers, ...awayPlayers]).size !== homePlayers.length + awayPlayers.length) { notify("Um jogador não pode estar nos dois times da partida.", true); return; }
     if (homePlayers.length < 4 || awayPlayers.length < 4 || homePlayers.length > maxPlayers || awayPlayers.length > maxPlayers) { notify("Cada time precisa ter de quatro a " + maxPlayers + " jogadores neste modo.", true); return; }
     const homeKeeper = $("keeperHome").value, awayKeeper = $("keeperAway").value;
     if (!homeKeeper || !awayKeeper || !homePlayers.includes(homeKeeper) || !awayPlayers.includes(awayKeeper)) { notify("Defina um goleiro que esteja escalado em cada time.", true); return; }
     const durationMinutes = Number($("durationMinutes").value);
     if (mode === "liga" && (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 180)) { notify("A duração deve ser de 1 a 180 minutos.", true); return; }
     const now = Date.now(), duration = mode === "coca" ? 0 : durationMinutes * 60;
-    const currentGame = { id: crypto.randomUUID(), roundId: state.roundId || null, number: (state.gameHistory || []).length + 1, home, away, homePlayers, awayPlayers, homeKeeper, awayKeeper, timerMode: mode, durationMinutes: mode === "coca" ? null : durationMinutes, startedAt: now };
+    const currentGame = { id: crypto.randomUUID(), roundId: state.roundId || null, number: (state.gameHistory || []).length + 1, home, away, homePlayers, awayPlayers, homeKeeper, awayKeeper, loans, timerMode: mode, durationMinutes: mode === "coca" ? null : durationMinutes, startedAt: now };
     const order = [...(state.challengeQueue || []), pending.home, pending.away, ...teams.map((team) => team.name)].filter((name,index,all) => name && name !== home && name !== away && all.indexOf(name) === index);
     const nextQueue = order;
     const nextPending = { home, away };
@@ -2249,7 +2291,8 @@
     const game = state.currentGame, player = $("goalScorer").value, scoringTeam = $("goalTeam").value, assistedBy = $("goalAssist").value || null, ownGoal = $("ownGoal").checked;
     if (!game || !player || ![game.home, game.away].includes(scoringTeam)) { notify("Escolha o time e o autor do gol.", true); return; }
     const actualTeam = teamForPlayer(player), expectedAuthorTeam = ownGoal ? (scoringTeam === game.home ? game.away : game.home) : scoringTeam;
-    if (actualTeam !== expectedAuthorTeam || (assistedBy && (assistedBy === player || !lineupForTeam(scoringTeam, game).includes(assistedBy)))) { notify("Confira o autor e a assistência do gol.", true); return; }
+    if (isPlayerSuspended(player, game) || (assistedBy && isPlayerSuspended(assistedBy, game))) { notify("Jogador suspenso não pode participar do gol ou da assistência.", true); return; }
+    if (actualTeam !== expectedAuthorTeam || (assistedBy && (ownGoal || assistedBy === player || !lineupForTeam(scoringTeam, game).includes(assistedBy)))) { notify("Confira o autor e a assistência do gol.", true); return; }
     if ((shared && !canManageShared) || (!shared && window.LIGA_CONFIG?.publicReadOnly === true)) { notify("Somente o organizador pode registrar gols.", true); return; }
     const elapsed = Math.max(0, Math.floor(timerElapsed())), minute = Math.max(1, Math.ceil(elapsed / 60));
     const goal = { id: crypto.randomUUID(), player_name: player, team_name: actualTeam, score_team_name: scoringTeam, own_goal: ownGoal, assisted_by: assistedBy, match_number: game.number, game_id: game.id, minute };
@@ -2429,8 +2472,10 @@
       const team = event.target.dataset?.teamLabel;
       if (!team) return;
       const value = event.target.value.trim().slice(0, 30);
+      const teamLabels = { ...(state.teamLabels || {}), [team]: value };
+      const gameHistory = (state.gameHistory || []).map((game) => game.roundId === state.roundId ? { ...game, homeLabel: teamLabels[game.home] || game.home, awayLabel: teamLabels[game.away] || game.away } : game);
       saveState(
-        { teamLabels: { ...(state.teamLabels || {}), [team]: value } },
+        { teamLabels, gameHistory },
         value ? "Nome do time salvo." : "Nome do time removido.",
       );
     });
@@ -2456,7 +2501,14 @@
       ),
     );
     $("beginGame").addEventListener("click", beginGame);
+    $("matchHome").addEventListener("change", () => { renderQueueControls(); renderKeeperChoices(); });
+    $("matchAway").addEventListener("change", () => { renderQueueControls(); renderKeeperChoices(); });
+    $("loanHomePlayer").addEventListener("change", () => { renderLoanControls(); renderMatchPreview(); renderKeeperChoices(); });
+    $("loanAwayPlayer").addEventListener("change", () => { renderLoanControls(); renderMatchPreview(); renderKeeperChoices(); });
     $("pauseTimer").addEventListener("click", pauseTimer);
+    $("openGoalDialog").addEventListener("click", () => { renderGoalOptions(); if (state.currentGame) $("goalDialog").showModal(); });
+    $("goalTeam").addEventListener("change", renderGoalOptions);
+    $("ownGoal").addEventListener("change", renderGoalOptions);
     $("addGoal").addEventListener("click", addGoal);
     $("removeGoal").addEventListener("click", removeSelectedGoal);
     $("goalScorer").addEventListener("change", renderGoalOptions);
