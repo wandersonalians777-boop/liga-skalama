@@ -988,6 +988,16 @@
     $("openGoalDialog").disabled = !game;
     $("addIncident").disabled = !game || incidentSubmitting;
   }
+  function updateBeginGameAvailability() {
+    const home = $("matchHome").value, away = $("matchAway").value, teams = state.teams || [];
+    const validMatch = !state.currentGame && !!state.pendingMatch && home && away && home !== away && teams.some((team) => team.name === home) && teams.some((team) => team.name === away);
+    const homePlayers = [...lineupForTeam(home)], awayPlayers = [...lineupForTeam(away)];
+    const homeLoan = $("loanHomePlayer").value, awayLoan = $("loanAwayPlayer").value;
+    if (homePlayers.length === 4 && homeLoan && !homePlayers.includes(homeLoan)) homePlayers.push(homeLoan);
+    if (awayPlayers.length === 4 && awayLoan && !awayPlayers.includes(awayLoan)) awayPlayers.push(awayLoan);
+    const keepersSelected = homePlayers.includes($("keeperHome").value) && awayPlayers.includes($("keeperAway").value);
+    $("beginGame").disabled = !validMatch || !keepersSelected;
+  }
   function renderKeeperChoices() {
     const game = state.currentGame;
     for (const [side, selectId, labelId] of [["home", "keeperHome", "keeperHomeLabel"], ["away", "keeperAway", "keeperAwayLabel"]]) {
@@ -1004,6 +1014,7 @@
       if (selected && players.includes(selected) && !isPlayerSuspended(selected, game)) select.value = selected;
       select.disabled = !!game || !players.length;
     }
+    updateBeginGameAvailability();
   }
   function performanceForGame(game, homeScore, awayScore, gameGoals) {
     const stats = [], assistPoints = Math.max(0, Number(state.scoreRules?.assist ?? SCORE_RULES.assist));
