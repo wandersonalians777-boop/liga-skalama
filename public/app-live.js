@@ -945,6 +945,14 @@
       : "Partida em preparação";
     $("scoreHomeName").textContent = teamLabel(home);
     $("scoreAwayName").textContent = teamLabel(away);
+    const scoreboard = document.querySelector(".live-match-stage .scoreboard");
+    if (scoreboard) {
+      const homeColor = colorOf(home), awayColor = colorOf(away);
+      scoreboard.style.setProperty("--home-color", homeColor.color);
+      scoreboard.style.setProperty("--home-ink", homeColor.ink);
+      scoreboard.style.setProperty("--away-color", awayColor.color);
+      scoreboard.style.setProperty("--away-ink", awayColor.ink);
+    }
     $("scoreHome").textContent = hasGame ? currentScore(home) : 0;
     $("scoreAway").textContent = hasGame ? currentScore(away) : 0;
     $("scoreHomeGoals").innerHTML = renderScoreGoalList(home, state.currentGame);
@@ -2554,6 +2562,7 @@
   async function finishGame() {
     const current = state.currentGame;
     if (!current || gameFinishing) return;
+    if (!confirm("Encerrar este jogo e salvar o placar no histórico?")) return;
     gameFinishing = true;
     $("finishGame").disabled = true;
     const homeScore = currentScore(current.home),
