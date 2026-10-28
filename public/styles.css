@@ -250,12 +250,12 @@ body.live-view-active .page-shell{max-width:1100px;padding-top:20px}
 .live-match-stage .scoreboard>span{font-size:42px;color:#fff}
 .live-match-stage .score-goal-list{grid-area:scorers;max-width:none;margin:0;color:currentColor}
 .live-match-stage .score-goal-item,.live-match-stage .score-goal-item time{color:currentColor}
-.match-timer-card{width:min(350px,100%);margin:0 auto -54px;position:relative;z-index:1;display:grid;justify-items:center;padding:10px 18px 13px;border:2px solid #efcc00;border-radius:15px;background:#0c0c0e;color:#fff;box-shadow:0 8px 22px #0008}
+.match-timer-card{width:min(350px,100%);margin:0 auto;position:relative;z-index:1;display:grid;justify-items:center;padding:10px 18px 13px;border:2px solid #efcc00;border-radius:15px;background:#0c0c0e;color:#fff;box-shadow:0 8px 22px #0008}
 .match-timer-card>span{font-size:25px;color:#ffdf00;line-height:1}
-.live-section .timer-display{margin:0;color:#fff;font-size:clamp(66px,10vw,96px);line-height:.9;text-shadow:none}
+.live-section .timer-display{margin:0;color:#ffdc00;font-size:clamp(66px,10vw,96px);line-height:.9;text-shadow:none}
 .live-section .timer-status{margin-top:6px;min-height:0;color:#fff;text-transform:uppercase;font-size:10px;font-weight:900;letter-spacing:.05em}
 .match-timer-card .help-text{margin:5px 0 0;color:#e4cc4a;font-size:10px;font-weight:800}
-.live-action-layout{display:grid;grid-template-columns:minmax(280px,.92fr) minmax(0,1.3fr);gap:14px;align-items:stretch;margin-top:67px}
+.live-action-layout{display:grid;grid-template-columns:minmax(280px,.92fr) minmax(0,1.3fr);gap:14px;align-items:stretch;margin-top:14px}
 .match-action-stack{display:grid;gap:10px}
 .match-action-stack .score-controls,.match-action-stack .timer-controls,.finish-controls{display:grid;margin:0}
 .button-goal,.button-pause,.button-finish{display:flex;align-items:center;gap:15px;min-height:75px;padding:13px 18px;border:0;border-radius:11px;text-align:left}
@@ -263,7 +263,7 @@ body.live-view-active .page-shell{max-width:1100px;padding-top:20px}
 .button-goal>span:last-child,.button-pause>span:last-child,.button-finish>span:last-child{display:grid;gap:3px}
 .button-goal strong,.button-pause strong,.button-finish strong{font:900 22px/.9 'Barlow Condensed',sans-serif}
 .button-goal small,.button-pause small,.button-finish small{font-size:11px;font-weight:650}
-.button-goal{background:linear-gradient(100deg,#ffdd00,#ffc400);color:#14120a}
+.button-goal{background:linear-gradient(100deg,#11984a,#057436);color:#fff}
 .button-pause{background:#f4f4f6;color:#15151b}
 .button-finish{background:linear-gradient(100deg,#fa3b4d,#df1531);color:#fff}
 .button-finish>span:first-child{background:#201014}
@@ -298,8 +298,8 @@ body.live-view-active .page-shell{max-width:1100px;padding-top:20px}
   .live-match-stage .scoreboard strong{min-width:68px;min-height:58px;font-size:50px}
   .live-match-stage .scoreboard>span{font-size:28px}
   .live-match-stage .score-goal-list,.live-match-stage .score-goal-item{justify-content:center!important;text-align:center}
-  .match-timer-card{margin:0 auto -42px}
-  .live-action-layout{margin-top:52px}
+  .match-timer-card{margin:0 auto}
+  .live-action-layout{margin-top:14px}
   .incident-panel .fields{grid-template-columns:1fr}
   .button-incident{justify-self:stretch}
   .live-rules-strip{display:grid;grid-template-columns:1fr}
