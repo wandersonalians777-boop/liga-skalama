@@ -30,8 +30,9 @@ export default function Home() {
         container.current.innerHTML = markup;
         if (!window.__LIGA_SKALAMA_SCRIPTS_LOADED__) {
           window.__LIGA_SKALAMA_SCRIPTS_LOADED__ = true;
-          await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js');
-          await loadScript(`${base}/app-live.js?v=${assetVersion}`);
+          await loadScript(`${base}/config.js?v=${assetVersion}`);
+await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js');
+await loadScript(`${base}/app-live.js?v=${assetVersion}`);
         }
       } catch (cause) {
         window.__LIGA_SKALAMA_SCRIPTS_LOADED__ = false;
