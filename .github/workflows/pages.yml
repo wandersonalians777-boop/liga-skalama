@@ -30,12 +30,37 @@ jobs:
           cache: pnpm
       - name: Instalar dependências
         run: pnpm install --frozen-lockfile
+     
+      - name: Gerar configuração pública da Supabase
+        env:
+          SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const config = {
+            supabaseUrl: process.env.SUPABASE_URL,
+            supabaseAnonKey: process.env.SUPABASE_ANON_KEY
+          };
+
+          if (!config.supabaseUrl || !config.supabaseAnonKey) {
+            throw new Error('As variáveis da Supabase não estão configuradas.');
+          }
+
+          fs.writeFileSync(
+            'public/config.js',
+            `window.LIGA_CONFIG = ${JSON.stringify(config)};\n`
+          );
+          NODE
+
       - name: Gerar o site Next.js
         run: pnpm build
         env:
           NEXT_PUBLIC_ASSET_VERSION: ${{ github.sha }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
       - name: Preservar os arquivos estáticos do Next
         run: touch out/.nojekyll
       - name: Preparar GitHub Pages
