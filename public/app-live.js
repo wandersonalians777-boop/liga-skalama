@@ -159,9 +159,18 @@
   }
   function updateAccessUI() {
     const button = $("adminAccessButton"),
-      label = $("accessLabel");
+      label = $("accessLabel"),
+      online = shared && !!client;
+    setConnection(
+      online
+        ? canManageShared
+          ? "Banco online · organizador"
+          : "Banco online · leitura pública"
+        : "Aguardando banco compartilhado",
+      online,
+    );
     if (!button || !label) return;
-    if (!shared) {
+    if (!online) {
       const publicOnly = window.LIGA_CONFIG?.publicReadOnly === true;
       button.hidden = true;
       label.hidden = !publicOnly;
@@ -178,12 +187,6 @@
     button.textContent = adminSession
       ? "Sair do modo organizador"
       : "Entrar como organizador";
-    setConnection(
-      canManageShared
-        ? "Banco online · organizador"
-        : "Banco online · leitura pública",
-      true,
-    );
   }
   function applyEditLock() {
     const locked = (shared && !canManageShared) || (!shared && window.LIGA_CONFIG?.publicReadOnly === true);
