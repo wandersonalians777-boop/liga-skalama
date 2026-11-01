@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-const base = '/liga-skalama';
+const base = '';
 const assetVersion = process.env.NEXT_PUBLIC_ASSET_VERSION || 'dev';
 
 function loadScript(src) {

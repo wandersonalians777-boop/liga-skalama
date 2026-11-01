@@ -1,7 +1,7 @@
 export const metadata = {
   title: 'LIGA SKALAMA — Dia de Fut',
   description: 'Organização da Liga Skalama: sorteio, partidas, placares e estatísticas.',
-  icons: { icon: '/liga-skalama/assets/escudo-skalama-oficial.png' },
+  icons: { icon: '/assets/escudo-skalama-oficial.png' },
 };
 
 export const viewport = {
@@ -23,7 +23,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="pt-BR">
       <head>
-        <link rel="stylesheet" href={`/liga-skalama/styles.css?v=${assetVersion}`} />
+        <link rel="stylesheet" href={`/styles.css?v=${assetVersion}`} />
         <script
           dangerouslySetInnerHTML={{
             __html: `window.LIGA_CONFIG=${JSON.stringify(ligaConfig).replace(/</g, '\\u003c')};`,
