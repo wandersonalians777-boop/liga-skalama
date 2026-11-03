@@ -316,3 +316,32 @@ body .season-highlight-card{background:linear-gradient(145deg,#24231c,#171717);b
 body .season-highlight-card .season-kicker{color:#ffc400}
 body .season-highlight-card strong{color:#ffc400}
 body .season-highlight-card small{color:#fff}
+
+/* Troca de jogadores entre times (aba Elenco e sorteio) */
+.teams-grid .swap-hint{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px dashed #514611;border-radius:10px;background:#17160f;color:var(--muted);font-size:11px;line-height:1.5}
+.teams-grid .swap-hint.active{border-style:solid;border-color:var(--yellow);color:var(--ink);background:#29230d}
+.team-card li.swap-row{padding:4px 0!important;justify-content:space-between;gap:8px;border-radius:8px}
+.swap-row .swap-name{flex:1;min-width:0;overflow-wrap:anywhere}
+.swap-row.selected{background:#ffc40026;box-shadow:inset 3px 0 var(--yellow)}
+.swap-row.selected .swap-name{font-weight:800}
+.swap-btn{flex:none;display:grid;place-items:center;width:38px;height:34px;padding:0;border:2px solid #111;border-radius:9px;background:var(--yellow);cursor:pointer;transition:transform .12s,filter .12s}
+.swap-btn svg path{fill:#111;stroke:#111;stroke-width:1;stroke-linejoin:round}
+.swap-btn:hover:not(:disabled){filter:brightness(1.08);transform:scale(1.06)}
+.swap-btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.swap-btn[aria-pressed="true"]{background:#111;border-color:var(--yellow)}
+.swap-btn[aria-pressed="true"] svg path{fill:var(--yellow);stroke:var(--yellow)}
+.swap-row.swap-target .swap-btn{box-shadow:0 0 0 2px #ffc40055}
+.swap-btn:disabled{opacity:.4;cursor:not-allowed}
+.swap-drop{display:block;width:calc(100% - 20px);margin:8px 10px 0;padding:9px 10px;min-height:40px;border:1px solid var(--yellow);border-radius:8px;background:#29230d;color:var(--yellow);font-weight:800;font-size:11px}
+.swap-drop:hover{background:var(--yellow);color:#15130a}
+.swap-reserves{grid-column:1/-1;padding:12px;border:1px solid #393939;border-radius:11px;background:#151515}
+.swap-reserves>strong{display:block;margin-bottom:8px;font:800 15px 'Barlow Condensed',sans-serif;text-transform:uppercase}
+.swap-reserves .swap-drop{width:100%;margin:0 0 8px}
+.swap-chips{display:flex;flex-wrap:wrap;gap:6px}
+.swap-chip{display:inline-flex;align-items:center;gap:8px;padding:4px 4px 4px 12px;border:1px solid #444;border-radius:10px;background:#222;font-size:11px}
+.swap-chip.selected{border-color:var(--yellow)}
+.swap-chip::before{display:none!important}
+body.light-theme .swap-hint{background:#fff8dc}
+body.light-theme .swap-hint.active{background:#fff0b3;color:#202020}
+body.light-theme .swap-reserves{background:#fff}
+body.light-theme .swap-chip{background:#f2f2ee;color:#202020;border-color:#d4d4cc}

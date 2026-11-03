@@ -492,6 +492,76 @@
     const note = $("loanHelp");
     if (note) note.textContent = wrap.hidden ? "" : "Empréstimo válido só nesta partida. A escalação original continua igual.";
   }
+
+  let swapPick = null;
+  const swapCapacity = () => ((state.timerMode || "liga") === "coca" ? 9 : 5);
+  const swapPlaying = () => new Set([state.currentGame?.home, state.currentGame?.away].filter(Boolean));
+  const swapLocked = (teamName) => swapPlaying().has(teamName);
+  const SWAP_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 4 2 8l6 4V9.5h12v-3H8Z"/><path d="m16 12 6 4-6 4v-2.5H4v-3h12Z"/></svg>';
+  function swapButton(team, player, locked) {
+    const selected = swapPick && swapPick.team === team && swapPick.player === player;
+    const label = selected ? "Cancelar troca de " + displayName(player) : swapPick && swapPick.team !== team ? "Trocar com " + displayName(player) : "Trocar " + displayName(player) + " de time";
+    return '<button type="button" class="swap-btn" data-swap-team="' + escapeHtml(team) + '" data-swap-player="' + escapeHtml(player) + '" title="' + escapeHtml(label) + '" aria-label="' + escapeHtml(label) + '" aria-pressed="' + (selected ? "true" : "false") + '"' + (locked ? " disabled" : "") + '>' + SWAP_ICON + '</button>';
+  }
+  function swapHintMarkup() {
+    const text = !swapPick
+      ? "Quer trocar alguém de time? Toque no botão ⇄ ao lado de um jogador e depois no ⇄ de outro jogador de outro time para trocar os dois, ou em \"Mover para cá\" para passá-lo a um time com vaga."
+      : "Selecionado: " + displayName(swapPick.player) + " (" + (swapPick.team === "__reservas" ? "Reservas" : teamLabel(swapPick.team)) + "). Toque no ⇄ de outro jogador para trocar, ou escolha um time com vaga.";
+    return '<div class="swap-hint' + (swapPick ? ' active' : '') + '"><span>' + escapeHtml(text) + '</span>' + (swapPick ? '<button type="button" class="button button-outline button-small" data-swap-cancel>Cancelar seleção</button>' : '') + '</div>';
+  }
+  function swapReservesMarkup() {
+    const reserves = state.reservePlayers || [];
+    if (!reserves.length && !swapPick) return "";
+    const chips = reserves.map((name) => '<span class="swap-chip swap-row' + (swapPick && swapPick.team === "__reservas" && swapPick.player === name ? ' selected' : '') + (swapPick && swapPick.team !== "__reservas" ? ' swap-target' : '') + '"><span class="swap-name">' + escapeHtml(displayName(name)) + (keeper(name) ? ' <b class="keeper-mark">*</b>' : '') + '</span>' + swapButton("__reservas", name, false) + '</span>').join("");
+    const toBench = swapPick && swapPick.team !== "__reservas" ? '<button type="button" class="swap-drop" data-swap-drop="__reservas">Mandar ' + escapeHtml(displayName(swapPick.player)) + ' para as reservas</button>' : "";
+    return '<section class="swap-reserves"><strong>Reservas do sorteio (' + reserves.length + ')</strong>' + toBench + '<div class="swap-chips">' + (chips || '<span class="help-text">Nenhuma reserva.</span>') + '</div></section>';
+  }
+  function swapLineups() {
+    return Object.fromEntries((state.teams || []).map((team) => [team.name, [...lineupForTeam(team.name)]]));
+  }
+  function swapApply(lineups, reserves, message) {
+    swapPick = null;
+    saveState({ lineups, reservePlayers: reserves }, message);
+    renderTeams();
+  }
+  function swapClickPlayer(team, player) {
+    if (state.currentGame && swapLocked(team)) { notify("Esse time está jogando agora. Troque depois da partida.", true); return; }
+    if (!swapPick || (swapPick.team === team && swapPick.player === player)) {
+      swapPick = swapPick && swapPick.team === team && swapPick.player === player ? null : { team, player };
+      renderTeams();
+      return;
+    }
+    if (swapPick.team === team) { swapPick = { team, player }; renderTeams(); return; }
+    const a = swapPick, lineups = swapLineups(), reserves = [...(state.reservePlayers || [])];
+    const listOf = (t) => (t === "__reservas" ? reserves : lineups[t]);
+    const la = listOf(a.team), lb = listOf(team);
+    if (!la || !lb || !la.includes(a.player) || !lb.includes(player)) { swapPick = null; renderTeams(); return; }
+    la[la.indexOf(a.player)] = player;
+    lb[lb.indexOf(player)] = a.player;
+    for (const t of [a.team, team]) {
+      if (t !== "__reservas" && lineups[t].filter(keeper).length > 1) { notify("Essa troca deixaria " + teamLabel(t) + " com dois goleiros (*).", true); return; }
+    }
+    const nameOf = (t) => (t === "__reservas" ? "as reservas" : teamLabel(t));
+    swapApply(lineups, reserves, displayName(a.player) + " foi para " + nameOf(team) + " e " + displayName(player) + " foi para " + nameOf(a.team) + ".");
+  }
+  function swapDrop(target) {
+    const a = swapPick;
+    if (!a || a.team === target) return;
+    const lineups = swapLineups(), reserves = [...(state.reservePlayers || [])];
+    if (target !== "__reservas" && (swapLocked(target) || lineups[target].length >= swapCapacity())) { notify("Esse time está completo ou jogando agora.", true); return; }
+    if (target !== "__reservas" && keeper(a.player) && lineups[target].some(keeper)) { notify("Esse time já tem um goleiro (*).", true); return; }
+    if (a.team === "__reservas") reserves.splice(reserves.indexOf(a.player), 1); else lineups[a.team] = lineups[a.team].filter((name) => name !== a.player);
+    if (target === "__reservas") reserves.push(a.player); else lineups[target].push(a.player);
+    swapApply(lineups, reserves, displayName(a.player) + " foi para " + (target === "__reservas" ? "as reservas" : teamLabel(target)) + ".");
+  }
+  function bindSwapGrid() {
+    $("teamsGrid").addEventListener("click", (event) => {
+      const player = event.target.closest("[data-swap-player]"), drop = event.target.closest("[data-swap-drop]"), cancel = event.target.closest("[data-swap-cancel]");
+      if (player) swapClickPlayer(player.dataset.swapTeam, player.dataset.swapPlayer);
+      else if (drop) swapDrop(drop.dataset.swapDrop);
+      else if (cancel) { swapPick = null; renderTeams(); }
+    });
+  }
   function renderTeams() {
     const grid = $("teamsGrid"), publicGrid = $("publicTeamsGrid"), teams = state.teams || [];
     if (!teams.length) {
@@ -501,10 +571,11 @@
     }
     const markup = teams.map((team, index) => {
       const color = teamColors[index] || teamColors[0], players = lineupForTeam(team.name), short = players.length === 4;
-      const items = players.map((name) => '<li>' + escapeHtml(displayName(name)) + (keeper(name) ? ' <b class="keeper-mark">*</b>' : '') + '</li>').join('');
-      return '<article class="team-card ' + (short ? 'team-card-short' : '') + '"><header class="team-head" style="--team-color:' + color.color + ';--team-ink:' + color.ink + '"><span>' + (teamLogos[team.name] ? '<img class="team-logo" src="' + teamLogos[team.name] + '" alt="">' : '') + escapeHtml(teamLabel(team.name)) + '</span><small>' + players.length + ' JOGADORES' + (short ? ' · VAGA' : '') + '</small></header><input class="team-label-input" data-team-label="' + escapeHtml(team.name) + '" maxlength="30" placeholder="Nome do time (opcional)" aria-label="Nome do ' + escapeHtml(team.name) + ' (opcional)" value="' + escapeHtml(state.teamLabels?.[team.name] || '') + '"><ol>' + items + '</ol></article>';
+      const locked = swapLocked(team.name), canDrop = !!swapPick && swapPick.team !== team.name && !locked && players.length < swapCapacity();
+      const items = players.map((name) => '<li class="swap-row' + (swapPick && swapPick.team === team.name && swapPick.player === name ? ' selected' : '') + (swapPick && swapPick.team !== team.name && !locked ? ' swap-target' : '') + '"><span class="swap-name">' + escapeHtml(displayName(name)) + (keeper(name) ? ' <b class="keeper-mark">*</b>' : '') + '</span>' + swapButton(team.name, name, locked) + '</li>').join('');
+      return '<article class="team-card ' + (short ? 'team-card-short' : '') + '"><header class="team-head" style="--team-color:' + color.color + ';--team-ink:' + color.ink + '"><span>' + (teamLogos[team.name] ? '<img class="team-logo" src="' + teamLogos[team.name] + '" alt="">' : '') + escapeHtml(teamLabel(team.name)) + '</span><small>' + players.length + ' JOGADORES' + (short ? ' · VAGA' : players.length < 4 ? ' · INCOMPLETO' : '') + '</small></header>' + (canDrop ? '<button type="button" class="swap-drop" data-swap-drop="' + escapeHtml(team.name) + '">Mover ' + escapeHtml(displayName(swapPick.player)) + ' para cá</button>' : '') + '<input class="team-label-input" data-team-label="' + escapeHtml(team.name) + '" maxlength="30" placeholder="Nome do time (opcional)" aria-label="Nome do ' + escapeHtml(team.name) + ' (opcional)" value="' + escapeHtml(state.teamLabels?.[team.name] || '') + '"><ol>' + items + '</ol></article>';
     }).join('');
-    grid.innerHTML = markup;
+    grid.innerHTML = swapHintMarkup() + markup + swapReservesMarkup();
     if (publicGrid) publicGrid.innerHTML = teams.map((team, index) => {
       const color = teamColors[index] || teamColors[0], players = lineupForTeam(team.name);
       return '<article class="public-team-card"><header style="--team-color:' + color.color + ';--team-ink:' + color.ink + '"><strong>' + escapeHtml(teamLabel(team.name)) + '</strong><span>' + players.length + ' jogadores</span></header><ol>' + players.map((name) => '<li>' + escapeHtml(displayName(name)) + (keeper(name) ? ' <b class="keeper-mark">*</b>' : '') + '</li>').join('') + '</ol></article>';
@@ -534,7 +605,7 @@
           pool = teams
             .filter(
               (other) =>
-                other.name !== team.name && !playing.has(other.name) && lineups[other.name].length > 4,
+                other.name !== team.name && !playing.has(other.name) && lineups[other.name].length > 0,
             )
             .flatMap((other) => lineups[other.name])
             .filter(
@@ -562,7 +633,7 @@
                 '" data-absence-player="' +
                 escapeHtml(name) +
                 '" ' +
-                (playing.has(team.name) || players.length <= 4 ? "disabled" : "") +
+                (playing.has(team.name) ? "disabled" : "") +
                 ">Ausente</button></li>",
             )
             .join("") +
@@ -656,7 +727,6 @@
         if (
           !source ||
           next[target].length >= capacity ||
-          next[source.name].length <= 4 ||
           playing.has(source.name) ||
           playing.has(target) ||
           teams.reduce((count, team) => count + next[team.name].filter((name) => name === player).length, 0) !== 1 ||
@@ -670,7 +740,7 @@
           displayName(player) +
             " foi para " +
             target +
-            ". O time que cedeu ficou com uma vaga.",
+            ". O time que cedeu ficou com " + (next[source.name].length ? next[source.name].length + " jogador(es)." : "nenhum jogador."),
         );
       }),
     );
@@ -681,7 +751,7 @@
           next = Object.fromEntries(
             teams.map((item) => [item.name, [...lineups[item.name]]]),
           );
-        if (playing.has(team) || next[team].length <= 4) return;
+        if (playing.has(team)) return;
         next[team] = next[team].filter((name) => name !== player);
         saveState(
           { lineups: next, absentPlayers: { ...absent, [player]: team } },
@@ -2222,6 +2292,7 @@
       )
     )
       return;
+    swapPick = null;
     const starterTotal = startersFor(state.roster.length);
     const teams = ["Time Águia", "Time Sol", "Time Verde", "Time Azul"]
       .slice(0, Math.ceil(starterTotal / 5))
@@ -2444,6 +2515,10 @@
     if (pending.prepared) { await saveState({ pendingMatch: { home: pending.home, away: pending.away } }, "Preparação desfeita. Ajuste e toque em Partida preparada."); return; }
     const home = $("matchHome").value, away = $("matchAway").value, teams = state.teams || [];
     if (!home || !away || home === away || !teams.some((team) => team.name === home) || !teams.some((team) => team.name === away)) { notify("Escolha dois times diferentes e válidos.", true); return; }
+    for (const teamName of [home, away]) {
+      const total = lineupForTeam(teamName).length;
+      if (total < 4) { notify(teamLabel(teamName) + " tem só " + total + " jogador(es). Puxe jogadores de outros times em \"Ajustar jogadores antes do jogo\" (mínimo 4).", true); return; }
+    }
     if (!$("keeperHome").value || !$("keeperAway").value) { notify("Defina um goleiro para cada time antes de preparar a partida.", true); return; }
     const saved = await saveState({ pendingMatch: { home, away, prepared: true } }, "Partida preparada: " + teamLabel(home) + " × " + teamLabel(away) + ".");
     const setup = document.querySelector(".live-setup");
@@ -2747,6 +2822,7 @@
     $("artFormat").addEventListener("change", () => drawArt());
     $("artDownload").addEventListener("click", downloadArt);
     $("artShare").addEventListener("click", shareArt);
+    bindSwapGrid();
     $("teamsGrid").addEventListener("change", (event) => {
       const team = event.target.dataset?.teamLabel;
       if (!team) return;
