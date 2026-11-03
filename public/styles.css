@@ -345,3 +345,10 @@ body.light-theme .swap-hint{background:#fff8dc}
 body.light-theme .swap-hint.active{background:#fff0b3;color:#202020}
 body.light-theme .swap-reserves{background:#fff}
 body.light-theme .swap-chip{background:#f2f2ee;color:#202020;border-color:#d4d4cc}
+.new-player-box{margin-top:14px;padding:12px;border:1px dashed #514611;border-radius:10px;background:#17160f}
+.new-player-box>strong{display:block;margin-bottom:8px;font:800 15px 'Barlow Condensed',sans-serif;text-transform:uppercase;color:var(--yellow)}
+.new-player-box .button{margin-top:10px}
+body.light-theme .new-player-box{background:#fff8dc}
+body.light-theme .new-player-box>strong{color:#8a6a00}
+.reserve-controls{padding:0!important;border:0!important;background:none!important;margin-top:0}
+.reserve-controls .new-player-box{margin-top:12px}
