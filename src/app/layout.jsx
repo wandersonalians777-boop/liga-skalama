@@ -16,7 +16,6 @@ const assetVersion = process.env.NEXT_PUBLIC_ASSET_VERSION || 'dev';
 const ligaConfig = {
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
   supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
-  publicReadOnly: true,
 };
 
 export default function RootLayout({ children }) {

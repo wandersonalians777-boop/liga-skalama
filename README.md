@@ -4,7 +4,7 @@ Site responsivo para organizar a noite de futsal: lista de jogadores (mínimo 10
 
 ## Rodar localmente
 
-Requer Node.js 20.9 ou superior. No diretório do projeto, execute `pnpm install` e `pnpm dev`; abra `http://localhost:3000/liga-skalama/`. Para gerar a versão estática, execute `pnpm build`; os arquivos prontos para publicação ficam em `out/`. O GitHub Actions publica essa pasta no GitHub Pages.
+Requer Node.js 20.9 ou superior. No diretório do projeto, execute `pnpm install` e `pnpm dev`; abra `http://localhost:3000/`. Para gerar a versão estática, execute `pnpm build`; os arquivos prontos para publicação ficam em `out/`. O GitHub Actions publica essa pasta no GitHub Pages.
 
 ## Ativar sincronização compartilhada
 
@@ -14,7 +14,7 @@ Requer Node.js 20.9 ou superior. No diretório do projeto, execute `pnpm install
 4. Localmente: crie um arquivo `.env.local` com `NEXT_PUBLIC_SUPABASE_URL=...` e `NEXT_PUBLIC_SUPABASE_ANON_KEY=...` (uma por linha). Reinicie o `pnpm dev`.
 5. No GitHub: em **Settings → Secrets and variables → Actions → Variables**, crie as mesmas duas variáveis. O workflow `pages.yml` as usa no build.
 
-Sem essas variáveis o site abre em modo somente leitura, aguardando o banco compartilhado. O site publicado deve ser público para leitura. Somente contas autenticadas e cadastradas pelo administrador em `league_admins` podem editar; as permissões são aplicadas pelo RLS no banco e também pela interface. Use somente a chave pública anon/publishable; nunca a `service_role`.
+Sem essas variáveis, ao rodar localmente, o site abre em **Modo local**: os dados ficam salvos só no navegador atual. Na publicação, o workflow exige as duas variáveis e interrompe o build se alguma estiver faltando. O site publicado deve ser público para leitura. Somente contas autenticadas e cadastradas pelo administrador em `league_admins` podem editar; as permissões são aplicadas pelo RLS no banco e também pela interface. Use somente a chave pública anon/publishable; nunca a `service_role`.
 
 ## Organização dos jogos
 
@@ -46,7 +46,7 @@ Se o Supabase já estiver configurado, execute novamente schema.sql para acresce
 
 ## Destaques da rodada
 
-A tela principal apresenta Jogador da noite e Goleiro da noite a partir da média de score das partidas concluídas desde o último sorteio. Um novo sorteio inicia uma nova rodada para esses destaques, sem apagar o histórico ou os rankings acumulados. Os dados e registros antigos de votação não são exibidos nem usados por essa seção.
+A tela principal apresenta Jogador da noite e Goleiro da noite a partir da média de score das partidas concluídas desde o último sorteio. Um novo sorteio inicia uma nova rodada para esses destaques, sem apagar o histórico ou os rankings acumulados.
 
 
 ## Ajustes de escalação antes da partida
@@ -74,5 +74,10 @@ on conflict (user_id) do nothing;
 
 A primeira conta autorizada precisa executar a consulta acima no Supabase. A conta comum não consegue conceder privilégios a si mesma. A identidade do administrador é definida no banco, e não pelo botão ou por uma configuração no navegador.
 
+## Tabela antiga de votação
 
+A votação foi retirada do site e o `schema.sql` não cria mais a tabela `votes`. Bancos já existentes continuam com essa tabela, que não é usada. Para removê-la (os votos antigos serão apagados definitivamente), execute no SQL Editor:
 
+```sql
+drop table if exists public.votes;
+```

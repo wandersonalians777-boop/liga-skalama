@@ -15,20 +15,12 @@
   const historyWinner = (game) =>
     (game.winner === game.home ? gameTeamLabel(game, "home") : game.winner === game.away ? gameTeamLabel(game, "away") : "") || game.winner;
 
-  const clientId =
-    localStorage.getItem("liga-skalama-client") ||
-    (() => {
-      const value = crypto.randomUUID();
-      localStorage.setItem("liga-skalama-client", value);
-      return value;
-    })();
   let client = null,
     shared = false,
     adminSession = null,
     canManageShared = false,
     state = null,
     goals = [],
-    votes = [],
     toastTimer = 0,
     sharedStatePoll = null,
     goalSubmitting = false,
@@ -280,15 +272,15 @@
       );
       return saved?.state
         ? saved
-        : { state: initialState(), goals: [], votes: [] };
+        : { state: initialState(), goals: [] };
     } catch {
-      return { state: initialState(), goals: [], votes: [] };
+      return { state: initialState(), goals: [] };
     }
   }
   function localSave() {
     localStorage.setItem(
       "liga-skalama-local",
-      JSON.stringify({ state, goals, votes }),
+      JSON.stringify({ state, goals }),
     );
   }
   function keeper(name) {
@@ -2859,7 +2851,7 @@
       if (!connected) {
         const publicOnly = window.LIGA_CONFIG?.publicReadOnly === true,
           saved = publicOnly
-            ? { state: initialState(), goals: [], votes: [] }
+            ? { state: initialState(), goals: [] }
             : localLoad();
         state = normalizeState(saved.state);
         goals = (saved.goals || []).map((goal) => ({
@@ -2875,7 +2867,6 @@
                   : goal.team_name),
           own_goal: !!goal.own_goal,
         }));
-        votes = saved.votes || [];
         setConnection(
           publicOnly ? "Aguardando banco compartilhado" : "Modo local",
           false,
@@ -2893,7 +2884,7 @@
       canManageShared = false;
       const publicOnly = window.LIGA_CONFIG?.publicReadOnly === true,
         saved = publicOnly
-          ? { state: initialState(), goals: [], votes: [] }
+          ? { state: initialState(), goals: [] }
           : localLoad();
       state = normalizeState(saved.state);
       goals = (saved.goals || []).map((goal) => ({
@@ -2907,7 +2898,6 @@
               (goal.team_name === "Time Água" ? "Time Águia" : goal.team_name),
         own_goal: !!goal.own_goal,
       }));
-      votes = saved.votes || [];
       setConnection(
         publicOnly
           ? "Aguardando banco compartilhado"

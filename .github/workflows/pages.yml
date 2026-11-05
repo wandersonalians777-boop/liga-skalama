@@ -30,29 +30,16 @@ jobs:
           cache: pnpm
       - name: Instalar dependências
         run: pnpm install --frozen-lockfile
-     
-      - name: Gerar configuração pública da Supabase
+
+      - name: Conferir configuração pública da Supabase
         env:
           SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
         run: |
-          node <<'NODE'
-          const fs = require('node:fs');
-
-          const config = {
-            supabaseUrl: process.env.SUPABASE_URL,
-            supabaseAnonKey: process.env.SUPABASE_ANON_KEY
-          };
-
-          if (!config.supabaseUrl || !config.supabaseAnonKey) {
-            throw new Error('As variáveis da Supabase não estão configuradas.');
-          }
-
-          fs.writeFileSync(
-            'public/config.js',
-            `window.LIGA_CONFIG = ${JSON.stringify(config)};\n`
-          );
-          NODE
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "As variáveis da Supabase não estão configuradas." >&2
+            exit 1
+          fi
 
       - name: Gerar o site Next.js
         run: pnpm build
