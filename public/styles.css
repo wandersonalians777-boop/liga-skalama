@@ -134,6 +134,7 @@ body.light-theme .theme-toggle { color:#333 !important; border-color:#c7c7bf !im
 .art-controls label[hidden]{display:none}
 .art-canvas{display:block;width:100%;max-width:360px;height:auto;margin:0 auto 14px;border-radius:12px;border:1px solid var(--line)}
 .art-canvas[hidden]{display:none}
+.art-format-help{margin:0 0 12px}.art-format-help[hidden]{display:none}
 .team-logo{width:22px;height:22px;object-fit:contain;vertical-align:middle;margin-right:7px}
 .art-logos-box{margin-bottom:14px}
 .art-logos{display:grid;gap:8px;margin-top:6px}
