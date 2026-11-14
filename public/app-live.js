@@ -2148,16 +2148,20 @@
   function renderSuperLiga() {
     const box = $("superLigaPanel");
     if (!box) return;
-    const show = isSuperMode(),
-      sl = state.superLiga;
+    const show = shownLiveMode() === "coca",
+      sl = state.superLiga,
+      otherMode = shownLiveMode() !== activeLiveMode();
     box.hidden = !show;
+    // O cartão da partida mostra o modo ativo; quem está olhando a outra aba não o vê.
     // Sem tabela sorteada não há jogo para preparar: o painel da Super Liga vem primeiro.
-    $("jogo").hidden = show && !state.currentGame && sl?.status !== "running";
+    $("jogo").hidden = otherMode || (show && !state.currentGame && sl?.status !== "running");
+    renderLigaPublicTeams(otherMode);
     if (!show) return;
     const locked = isEditLocked(),
       status = sl?.status || "none",
       statusText = { none: "A MONTAR", setup: "MONTANDO TIMES", running: "EM ANDAMENTO", finished: "ENCERRADA" }[status];
     let html = '<div class="section-heading"><div><p class="eyebrow">MODO SUPER LIGA</p><h2 id="slTitle">Super Liga SKALAMA</h2></div><span class="season-badge">' + statusText + "</span></div>";
+    if (otherMode && state.currentGame) html += '<p class="notice sl-mode-note">Agora está rolando um jogo do Modo Liga. Veja o placar na aba Modo Liga.</p>';
     if (!sl) {
       html += locked
         ? '<p class="empty-state">O organizador ainda não montou a Super Liga.</p>'
@@ -2202,9 +2206,10 @@
       }
       const playing = new Set([state.currentGame?.home, state.currentGame?.away].filter(Boolean)),
         cards = teams.map((team) => superTeamCard(team, sl, !locked && !playing.has(team.key))).join("");
+      // Visitantes só veem os times depois que o organizador confirma (sorteio da ordem dos jogos).
       html += status === "setup"
-        ? '<div class="sl-teams">' + cards + "</div>"
-        : '<details class="sl-teams-details"' + (superTeamsOpen ? " open" : "") + "><summary>Times e jogadores · " + teams.length + " times · " + sl.starters + " titulares por time</summary><div class=\"sl-teams\">" + cards + "</div></details>";
+        ? locked ? "" : '<div class="sl-teams">' + cards + "</div>"
+        : '<details class="sl-teams-details"' + (superTeamsOpen || locked ? " open" : "") + "><summary>" + (locked ? "Escalação dos times" : "Times e jogadores") + " · " + teams.length + " times · " + sl.starters + " titulares por time</summary><div class=\"sl-teams\">" + cards + "</div></details>";
       if (!locked)
         html += '<div class="button-row sl-actions">' +
           (status === "setup" ? '<button type="button" class="button button-primary" data-sl-action="draw">' + (teams.length === 2 ? "Começar jogo único" : "Sortear ordem dos jogos") + "</button>" : "") +
@@ -2223,6 +2228,23 @@
     superMarkup = html;
     box.innerHTML = html;
     if (focusKey) box.querySelector('[data-focus-key="' + focusKey + '"]')?.focus();
+  }
+  function renderLigaPublicTeams(otherMode) {
+    const section = $("ligaPublicTeams");
+    if (!section) return;
+    const teams = state.teams || [],
+      show = isEditLocked() && shownLiveMode() === "liga" && teams.length > 0;
+    section.hidden = !show;
+    if (!show) return;
+    const note = $("ligaPublicNote");
+    note.hidden = !(otherMode && state.currentGame);
+    note.textContent = "Agora está rolando um jogo da Super Liga. Veja o placar na aba Modo Super Liga.";
+    const markup = teams.map((team, index) => {
+      const color = teamColors[index] || teamColors[0], players = lineupForTeam(team.name);
+      return '<article class="public-team-card"><header style="--team-color:' + color.color + ';--team-ink:' + color.ink + '"><strong>' + escapeHtml(teamLabel(team.name)) + '</strong><span>' + players.length + ' jogadores</span></header><ol>' + players.map((name) => '<li>' + escapeHtml(displayName(name)) + (keeper(name) ? ' <b class="keeper-mark">*</b>' : '') + '</li>').join('') + '</ol></article>';
+    }).join("");
+    const grid = $("ligaPublicTeamsGrid");
+    if (grid.dataset.markup !== markup) { grid.dataset.markup = markup; grid.innerHTML = markup; }
   }
   function bindSuperLiga() {
     const box = $("superLigaPanel");
@@ -2998,6 +3020,11 @@
     markActiveTab(view);
     localStorage.setItem("liga-skalama-view", view);
   }
+  // Visitantes podem olhar qualquer uma das duas abas, sem mudar o modo escolhido pelo organizador.
+  let viewerMode = null;
+  function shownLiveMode() {
+    return isEditLocked() && viewerMode ? viewerMode : activeLiveMode();
+  }
   // Modo que vale agora: o da partida em andamento ou o escolhido para a próxima.
   function activeLiveMode() {
     return state?.currentGame?.timerMode || state?.timerMode || "liga";
@@ -3011,20 +3038,23 @@
         button.classList.toggle(
           "active",
           button.dataset.viewButton === view &&
-            (!button.dataset.liveMode || button.dataset.liveMode === activeLiveMode()),
+            (!button.dataset.liveMode || button.dataset.liveMode === shownLiveMode()),
         ),
       );
   }
   function chooseLiveMode(mode) {
     const current = activeLiveMode();
-    if (mode === current) return;
+    if (mode === current && !(isEditLocked() && viewerMode && viewerMode !== mode)) return;
     const locked = (shared && !canManageShared) || (!shared && window.LIGA_CONFIG?.publicReadOnly === true);
-    if (state.currentGame) {
-      notify(`Partida em andamento no ${liveModeName(current)}. O modo pode ser trocado quando ela terminar.`, true);
+    if (locked) {
+      // Visitante: só troca o que está vendo.
+      viewerMode = mode;
+      superMarkup = "";
+      renderAll();
       return;
     }
-    if (locked) {
-      notify(`O organizador escolheu o ${liveModeName(current)} para a próxima partida.`);
+    if (state.currentGame) {
+      notify(`Partida em andamento no ${liveModeName(current)}. O modo pode ser trocado quando ela terminar.`, true);
       return;
     }
     saveState({ timerMode: mode }, `${liveModeName(mode)} selecionado.`);

@@ -417,7 +417,7 @@ body.light-theme .sl-fixture.is-next .sl-state{color:#8a6900}
 .sl-rankings .ranking-row{grid-template-columns:28px minmax(0,1fr) auto}
 .sl-rankings .ranking-row small{display:block;margin-top:2px}
 /* Elenco: jogador ativo ou inativo para o sorteio */
-.roster-list li.is-inactive{opacity:.6}
+.roster-list li.is-inactive>span{opacity:.55}
 .roster-list li.is-inactive .roster-number{text-decoration:line-through}
 .roster-toggle{flex:none;margin-left:auto;padding:4px 10px;border:1px solid var(--line);border-radius:99px;background:transparent;color:var(--muted);font-size:10px;font-weight:800;cursor:pointer}
 .roster-toggle.is-active{background:#16803c;border-color:#16803c;color:#fff}
@@ -431,3 +431,8 @@ body.light-theme .sl-fixture.is-next .sl-state{color:#8a6900}
 .sl-team>*{min-width:0}
 .sl-add input{width:100%}
 .live-section .sl-add .button{min-height:34px;padding:0 12px;font-size:11px;border-radius:8px}
+/* Elenco: botão Inativo em vermelho */
+.roster-toggle:not(.is-active){background:#b42318;border-color:#b42318;color:#fff}
+/* Visitantes: escalação do Modo Liga na própria aba e avisos de outro modo em jogo */
+.liga-public-teams{margin-top:16px}
+.liga-public-teams .notice,.sl-mode-note{margin:0 0 12px}
