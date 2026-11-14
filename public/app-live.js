@@ -13,7 +13,18 @@
   const MIN_KEEPER_GAMES = 3;
   const startersFor = (total) => total >= 16 ? Math.min(20, total) : Math.floor(Math.max(total, MIN_PLAYERS) / 5) * 5;
   // O nome interno ("Time Águia") segue como chave; o apelido é só exibição.
-  const teamLabel = (name) => state?.teamLabels?.[name] || name;
+  const teamLabel = (name) => superTeam(name)?.name || state?.teamLabels?.[name] || name;
+  // Super Liga: até 8 times, cada um com uma cor (as 4 do site e mais 4).
+  const SUPER_COLORS = [
+    ...teamColors,
+    { name: "Vermelho", color: "#d43d3d", ink: "#ffffff" },
+    { name: "Roxo", color: "#7a4fc4", ink: "#ffffff" },
+    { name: "Rosa", color: "#e0589a", ink: "#14120a" },
+    { name: "Cinza", color: "#6c7078", ink: "#ffffff" },
+  ];
+  const SUPER_MIN_TEAMS = 2,
+    SUPER_MAX_TEAMS = 8,
+    SUPER_MAX_PLAYERS = 16;
   const historyWinner = (game) =>
     (game.winner === game.home ? gameTeamLabel(game, "home") : game.winner === game.away ? gameTeamLabel(game, "away") : "") || game.winner;
 
@@ -63,6 +74,7 @@
       challengeQueue: [],
       gameHistory: [],
       keeperRatings: [],
+      superLiga: null,
       timer: {
         mode: "liga",
         duration: 480,
@@ -332,8 +344,8 @@
     const homeName = game?.home || pending?.home,
       awayName = game?.away || pending?.away;
     return {
-      home: state.teams?.find((t) => t.name === homeName),
-      away: state.teams?.find((t) => t.name === awayName),
+      home: homeName ? { players: lineupForTeam(homeName, game) } : null,
+      away: awayName ? { players: lineupForTeam(awayName, game) } : null,
     };
   }
   function gameNumber() {
@@ -424,23 +436,53 @@
     select.disabled = names.length === 0;
   }
   function lineupForTeam(teamName, game = null) {
-    if (game && game.home === teamName)
-      return (
-        game.homePlayers ||
-        state.teams?.find((team) => team.name === teamName)?.players ||
-        []
-      );
-    if (game && game.away === teamName)
-      return (
-        game.awayPlayers ||
-        state.teams?.find((team) => team.name === teamName)?.players ||
-        []
-      );
-    return (
-      state.lineups?.[teamName] ||
+    const base = () =>
+      superTeam(teamName)?.players ||
       state.teams?.find((team) => team.name === teamName)?.players ||
-      []
-    );
+      [];
+    if (game && game.home === teamName) return game.homePlayers || base();
+    if (game && game.away === teamName) return game.awayPlayers || base();
+    return (!superTeam(teamName) && state.lineups?.[teamName]) || base();
+  }
+  // ---------- Super Liga: times próprios, tabela todos contra todos e final ----------
+  function superTeam(key) {
+    return (key && state?.superLiga?.teams?.find((team) => team.key === key)) || null;
+  }
+  function isEditLocked() {
+    return (shared && !canManageShared) || (!shared && window.LIGA_CONFIG?.publicReadOnly === true);
+  }
+  // Vale o modo da partida em andamento; sem partida, o modo escolhido na aba.
+  function isSuperMode() {
+    return (state?.currentGame?.timerMode || state?.timerMode || "liga") === "coca";
+  }
+  // Times que podem jogar no modo atual.
+  function modeTeams() {
+    if (!isSuperMode()) return state.teams || [];
+    const sl = state.superLiga;
+    return sl && sl.status === "running" ? sl.teams.map((team) => ({ name: team.key, players: team.players })) : [];
+  }
+  function superFixture(id) {
+    return (id && state.superLiga?.fixtures?.find((fixture) => fixture.id === id)) || null;
+  }
+  function superNextFixture() {
+    const sl = state.superLiga;
+    if (!sl || sl.status !== "running") return null;
+    const chosen = superFixture(sl.pending?.fixtureId);
+    if (chosen && !chosen.gameId) return chosen;
+    return (sl.fixtures || []).find((fixture) => !fixture.gameId) || null;
+  }
+  // Próximo jogo: no Modo Liga vem da fila de desafiantes; na Super Liga, da tabela sorteada.
+  function currentPending() {
+    if (!isSuperMode()) return state.pendingMatch;
+    const fixture = superNextFixture();
+    if (!fixture) return null;
+    const pending = state.superLiga.pending;
+    return { home: fixture.home, away: fixture.away, fixtureId: fixture.id, prepared: !!pending?.prepared && pending.fixtureId === fixture.id };
+  }
+  function pendingPatch(next) {
+    if (!isSuperMode()) return { pendingMatch: next };
+    const fixtureId = currentPending()?.fixtureId || null;
+    return { superLiga: { ...state.superLiga, pending: fixtureId ? { fixtureId, prepared: !!next?.prepared } : null } };
   }
   function teamForPlayer(player) {
     const game = state.currentGame;
@@ -461,6 +503,7 @@
   function gameTeamLabel(game, side) {
     const name = game && game[side];
     if (!name) return "";
+    if (superTeam(name)) return superTeam(name).name;
     return game.roundId && game.roundId === state.roundId ? teamLabel(name) : (game[side + "Label"] || teamLabel(name));
   }
   // Converte o nome interno do time ("Time Sol") no apelido exibido daquela partida.
@@ -471,12 +514,12 @@
     return teamLabel(name);
   }
   function renderLoanControls() {
-    const home = $("matchHome").value, away = $("matchAway").value, teams = state.teams || [];
+    const home = $("matchHome").value, away = $("matchAway").value, superMode = isSuperMode(), teams = superMode ? [] : state.teams || [];
     for (const side of ["home", "away"]) {
       const select = $("loan" + side[0].toUpperCase() + side.slice(1) + "Player");
       const destination = side === "home" ? home : away;
       const roster = lineupForTeam(destination);
-      const needed = !state.currentGame && !!destination && roster.length === 4;
+      const needed = !superMode && !state.currentGame && !!destination && roster.length === 4;
       select.hidden = !needed;
       select.parentElement.hidden = !needed;
       select.disabled = !needed;
@@ -495,7 +538,7 @@
   }
 
   let swapPick = null;
-  const swapCapacity = () => ((state.timerMode || "liga") === "coca" ? 9 : 5);
+  const swapCapacity = () => 5;
   const swapPlaying = () => new Set([state.currentGame?.home, state.currentGame?.away].filter(Boolean));
   const swapLocked = (teamName) => swapPlaying().has(teamName);
   const SWAP_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M8 4 2 8l6 4V9.5h12v-3H8Z"/><path d="m16 12 6 4-6 4v-2.5H4v-3h12Z"/></svg>';
@@ -587,8 +630,9 @@
       grid = $("lineupAdjustGrid"),
       absentBox = $("absentPlayersList"),
       teams = state.teams || [],
-      capacity = (state.timerMode || "liga") === "coca" ? 9 : 5;
-    details.hidden = !teams.length;
+      capacity = 5;
+    // Na Super Liga os jogadores ficam no painel da própria Super Liga.
+    details.hidden = !teams.length || isSuperMode();
     const lineups = Object.fromEntries(
         teams.map((team) => [team.name, [...lineupForTeam(team.name)]]),
       ),
@@ -881,8 +925,8 @@
       : 0;
   }
   function renderMatchPreview() {
-    const home = $("matchHome")?.value || state.currentGame?.home || state.pendingMatch?.home;
-    const away = $("matchAway")?.value || state.currentGame?.away || state.pendingMatch?.away;
+    const home = $("matchHome")?.value || state.currentGame?.home || currentPending()?.home;
+    const away = $("matchAway")?.value || state.currentGame?.away || currentPending()?.away;
     const target = $("matchLineupPreview");
     if (!target) return;
     if (!home || !away || home === away) { target.innerHTML = '<p class="empty-state">Escolha dois times diferentes para ver a escalação.</p>'; return; }
@@ -898,15 +942,17 @@
     }).join('');
   }
   function renderQueueControls() {
-    const current = state.currentGame, pending = state.pendingMatch;
-    const allTeams = (state.teams || []).map((team) => team.name);
+    const current = state.currentGame, pending = currentPending(), superMode = isSuperMode();
+    const allTeams = modeTeams().map((team) => team.name);
     const homeSelect = $("matchHome"), awaySelect = $("matchAway");
     for (const [select, chosen, label] of [[homeSelect, current?.home || pending?.home, "Escolha o primeiro time"], [awaySelect, current?.away || pending?.away, "Escolha o segundo time"]]) {
       const selected = select.value;
       namesForSelect(select, allTeams, label, teamLabel);
-      const value = !current && allTeams.includes(selected) ? selected : chosen;
+      // Na Super Liga o confronto vem da tabela sorteada; no Modo Liga o organizador pode trocar.
+      const value = !current && !superMode && allTeams.includes(selected) ? selected : chosen;
       if (value && allTeams.includes(value)) select.value = value;
-      select.disabled = !!current || allTeams.length < 2;
+      else if (superMode) select.value = "";
+      select.disabled = !!current || superMode || allTeams.length < 2;
     }
     const home = homeSelect.value, away = awaySelect.value;
     const matchPrepared = !!pending?.prepared && !current;
@@ -917,11 +963,17 @@
     const mode = state.timerMode || "liga", duration = Math.min(180, Math.max(1, Number(state.durationMinutes) || 8));
     $("durationMinutes").value = String(duration);
     $("durationMinutes").disabled = !!current;
-    $("onCourtLabel").hidden = mode !== "coca";
+    // Na Super Liga os titulares por time são definidos no painel da Super Liga.
+    $("onCourtLabel").hidden = true;
     $("onCourtCount").value = String(cocaOnCourtCount());
     $("onCourtCount").disabled = !!current;
     $("beginGame").textContent = "Começar jogo · " + clockText(duration * 60);
-    $("nextMatchPreview").textContent = home && away && home !== away ? "Confronto escolhido: " + teamLabel(home) + " × " + teamLabel(away) : pending ? "Escolha dois times diferentes para preparar a partida." : "Sorteie os times para preparar a partida.";
+    const fixture = superMode ? superFixture(pending?.fixtureId) : null;
+    $("nextMatchPreview").textContent = superMode
+      ? fixture
+        ? (fixture.stage === "final" ? "Final da Super Liga: " : "Super Liga · Rodada " + fixture.round + ": ") + teamLabel(fixture.home) + " × " + teamLabel(fixture.away)
+        : "Monte a Super Liga e sorteie a ordem dos jogos no painel abaixo."
+      : home && away && home !== away ? "Confronto escolhido: " + teamLabel(home) + " × " + teamLabel(away) : pending ? "Escolha dois times diferentes para preparar a partida." : "Sorteie os times para preparar a partida.";
     renderLoanControls();
     renderMatchPreview();
     renderKeeperChoices();
@@ -949,11 +1001,12 @@
       activePause = isPauseActive(timer),
       used = pauseBudgetUsed({ ...timer, mode }),
       limit = mode === "coca" ? 120000 : 60000,
+      pendingNow = currentPending(),
       home =
-        state.currentGame?.home || state.pendingMatch?.home || "Time Águia",
-      away = state.currentGame?.away || state.pendingMatch?.away || "Time Sol",
+        state.currentGame?.home || pendingNow?.home || "Time Águia",
+      away = state.currentGame?.away || pendingNow?.away || "Time Sol",
       hasGame = !!state.currentGame;
-    const prepared = !hasGame && !!state.pendingMatch?.prepared;
+    const prepared = !hasGame && !!pendingNow?.prepared;
     const shootNow = shootoutOf(state.currentGame);
     $("currentMatchTitle").textContent = hasGame
       ? "JOGO " + gameNumber() + " · " + teamLabel(home) + " × " + teamLabel(away)
@@ -1057,20 +1110,20 @@
     renderSubstitutions();
   }
   function updateBeginGameAvailability() {
-    const home = $("matchHome").value, away = $("matchAway").value, teams = state.teams || [];
-    const validMatch = !state.currentGame && !!state.pendingMatch && home && away && home !== away && teams.some((team) => team.name === home) && teams.some((team) => team.name === away);
+    const home = $("matchHome").value, away = $("matchAway").value, teams = modeTeams(), pending = currentPending();
+    const validMatch = !state.currentGame && !!pending && home && away && home !== away && teams.some((team) => team.name === home) && teams.some((team) => team.name === away);
     const homePlayers = [...lineupForTeam(home)], awayPlayers = [...lineupForTeam(away)];
     const homeLoan = $("loanHomePlayer").value, awayLoan = $("loanAwayPlayer").value;
     if (homePlayers.length === 4 && homeLoan && !homePlayers.includes(homeLoan)) homePlayers.push(homeLoan);
     if (awayPlayers.length === 4 && awayLoan && !awayPlayers.includes(awayLoan)) awayPlayers.push(awayLoan);
     const keepersSelected = homePlayers.includes($("keeperHome").value) && awayPlayers.includes($("keeperAway").value);
-    $("beginGame").disabled = !validMatch || !keepersSelected || !state.pendingMatch?.prepared;
+    $("beginGame").disabled = !validMatch || !keepersSelected || !pending?.prepared;
     $("preparedBtn").disabled = !validMatch || !keepersSelected;
   }
   function renderKeeperChoices() {
     const game = state.currentGame;
     for (const [side, selectId, labelId] of [["home", "keeperHome", "keeperHomeLabel"], ["away", "keeperAway", "keeperAwayLabel"]]) {
-      const select = $(selectId), label = $(labelId), teamName = game?.[side] || $(side === "home" ? "matchHome" : "matchAway").value || state.pendingMatch?.[side];
+      const select = $(selectId), label = $(labelId), teamName = game?.[side] || $(side === "home" ? "matchHome" : "matchAway").value || currentPending()?.[side];
       const players = game ? lineupForTeam(teamName, game) : [...lineupForTeam(teamName)];
       if (!game && players.length === 4) {
         const loan = $("loan" + side[0].toUpperCase() + side.slice(1) + "Player").value;
@@ -1087,7 +1140,7 @@
   }
   function performanceForGame(game, homeScore, awayScore, gameGoals) {
     const stats = [], assistPoints = Math.max(0, Number(state.scoreRules?.assist ?? SCORE_RULES.assist));
-    for (const team of (state.teams || []).filter((item) => item.name === game.home || item.name === game.away)) {
+    for (const team of [game.home, game.away].filter(Boolean).map((name) => ({ name }))) {
       const isHome = team.name === game.home, teamPlayers = [...new Set([...((isHome ? game.homeStart : game.awayStart) || []), ...lineupForTeam(team.name, game), ...(game.substitutions || []).filter((item) => item.team === team.name).map((item) => item.in)])], goalsFor = isHome ? homeScore : awayScore, goalsAgainst = isHome ? awayScore : homeScore;
       const result = goalsFor > goalsAgainst ? "vitória" : goalsFor < goalsAgainst ? "derrota" : "empate", delta = result === "vitória" ? 1.5 : result === "derrota" ? -1.5 : 0.5, goalie = isHome ? game.homeKeeper : game.awayKeeper;
       for (const player of teamPlayers) {
@@ -1753,6 +1806,326 @@
     $("addPlayer").disabled = roster.length >= 32;
     $("drawTeams").disabled = roster.length < MIN_PLAYERS;
   }
+  // ---------- Painel da Super Liga ----------
+  function superStandings(sl = state.superLiga, history = state.gameHistory || []) {
+    if (!sl) return [];
+    const ids = new Set((sl.fixtures || []).filter((fixture) => fixture.stage === "group" && fixture.gameId).map((fixture) => fixture.gameId));
+    const rows = standingsForGames(history.filter((game) => ids.has(game.id)), new Map(sl.teams.map((team) => [team.key, team.name])));
+    for (const team of sl.teams)
+      if (!rows.some((row) => row.name === team.key))
+        rows.push({ name: team.key, label: team.name, points: 0, wins: 0, draws: 0, losses: 0, played: 0, gf: 0, ga: 0, gd: 0 });
+    return rows
+      .map((row) => ({ ...row, label: superTeam(row.name)?.name || row.label }))
+      .sort((a, b) => b.points - a.points || b.gd - a.gd || b.gf - a.gf || a.label.localeCompare(b.label, "pt-BR"));
+  }
+  // Depois de cada jogo: marca o jogo na tabela, cria a final quando todos se enfrentaram e define o campeão.
+  function superAfterGame(sl, game, entry, history) {
+    let fixtures = sl.fixtures.map((fixture) => (fixture.id === game.fixtureId ? { ...fixture, gameId: entry.id } : fixture)),
+      status = sl.status,
+      champion = sl.champion || null;
+    if (game.stage === "final") {
+      status = "finished";
+      champion = entry.winner;
+    } else if (!fixtures.some((fixture) => fixture.stage === "group" && !fixture.gameId) && !fixtures.some((fixture) => fixture.stage === "final")) {
+      const table = superStandings({ ...sl, fixtures }, history);
+      if (table.length >= 2) fixtures = [...fixtures, { id: crypto.randomUUID(), stage: "final", round: null, home: table[0].name, away: table[1].name, gameId: null }];
+    }
+    return { ...sl, fixtures, status, champion, pending: null };
+  }
+  // Todos contra todos (método do círculo), com ordem das rodadas, dos jogos e do mando sorteados.
+  function superRoundRobin(keys) {
+    const list = randomize(keys);
+    if (list.length % 2) list.push(null);
+    const n = list.length,
+      rounds = [];
+    let ring = [...list];
+    for (let r = 0; r < n - 1; r++) {
+      const games = [];
+      for (let i = 0; i < n / 2; i++) {
+        const a = ring[i], b = ring[n - 1 - i];
+        if (a && b) games.push(randomize([a, b]));
+      }
+      rounds.push(games);
+      ring = [ring[0], ring[n - 1], ...ring.slice(1, n - 1)];
+    }
+    const fixtures = [];
+    let last = [];
+    randomize(rounds).forEach((games, index) => {
+      // Evita, quando dá, que um time jogue duas vezes seguidas na virada da rodada.
+      const ordered = randomize(games).sort((x, y) => x.some((team) => last.includes(team)) - y.some((team) => last.includes(team)));
+      ordered.forEach(([home, away]) => fixtures.push({ id: crypto.randomUUID(), stage: "group", round: index + 1, home, away, gameId: null }));
+      last = ordered.length ? ordered[ordered.length - 1] : last;
+    });
+    return fixtures;
+  }
+  function superFreeColor(teams) {
+    const used = new Set(teams.map((team) => team.color));
+    const free = SUPER_COLORS.findIndex((_, index) => !used.has(index));
+    return free < 0 ? 0 : free;
+  }
+  function superNewTeam(teams) {
+    return { key: "sl-" + crypto.randomUUID().slice(0, 8), name: "Time " + (teams.length + 1), color: superFreeColor(teams), players: [], starters: [] };
+  }
+  function saveSuper(changes, message) {
+    return saveState({ superLiga: { ...state.superLiga, ...changes } }, message);
+  }
+  function superTeamsWith(key, change) {
+    return state.superLiga.teams.map((team) => (team.key === key ? { ...team, ...change(team) } : team));
+  }
+  function superTeamBusy(key) {
+    return !!state.currentGame && [state.currentGame.home, state.currentGame.away].includes(key);
+  }
+  async function superCreate() {
+    const count = Math.min(SUPER_MAX_TEAMS, Math.max(SUPER_MIN_TEAMS, Number($("slTeamCount")?.value) || 4)),
+      starters = Math.min(9, Math.max(4, Number($("slStarters")?.value) || 5)),
+      teams = [];
+    while (teams.length < count) teams.push(superNewTeam(teams));
+    await saveState(
+      { superLiga: { id: crypto.randomUUID(), status: "setup", starters, teams, fixtures: [], pending: null, champion: null, createdAt: new Date().toISOString() }, timerMode: "coca" },
+      "Super Liga criada com " + count + " times. Agora dê nome aos times e adicione os jogadores.",
+    );
+  }
+  async function superSetCount(value) {
+    const sl = state.superLiga;
+    if (!sl || sl.status !== "setup") return;
+    const count = Math.min(SUPER_MAX_TEAMS, Math.max(SUPER_MIN_TEAMS, Number(value) || sl.teams.length));
+    let teams = [...sl.teams];
+    if (count < teams.length) {
+      const removed = teams.slice(count).filter((team) => team.players.length);
+      if (removed.length && !confirm("Remover " + removed.map((team) => team.name).join(", ") + "? Os jogadores desses times saem da Super Liga.")) { superMarkup = ""; renderSuperLiga(); return; }
+      teams = teams.slice(0, count);
+    }
+    while (teams.length < count) teams.push(superNewTeam(teams));
+    await saveSuper({ teams }, "Super Liga com " + count + " times.");
+  }
+  async function superSetStarters(value) {
+    const sl = state.superLiga;
+    if (!sl || sl.status !== "setup") return;
+    const starters = Math.min(9, Math.max(4, Number(value) || sl.starters));
+    await saveSuper({ starters, teams: sl.teams.map((team) => ({ ...team, starters: team.starters.slice(0, starters) })) }, starters + " titulares por time.");
+  }
+  async function superAddPlayer(key, raw) {
+    const sl = state.superLiga, team = superTeam(key);
+    if (!sl || !team) return;
+    if (superTeamBusy(key)) { notify(team.name + " está jogando agora. Adicione jogadores depois da partida.", true); return; }
+    let name;
+    try { name = normalizePlayer(raw); } catch (error) { notify(error.message, true); return; }
+    if (name.length > 50) { notify("O nome pode ter no máximo 50 caracteres.", true); return; }
+    if (sl.teams.some((item) => item.players.some((player) => playerKey(player) === playerKey(name)))) { notify("Já existe um jogador com esse nome na Super Liga.", true); return; }
+    if (team.players.length >= SUPER_MAX_PLAYERS) { notify(team.name + " já tem " + SUPER_MAX_PLAYERS + " jogadores.", true); return; }
+    const starter = team.starters.length < sl.starters;
+    await saveSuper(
+      { teams: superTeamsWith(key, (item) => ({ players: [...item.players, name], starters: starter ? [...item.starters, name] : item.starters })) },
+      displayName(name) + " entrou no " + team.name + " como " + (starter ? "titular" : "reserva") + ".",
+    );
+  }
+  async function superToggleRole(key, index) {
+    const sl = state.superLiga, team = superTeam(key), player = team?.players[index];
+    if (!player) return;
+    if (superTeamBusy(key)) { notify(team.name + " está jogando agora.", true); return; }
+    const isStarter = team.starters.includes(player);
+    if (!isStarter && team.starters.length >= sl.starters) { notify(team.name + " já tem " + sl.starters + " titulares. Passe um titular para reserva antes.", true); return; }
+    await saveSuper(
+      { teams: superTeamsWith(key, (item) => ({ starters: isStarter ? item.starters.filter((name) => name !== player) : [...item.starters, player] })) },
+      displayName(player) + (isStarter ? " agora é reserva." : " agora é titular."),
+    );
+  }
+  async function superRemovePlayer(key, index) {
+    const team = superTeam(key), player = team?.players[index];
+    if (!player) return;
+    if (superTeamBusy(key)) { notify(team.name + " está jogando agora.", true); return; }
+    await saveSuper(
+      { teams: superTeamsWith(key, (item) => ({ players: item.players.filter((name) => name !== player), starters: item.starters.filter((name) => name !== player) })) },
+      displayName(player) + " saiu do " + team.name + ".",
+    );
+  }
+  async function superRename(key, value) {
+    const team = superTeam(key), name = String(value || "").trim().replace(/\s+/g, " ").slice(0, 30);
+    if (!team || name === team.name) return;
+    if (!name) { notify("O time precisa de um nome.", true); superMarkup = ""; renderSuperLiga(); return; }
+    if (state.superLiga.teams.some((item) => item.key !== key && item.name.toLocaleLowerCase("pt-BR") === name.toLocaleLowerCase("pt-BR"))) { notify("Já existe um time com esse nome.", true); superMarkup = ""; renderSuperLiga(); return; }
+    await saveSuper({ teams: superTeamsWith(key, () => ({ name })) }, team.name + " agora se chama " + name + ".");
+  }
+  async function superSetColor(key, value) {
+    const team = superTeam(key), color = Number(value);
+    if (!team || !SUPER_COLORS[color] || color === team.color) return;
+    // Se outro time já usa a cor, os dois trocam.
+    const other = state.superLiga.teams.find((item) => item.key !== key && item.color === color);
+    await saveSuper({ teams: state.superLiga.teams.map((item) => (item.key === key ? { ...item, color } : other && item.key === other.key ? { ...item, color: team.color } : item)) }, team.name + " agora é " + SUPER_COLORS[color].name.toLowerCase() + ".");
+  }
+  async function superDraw() {
+    const sl = state.superLiga;
+    if (!sl || sl.status !== "setup") return;
+    const names = new Set();
+    for (const team of sl.teams) {
+      const key = team.name.trim().toLocaleLowerCase("pt-BR");
+      if (!key || names.has(key)) { notify("Cada time precisa de um nome diferente.", true); return; }
+      names.add(key);
+      if (team.starters.length !== sl.starters) { notify(team.name + " precisa de " + sl.starters + " titulares (tem " + team.starters.length + ").", true); return; }
+    }
+    const fixtures = superRoundRobin(sl.teams.map((team) => team.key)),
+      first = fixtures[0];
+    await saveState(
+      { superLiga: { ...sl, status: "running", fixtures, pending: null, champion: null }, timerMode: "coca" },
+      "Ordem dos jogos sorteada: " + fixtures.length + " jogos e depois a final. Primeiro jogo: " + teamLabel(first.home) + " × " + teamLabel(first.away) + ".",
+    );
+  }
+  async function superPlay(fixtureId) {
+    const fixture = superFixture(fixtureId);
+    if (!fixture || fixture.gameId || state.currentGame) return;
+    const saved = await saveSuper({ pending: { fixtureId, prepared: false } }, "Próximo jogo: " + teamLabel(fixture.home) + " × " + teamLabel(fixture.away) + ". Prepare a partida acima.");
+    if (saved) $("jogo").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  async function superRestart() {
+    const sl = state.superLiga;
+    if (!sl) return;
+    if (state.currentGame?.superLigaId) { notify("Encerre a partida em andamento antes de começar uma nova Super Liga.", true); return; }
+    if (!confirm("Começar uma nova Super Liga? A tabela e a classificação atuais são apagadas; os times e jogadores continuam, e os jogos já disputados ficam no Histórico.")) return;
+    await saveState({ superLiga: { ...sl, id: crypto.randomUUID(), status: "setup", fixtures: [], pending: null, champion: null, createdAt: new Date().toISOString() } }, "Nova Super Liga: ajuste os times e sorteie a ordem dos jogos.");
+  }
+  function superChip(key) {
+    const color = colorOf(key);
+    return '<i class="sl-chip" style="--team-color:' + color.color + '" aria-hidden="true"></i>';
+  }
+  function superFixtureRow(fixture, next, locked) {
+    const game = fixture.gameId ? (state.gameHistory || []).find((item) => item.id === fixture.gameId) : null,
+      live = state.currentGame?.fixtureId === fixture.id,
+      isNext = !game && !live && next?.id === fixture.id,
+      shoot = game?.shootout && Number.isFinite(game.shootout.homeScore) ? " · pên. " + game.shootout.homeScore + "×" + game.shootout.awayScore : "",
+      score = game ? game.homeScore + " × " + game.awayScore : live ? currentScore(fixture.home) + " × " + currentScore(fixture.away) : "×",
+      stateText = game ? "Encerrado" + shoot : live ? "Ao vivo" : isNext ? "Próximo" : "",
+      canPlay = !locked && !game && !live && !isNext && !state.currentGame;
+    return '<li class="sl-fixture' + (game ? " is-done" : "") + (live ? " is-live" : "") + (isNext ? " is-next" : "") + '">' +
+      '<span class="sl-side sl-home">' + superChip(fixture.home) + escapeHtml(teamLabel(fixture.home)) + "</span>" +
+      '<b class="sl-score">' + score + "</b>" +
+      '<span class="sl-side sl-away">' + escapeHtml(teamLabel(fixture.away)) + superChip(fixture.away) + "</span>" +
+      '<span class="sl-state">' + stateText + (canPlay ? '<button type="button" class="text-button" data-sl-play="' + escapeHtml(fixture.id) + '">Jogar agora</button>' : "") + "</span></li>";
+  }
+  function superTeamCard(team, sl, editable) {
+    const color = colorOf(team.key),
+      players = team.players.map((player, index) => {
+        const starter = team.starters.includes(player);
+        return '<li><span class="sl-player">' + escapeHtml(displayName(player)) + (keeper(player) ? ' <b class="keeper-mark" title="Goleiro">G</b>' : "") + "</span>" +
+          (editable
+            ? '<button type="button" class="sl-role' + (starter ? " is-starter" : "") + '" data-sl-role="' + escapeHtml(team.key) + '" data-sl-index="' + index + '" aria-label="' + escapeHtml(displayName(player)) + ": " + (starter ? "titular, tocar para passar a reserva" : "reserva, tocar para passar a titular") + '">' + (starter ? "Titular" : "Reserva") + '</button><button type="button" class="text-button sl-remove" data-sl-remove="' + escapeHtml(team.key) + '" data-sl-index="' + index + '" aria-label="Remover ' + escapeHtml(displayName(player)) + '">Remover</button>'
+            : '<small class="sl-role-text">' + (starter ? "Titular" : "Reserva") + "</small>") +
+          "</li>";
+      }).join("");
+    const reserves = team.players.length - team.starters.length;
+    return '<article class="sl-team" style="--team-color:' + color.color + ";--team-ink:" + color.ink + '"><header class="sl-team-head">' +
+      (editable
+        ? '<input class="sl-team-name" data-sl-name="' + escapeHtml(team.key) + '" data-focus-key="name-' + escapeHtml(team.key) + '" maxlength="30" value="' + escapeHtml(team.name) + '" aria-label="Nome do time">' +
+          '<select class="sl-team-color" data-sl-color="' + escapeHtml(team.key) + '" aria-label="Cor do ' + escapeHtml(team.name) + '">' + SUPER_COLORS.map((item, index) => '<option value="' + index + '"' + (index === team.color ? " selected" : "") + ">" + item.name + "</option>").join("") + "</select>"
+        : "<strong>" + escapeHtml(team.name) + "</strong>") +
+      '</header><ol class="sl-players">' + (players || '<li class="sl-empty">Nenhum jogador ainda.</li>') + "</ol>" +
+      (editable
+        ? '<form class="sl-add" data-sl-add="' + escapeHtml(team.key) + '"><input data-focus-key="add-' + escapeHtml(team.key) + '" maxlength="50" placeholder="Nome (* no fim = goleiro)" aria-label="Adicionar jogador ao ' + escapeHtml(team.name) + '"><button type="submit" class="button button-primary button-small">Adicionar</button></form>'
+        : "") +
+      '<small class="sl-count' + (team.starters.length === sl.starters ? "" : " is-short") + '">' + team.starters.length + "/" + sl.starters + " titulares · " + reserves + (reserves === 1 ? " reserva" : " reservas") + "</small></article>";
+  }
+  let superMarkup = "",
+    superTeamsOpen = false;
+  function renderSuperLiga() {
+    const box = $("superLigaPanel");
+    if (!box) return;
+    const show = isSuperMode(),
+      sl = state.superLiga;
+    box.hidden = !show;
+    // Sem tabela sorteada não há jogo para preparar: o painel da Super Liga vem primeiro.
+    $("jogo").hidden = show && !state.currentGame && sl?.status !== "running";
+    if (!show) return;
+    const locked = isEditLocked(),
+      status = sl?.status || "none",
+      statusText = { none: "A MONTAR", setup: "MONTANDO TIMES", running: "EM ANDAMENTO", finished: "ENCERRADA" }[status];
+    let html = '<div class="section-heading"><div><p class="eyebrow">MODO SUPER LIGA</p><h2 id="slTitle">Super Liga SKALAMA</h2></div><span class="season-badge">' + statusText + "</span></div>";
+    if (!sl) {
+      html += locked
+        ? '<p class="empty-state">O organizador ainda não montou a Super Liga.</p>'
+        : '<p class="help-text sl-intro">A Super Liga é separada do Elenco e sorteio: aqui você define os times, os jogadores de cada um e os titulares. Depois, o site sorteia a ordem dos jogos para que todos enfrentem todos.</p>' +
+          '<div class="fields two sl-settings"><label>Quantos times<select id="slTeamCount">' + Array.from({ length: SUPER_MAX_TEAMS - SUPER_MIN_TEAMS + 1 }, (_, i) => i + SUPER_MIN_TEAMS).map((n) => '<option value="' + n + '"' + (n === 4 ? " selected" : "") + ">" + n + " times</option>").join("") + '</select></label><label>Titulares por time<input id="slStarters" type="number" inputmode="numeric" min="4" max="9" step="1" value="5"></label></div>' +
+          '<div class="button-row"><button type="button" class="button button-primary" data-sl-action="create">Montar times</button></div>';
+    } else {
+      const teams = sl.teams,
+        fixtures = sl.fixtures || [],
+        groupGames = fixtures.filter((fixture) => fixture.stage === "group"),
+        final = fixtures.find((fixture) => fixture.stage === "final"),
+        next = superNextFixture();
+      if (status === "finished" && sl.champion) {
+        const color = colorOf(sl.champion),
+          finalGame = final && (state.gameHistory || []).find((game) => game.id === final.gameId);
+        html += '<div class="sl-champion" style="--team-color:' + color.color + ";--team-ink:" + color.ink + '"><p class="eyebrow">CAMPEÃO DA SUPER LIGA</p><strong>' + escapeHtml(teamLabel(sl.champion)) + "</strong>" +
+          (finalGame ? "<span>Final: " + escapeHtml(teamLabel(finalGame.home)) + " " + finalGame.homeScore + " × " + finalGame.awayScore + " " + escapeHtml(teamLabel(finalGame.away)) + (finalGame.shootout && Number.isFinite(finalGame.shootout.homeScore) ? " (pênaltis " + finalGame.shootout.homeScore + "×" + finalGame.shootout.awayScore + ")" : "") + "</span>" : "") + "</div>";
+      }
+      if (status === "setup") {
+        html += locked
+          ? '<p class="help-text">O organizador está montando os times da Super Liga.</p>'
+          : '<div class="fields two sl-settings"><label>Quantos times<select id="slTeamCount">' + Array.from({ length: SUPER_MAX_TEAMS - SUPER_MIN_TEAMS + 1 }, (_, i) => i + SUPER_MIN_TEAMS).map((n) => '<option value="' + n + '"' + (n === teams.length ? " selected" : "") + ">" + n + " times</option>").join("") + '</select></label><label>Titulares por time<input id="slStarters" type="number" inputmode="numeric" min="4" max="9" step="1" value="' + sl.starters + '"></label></div>' +
+            '<p class="help-text">Dê nome e cor a cada time e adicione os jogadores. Os primeiros ' + sl.starters + " de cada time entram como titulares e os demais como reservas; toque em Titular ou Reserva para trocar.</p>";
+      } else {
+        html += '<div class="sl-columns"><div class="sl-block"><h3>Classificação</h3>' + standingsTable(superStandings(), "A classificação aparece depois do primeiro jogo.") + '<p class="help-text">Vitória 3 pontos, empate 1. Depois que todos se enfrentarem, os 2 primeiros fazem a final.</p></div>' +
+          '<div class="sl-block"><h3>Jogos</h3>';
+        const rounds = [...new Set(groupGames.map((fixture) => fixture.round))];
+        html += rounds.map((round) => {
+          const games = groupGames.filter((fixture) => fixture.round === round),
+            playingTeams = new Set(games.flatMap((fixture) => [fixture.home, fixture.away])),
+            rest = teams.filter((team) => !playingTeams.has(team.key));
+          return '<div class="sl-round"><h4>Rodada ' + round + (rest.length ? ' <small>· folga: ' + rest.map((team) => escapeHtml(team.name)).join(", ") + "</small>" : "") + '</h4><ol class="sl-fixtures">' + games.map((fixture) => superFixtureRow(fixture, next, locked)).join("") + "</ol></div>";
+        }).join("");
+        html += final
+          ? '<div class="sl-round sl-final-round"><h4>Final</h4><ol class="sl-fixtures">' + superFixtureRow(final, next, locked) + "</ol></div>"
+          : '<div class="sl-round sl-final-round"><h4>Final</h4><p class="help-text">1º × 2º da classificação, depois que todos se enfrentarem.</p></div>';
+        html += "</div></div>";
+      }
+      const playing = new Set([state.currentGame?.home, state.currentGame?.away].filter(Boolean)),
+        cards = teams.map((team) => superTeamCard(team, sl, !locked && !playing.has(team.key))).join("");
+      html += status === "setup"
+        ? '<div class="sl-teams">' + cards + "</div>"
+        : '<details class="sl-teams-details"' + (superTeamsOpen ? " open" : "") + "><summary>Times e jogadores · " + teams.length + " times · " + sl.starters + " titulares por time</summary><div class=\"sl-teams\">" + cards + "</div></details>";
+      if (!locked)
+        html += '<div class="button-row sl-actions">' +
+          (status === "setup" ? '<button type="button" class="button button-primary" data-sl-action="draw">Sortear ordem dos jogos</button>' : "") +
+          (status !== "setup" ? '<button type="button" class="button button-outline" data-sl-action="restart"' + (state.currentGame?.superLigaId ? " disabled" : "") + ">Nova Super Liga</button>" : "") +
+          "</div>" +
+          (status === "setup" ? '<p class="help-text">Com ' + teams.length + " times são " + (teams.length * (teams.length - 1)) / 2 + " jogos em que todos se enfrentam uma vez, em ordem sorteada, e depois a final.</p>" : "");
+    }
+    if (html === superMarkup) return;
+    const focusKey = box.contains(document.activeElement) ? document.activeElement?.dataset?.focusKey : "";
+    superMarkup = html;
+    box.innerHTML = html;
+    if (focusKey) box.querySelector('[data-focus-key="' + focusKey + '"]')?.focus();
+  }
+  function bindSuperLiga() {
+    const box = $("superLigaPanel");
+    box.addEventListener("click", (event) => {
+      const target = event.target.closest("button");
+      if (!target || target.disabled) return;
+      const action = target.dataset.slAction;
+      if (action === "create") superCreate();
+      else if (action === "draw") superDraw();
+      else if (action === "restart") superRestart();
+      else if (target.dataset.slRole) superToggleRole(target.dataset.slRole, Number(target.dataset.slIndex));
+      else if (target.dataset.slRemove) superRemovePlayer(target.dataset.slRemove, Number(target.dataset.slIndex));
+      else if (target.dataset.slPlay) superPlay(target.dataset.slPlay);
+    });
+    box.addEventListener("submit", (event) => {
+      const form = event.target.closest("[data-sl-add]");
+      if (!form) return;
+      event.preventDefault();
+      const input = form.querySelector("input");
+      if (input.value.trim()) superAddPlayer(form.dataset.slAdd, input.value);
+    });
+    box.addEventListener("change", (event) => {
+      const target = event.target;
+      if (target.dataset.slName) superRename(target.dataset.slName, target.value);
+      else if (target.dataset.slColor) superSetColor(target.dataset.slColor, target.value);
+      else if (target.id === "slTeamCount" && state.superLiga) superSetCount(target.value);
+      else if (target.id === "slStarters" && state.superLiga) superSetStarters(target.value);
+    });
+    // "toggle" não sobe pela página; escuta na captura para lembrar se a lista de times está aberta.
+    box.addEventListener("toggle", (event) => {
+      if (event.target.classList?.contains("sl-teams-details")) { superTeamsOpen = event.target.open; superMarkup = ""; }
+    }, true);
+  }
   function renderAll() {
     if (!state) return;
     if (document.activeElement !== $("venue"))
@@ -1783,6 +2156,7 @@
     renderNightHighlights();
     renderTimer();
     renderArt();
+    renderSuperLiga();
     markActiveTab();
     applyEditLock();
   }
@@ -1924,8 +2298,14 @@
     do ctx.font = `${weight} ${size}px ${family}`;
     while (ctx.measureText(text).width > maxWidth && --size > 12);
   }
-  const colorOf = (name) =>
-    teamColors[TEAM_NAMES.indexOf(name)] || teamColors[0];
+  function colorOf(name) {
+    const sl = superTeam(name);
+    if (sl) return SUPER_COLORS[sl.color] || SUPER_COLORS[0];
+    const index = TEAM_NAMES.indexOf(name);
+    if (index >= 0) return teamColors[index];
+    const past = (state?.gameHistory || []).find((game) => (game.home === name && game.homeColor) || (game.away === name && game.awayColor));
+    return (past && (past.home === name ? past.homeColor : past.awayColor)) || teamColors[0];
+  }
   // Topo comum: escudo, nome da liga e linha de informações. Devolve o y seguinte.
   function drawArtHeader(ctx, W, story, info) {
     let y = story ? 150 : 80;
@@ -2643,7 +3023,7 @@
       "Times sorteados. A sequência começa com Águia × Sol.",
     );
   }
-  function cocaOnCourtCount() { return Math.min(9, Math.max(4, Number(state.cocaOnCourt) || 5)); }
+  function cocaOnCourtCount() { return Math.min(9, Math.max(4, Number(state.superLiga?.starters || state.cocaOnCourt) || 5)); }
   // Titulares iguais nos dois times: vale o número escolhido, limitado ao menor time do confronto.
   function effectiveOnCourt() {
     const sizes = [["matchHome", "home"], ["matchAway", "away"]].map(([id, side]) => [$(id).value, side]).filter(([team]) => team).map(([team, side]) => convocadosFor(team, side).length);
@@ -2660,6 +3040,8 @@
     if (starterChoice[teamName]) return starterChoice[teamName].filter((player) => all.includes(player)).slice(0, count);
     const chosen = [], gk = $(side === "home" ? "keeperHome" : "keeperAway").value;
     if (gk && all.includes(gk)) chosen.push(gk);
+    // Super Liga: começa com os titulares definidos no time.
+    for (const player of superTeam(teamName)?.starters || []) if (chosen.length < count && all.includes(player) && !chosen.includes(player)) chosen.push(player);
     for (const player of all) if (chosen.length < count && !chosen.includes(player)) chosen.push(player);
     return chosen;
   }
@@ -2673,7 +3055,7 @@
       const all = convocadosFor(team, side), picked = starterSelection(team, side), full = picked.length >= count;
       return '<fieldset class="starter-team"><legend>Titulares · ' + escapeHtml(teamLabel(team)) + ' · ' + picked.length + '/' + count + '</legend>' +
         all.map((player) => '<label class="starter-option"><input type="checkbox" data-starter-team="' + escapeHtml(team) + '" data-starter-side="' + side + '" value="' + escapeHtml(player) + '"' + (picked.includes(player) ? " checked" : "") + (!picked.includes(player) && full ? " disabled" : "") + '><span>' + escapeHtml(displayName(player)) + (keeper(player) ? " · Goleiro" : "") + '</span></label>').join("") +
-        '<small>' + Math.max(0, all.length - picked.length) + ' no banco · máximo de 9 convocados por time</small></fieldset>';
+        '<small>' + Math.max(0, all.length - picked.length) + ' no banco</small></fieldset>';
     }).join("");
   }
   function substitutionPool(game, bench = []) {
@@ -2819,29 +3201,30 @@
     } finally { shootoutBusy = false; }
   }
   async function prepareMatch() {
-    const pending = state.pendingMatch;
-    if (state.currentGame || !pending) { notify("Sorteie os times antes de preparar a partida.", true); return; }
-    if (pending.prepared) { await saveState({ pendingMatch: { home: pending.home, away: pending.away } }, "Preparação desfeita. Ajuste e toque em Partida preparada."); return; }
-    const home = $("matchHome").value, away = $("matchAway").value, teams = state.teams || [];
+    const pending = currentPending(), superMode = isSuperMode();
+    if (state.currentGame || !pending) { notify(superMode ? "Sorteie a ordem dos jogos da Super Liga antes de preparar a partida." : "Sorteie os times antes de preparar a partida.", true); return; }
+    if (pending.prepared) { await saveState(pendingPatch({ home: pending.home, away: pending.away }), "Preparação desfeita. Ajuste e toque em Partida preparada."); return; }
+    const home = $("matchHome").value, away = $("matchAway").value, teams = modeTeams();
     if (!home || !away || home === away || !teams.some((team) => team.name === home) || !teams.some((team) => team.name === away)) { notify("Escolha dois times diferentes e válidos.", true); return; }
     for (const teamName of [home, away]) {
       const total = lineupForTeam(teamName).length;
-      if (total < 4) { notify(teamLabel(teamName) + " tem só " + total + " jogador(es). Puxe jogadores de outros times em \"Ajustar jogadores antes do jogo\" (mínimo 4).", true); return; }
+      if (total < 4) { notify(teamLabel(teamName) + " tem só " + total + " jogador(es). " + (superMode ? "Adicione jogadores ao time no painel da Super Liga (mínimo 4)." : "Puxe jogadores de outros times em \"Ajustar jogadores antes do jogo\" (mínimo 4)."), true); return; }
     }
     if (!$("keeperHome").value || !$("keeperAway").value) { notify("Defina um goleiro para cada time antes de preparar a partida.", true); return; }
-    const saved = await saveState({ pendingMatch: { home, away, prepared: true } }, "Partida preparada: " + teamLabel(home) + " × " + teamLabel(away) + ".");
+    const saved = await saveState(pendingPatch({ home, away, prepared: true }), "Partida preparada: " + teamLabel(home) + " × " + teamLabel(away) + ".");
     const setup = document.querySelector(".live-setup");
     if (saved && setup) setup.open = false;
   }
   function unprepareMatch() {
-    if (state.pendingMatch?.prepared && !state.currentGame) saveState({ pendingMatch: { home: state.pendingMatch.home, away: state.pendingMatch.away } }, "Os times mudaram. Toque em Partida preparada para confirmar.");
+    const pending = currentPending();
+    if (pending?.prepared && !state.currentGame) saveState(pendingPatch({ home: pending.home, away: pending.away }), "Os times mudaram. Toque em Partida preparada para confirmar.");
   }
   async function beginGame() {
-    const pending = state.pendingMatch;
-    if (state.currentGame || !pending) { notify("Sorteie os times antes de iniciar a partida.", true); return; }
-    const home = $("matchHome").value, away = $("matchAway").value, teams = state.teams || [];
+    const pending = currentPending(), superMode = isSuperMode(), sl = state.superLiga;
+    if (state.currentGame || !pending) { notify(superMode ? "Sorteie a ordem dos jogos da Super Liga antes de iniciar a partida." : "Sorteie os times antes de iniciar a partida.", true); return; }
+    const home = $("matchHome").value, away = $("matchAway").value, teams = modeTeams();
     if (!home || !away || home === away || !teams.some((team) => team.name === home) || !teams.some((team) => team.name === away)) { notify("Escolha dois times diferentes e válidos.", true); return; }
-    const homePlayers = [...lineupForTeam(home)], awayPlayers = [...lineupForTeam(away)], mode = state.timerMode || "liga", maxPlayers = mode === "coca" ? 9 : 5;
+    const homePlayers = [...lineupForTeam(home)], awayPlayers = [...lineupForTeam(away)], mode = state.timerMode || "liga", maxPlayers = superMode ? SUPER_MAX_PLAYERS : mode === "coca" ? 9 : 5;
     const homeLoan = $("loanHomePlayer").value, awayLoan = $("loanAwayPlayer").value;
     const loans = [];
     for (const [teamName, loan, players] of [[home, homeLoan, homePlayers], [away, awayLoan, awayPlayers]]) {
@@ -2868,12 +3251,15 @@
     const durationMinutes = Number($("durationMinutes").value);
     if ((!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 180)) { notify("A duração deve ser de 1 a 180 minutos.", true); return; }
     const now = Date.now(), duration = durationMinutes * 60;
-    const currentGame = { id: crypto.randomUUID(), roundId: state.roundId || null, number: (state.gameHistory || []).length + 1, home, away, homePlayers, awayPlayers, homeStart: [...homePlayers], awayStart: [...awayPlayers], homeBench, awayBench, onCourt, substitutions: [], homeKeeper, awayKeeper, homeKeeperStart: homeKeeper, awayKeeperStart: awayKeeper, loans, timerMode: mode, durationMinutes: mode === "coca" ? null : durationMinutes, startedAt: now };
+    const fixture = superMode ? superFixture(pending.fixtureId) : null;
+    const currentGame = { id: crypto.randomUUID(), roundId: (fixture ? sl.id : state.roundId) || null, ...(fixture ? { superLigaId: sl.id, fixtureId: fixture.id, stage: fixture.stage, round: fixture.round } : {}), number: (state.gameHistory || []).length + 1, home, away, homePlayers, awayPlayers, homeStart: [...homePlayers], awayStart: [...awayPlayers], homeBench, awayBench, onCourt, substitutions: [], homeKeeper, awayKeeper, homeKeeperStart: homeKeeper, awayKeeperStart: awayKeeper, loans, timerMode: mode, durationMinutes: mode === "coca" ? null : durationMinutes, startedAt: now };
     const order = [...(state.challengeQueue || []), pending.home, pending.away, ...teams.map((team) => team.name)].filter((name,index,all) => name && name !== home && name !== away && all.indexOf(name) === index);
     const nextQueue = order;
     const nextPending = { home, away };
     const timer = { ...freshTimer(mode, duration), endsAt: now + duration * 1000 };
-    await saveState({ currentGame, timer, pendingMatch: nextPending, challengeQueue: nextQueue, durationMinutes }, "Jogo " + currentGame.number + " iniciado: " + home + " × " + away + ".");
+    // A Super Liga não mexe na fila do Modo Liga.
+    const queuePatch = fixture ? { superLiga: { ...sl, pending: { fixtureId: fixture.id, prepared: false } } } : { pendingMatch: nextPending, challengeQueue: nextQueue };
+    await saveState({ currentGame, timer, durationMinutes, ...queuePatch }, "Jogo " + currentGame.number + " iniciado: " + teamLabel(home) + " × " + teamLabel(away) + ".");
   }
   async function pauseTimer() {
     if (!state.currentGame) return;
@@ -3001,6 +3387,12 @@
       renderTimer();
       return;
     }
+    if (current.stage === "final" && winner === "Empate") {
+      notify("Final empatada: decida nos pênaltis antes de encerrar.", true);
+      gameFinishing = false;
+      renderTimer();
+      return;
+    }
     const loser = winner === current.home ? current.away : current.home,
       gameGoals = goals
         .filter((g) => g.game_id === current.id)
@@ -3035,7 +3427,32 @@
         performance,
         durationSeconds,
         finishedAt: new Date().toISOString(),
+        ...(current.superLigaId ? { homeColor: colorOf(current.home), awayColor: colorOf(current.away) } : {}),
       };
+    if (current.superLigaId) {
+      try {
+        const history = [...(state.gameHistory || []), entry],
+          sl = state.superLiga,
+          sameLeague = sl && sl.id === current.superLigaId,
+          nextSl = sameLeague ? superAfterGame(sl, current, entry, history) : sl,
+          final = nextSl?.fixtures?.find((fixture) => fixture.stage === "final"),
+          finalCreated = sameLeague && final && !sl.fixtures.some((fixture) => fixture.stage === "final"),
+          upcoming = sameLeague && nextSl.status === "running" ? (nextSl.fixtures || []).find((fixture) => !fixture.gameId) : null;
+        const ending =
+          sameLeague && nextSl.status === "finished"
+            ? " Campeão da Super Liga: " + teamLabel(nextSl.champion) + "!"
+            : finalCreated
+              ? " Todos já se enfrentaram. Final: " + teamLabel(final.home) + " × " + teamLabel(final.away) + "."
+              : upcoming
+                ? " Próximo: " + teamLabel(upcoming.home) + " × " + teamLabel(upcoming.away) + "."
+                : "";
+        await saveState(
+          { gameHistory: history, currentGame: null, ...(sameLeague ? { superLiga: nextSl } : {}), timer: freshTimer("coca"), shootout: null, incidents: [] },
+          "Jogo " + current.number + " encerrado" + (winner === "Empate" ? " empatado" : penalties ? " nos pênaltis" : "") + "." + ending,
+        );
+      } finally { gameFinishing = false; renderTimer(); }
+      return;
+    }
     let queue, next;
     if (winner !== "Empate") {
       queue = [...waiting, loser];
@@ -3102,6 +3519,7 @@
       $("artFormatHelp").hidden = $("artFormat").value !== "story";
       drawArt();
     });
+    bindSuperLiga();
     $("artDownload").addEventListener("click", downloadArt);
     $("artShare").addEventListener("click", shareArt);
     bindSwapGrid();

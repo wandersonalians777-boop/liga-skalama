@@ -44,6 +44,20 @@ Se o Supabase já estiver configurado, execute novamente schema.sql para acresce
 
 
 
+## Modo Super Liga
+
+A Super Liga é uma competição à parte: o que está em **Elenco e sorteio** não entra nela. Tudo é feito na aba **Modo Super Liga**:
+
+1. Escolha quantos times participam (de 2 a 8) e quantos titulares cada time tem (de 4 a 9).
+2. Dê nome e cor a cada time e adicione os jogadores dentro do próprio time. Os primeiros jogadores entram como titulares e os demais como reservas; toque em Titular ou Reserva para trocar. Use `*` no fim do nome para marcar goleiro.
+3. Toque em **Sortear ordem dos jogos**. O site monta as rodadas de forma aleatória para que todos enfrentem todos uma vez (por exemplo, com 4 times: A × C e B × D na primeira rodada). Com número ímpar de times, um time folga em cada rodada.
+4. Jogue as partidas pela própria aba: o próximo jogo da tabela já vem escolhido em Preparar partida, e **Jogar agora** permite adiantar outro jogo.
+5. A classificação usa vitória 3 pontos, empate 1, depois saldo e gols marcados. Quando todos já se enfrentaram, o 1º e o 2º fazem a **final**. Final empatada é decidida nos pênaltis, e o vencedor é o campeão.
+
+Os jogos da Super Liga também entram no Histórico e nos rankings gerais. **Nova Super Liga** apaga a tabela e a classificação, mantém os times e jogadores e deixa os jogos já disputados no Histórico.
+
+**Banco Supabase já existente:** execute a migração `supabase/migrations/20261114_league_public_super_liga.sql` (ou o `schema.sql` atualizado) para que os visitantes também vejam a Super Liga.
+
 ## Destaques da rodada
 
 A tela principal apresenta Jogador da noite e Goleiro da noite a partir da média de score das partidas concluídas desde o último sorteio. Um novo sorteio inicia uma nova rodada para esses destaques, sem apagar o histórico ou os rankings acumulados.
