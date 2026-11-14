@@ -16,6 +16,10 @@ Requer Node.js 20.9 ou superior. No diretório do projeto, execute `pnpm install
 
 Sem essas variáveis, ao rodar localmente, o site abre em **Modo local**: os dados ficam salvos só no navegador atual. Na publicação, o workflow exige as duas variáveis e interrompe o build se alguma estiver faltando. O site publicado deve ser público para leitura. Somente contas autenticadas e cadastradas pelo administrador em `league_admins` podem editar; as permissões são aplicadas pelo RLS no banco e também pela interface. Use somente a chave pública anon/publishable; nunca a `service_role`.
 
+## Elenco: jogadores ativos e inativos
+
+O cadastro de jogadores do Elenco fica guardado (até 80 nomes). Cada jogador pode estar **ativo** ou **inativo**: só os ativos entram no sorteio (mínimo 10, máximo 32). Deixar alguém inativo não apaga o cadastro nem mexe nos times já sorteados; vale para o próximo sorteio.
+
 ## Organização dos jogos
 
 O primeiro jogo é **Time Águia × Time Sol**. O vencedor segue contra **Verde**, depois **Azul** e, em seguida, contra os times derrotados, em uma fila contínua sem limite de partidas. Após cada partida, o vencedor fica automaticamente pré-selecionado para enfrentar o próximo time da fila; o organizador pode alterar os dois times antes de começar. O placar começa em zero para cada partida.
@@ -55,7 +59,9 @@ A Super Liga é uma competição à parte: o que está em **Elenco e sorteio** n
 5. A classificação usa vitória 3 pontos, empate 1, depois saldo e gols marcados. Quando todos já se enfrentaram, o 1º e o 2º fazem a **final**. Final empatada é decidida nos pênaltis, e o vencedor é o campeão.
 6. Com apenas 2 times não há tabela: é **jogo único**, e quem vencer é o campeão. Empate é decidido nos pênaltis.
 
-Os jogos da Super Liga também entram no Histórico e nos rankings gerais. **Nova Super Liga** apaga a tabela e a classificação, mantém os times e jogadores e deixa os jogos já disputados no Histórico.
+Os rankings são separados: a Tela principal (artilharia, score de jogadores e goleiros, gols sofridos e destaques do mês) conta só os jogos do Modo Liga, e a aba Super Liga tem os seus rankings de artilheiros, goleiros e score, que somam todas as Super Ligas já disputadas. **Nova Super Liga** apaga só a tabela de jogos e a classificação; os times, os jogadores e os rankings da Super Liga continuam, e os jogos ficam no Histórico.
+
+Nos times da Super Liga dá para escolher jogadores já cadastrados no Elenco ou digitar um nome novo.
 
 **Banco Supabase já existente:** execute a migração `supabase/migrations/20261114_league_public_super_liga.sql` (ou o `schema.sql` atualizado) para que os visitantes também vejam a Super Liga.
 

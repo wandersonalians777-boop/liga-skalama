@@ -8,6 +8,9 @@
   ];
   // 10–15 formam 2 ou 3 times; 16–19 formam 4 times com todos os jogadores; a partir de 20, quatro times titulares e reservas.
   const MIN_PLAYERS = 10;
+  // Cadastro do Elenco: até 80 nomes; só os ativos (até 32) entram no sorteio.
+  const ROSTER_MAX = 80,
+    ACTIVE_MAX = 32;
   const SCORE_RULES = Object.freeze({ assist: 0.5 });
   // Mínimo de jogos no gol para entrar nos destaques de goleiro (mês e noite).
   const MIN_KEEPER_GAMES = 3;
@@ -75,6 +78,7 @@
       gameHistory: [],
       keeperRatings: [],
       superLiga: null,
+      inactivePlayers: [],
       timer: {
         mode: "liga",
         duration: 480,
@@ -307,6 +311,12 @@
   }
   function playerKey(name) {
     return displayName(name).toLocaleLowerCase("pt-BR");
+  }
+  function isInactive(name) {
+    return (state.inactivePlayers || []).some((item) => playerKey(item) === playerKey(name));
+  }
+  function activeRoster() {
+    return (state.roster || []).filter((name) => !isInactive(name));
   }
   function normalizePlayer(value) {
     const raw = value.trim(),
@@ -1197,8 +1207,12 @@
       return '<details class="past-round"><summary>' + (date ? new Date(date + 'T12:00:00').toLocaleDateString('pt-BR') : 'Rodada anterior ' + (entries.length-index)) + ' · ' + games.length + ' partidas</summary>' + standingsTable(rows, 'Sem resultados finalizados nesta rodada.') + '</details>';
     }).join('') : '<p class="empty-state">As classificações das rodadas anteriores aparecerão aqui.</p>';
   }
+  // Rankings da Tela principal: só jogos do Modo Liga (a Super Liga tem os seus na própria aba).
+  function ligaGames() {
+    return (state.gameHistory || []).filter((game) => !game.superLigaId);
+  }
   function renderScoreRankings() {
-    const all = (state.gameHistory || []).flatMap(
+    const all = ligaGames().flatMap(
         (game) => game.performance || [],
       ),
       players = all.filter((p) => p.role === "linha"),
@@ -1390,7 +1404,7 @@
       month: "long",
       year: "numeric",
     });
-    const games = (state.gameHistory || []).filter((game) => {
+    const games = ligaGames().filter((game) => {
       const date = new Date(game.finishedAt);
       return (
         Number.isFinite(date.getTime()) &&
@@ -1688,9 +1702,13 @@
       .join("");
   }
   function renderGoals() {
-    const totals = new Map();
+    const totals = new Map(),
+      superGameIds = new Set([
+        ...(state.gameHistory || []).filter((game) => game.superLigaId).map((game) => game.id),
+        ...(state.currentGame?.superLigaId ? [state.currentGame.id] : []),
+      ]);
     goals
-      .filter((goal) => !goal.own_goal)
+      .filter((goal) => !goal.own_goal && !superGameIds.has(goal.game_id))
       .forEach((goal) =>
         totals.set(goal.player_name, (totals.get(goal.player_name) || 0) + 1),
       );
@@ -1701,7 +1719,7 @@
       ? ranking
           .slice(0, 11)
           .map(([name, count], index) => {
-            const past = (state.gameHistory || []).filter(
+            const past = ligaGames().filter(
               (game) =>
                 (game.performance || []).some((p) => p.player === name) ||
                 (!(game.performance || []).length &&
@@ -1710,6 +1728,7 @@
             const teams = selectedTeams(),
               current =
                 state.currentGame &&
+                !state.currentGame.superLigaId &&
                 [
                   ...(teams.home?.players || []),
                   ...(teams.away?.players || []),
@@ -1770,29 +1789,30 @@
   }
   function renderRoster() {
     const roster = state.roster || [],
-      list = $("rosterList");
-    $("rosterCount").textContent = roster.length + " / 32";
+      list = $("rosterList"),
+      active = roster.filter((name) => !isInactive(name)),
+      startersLimit = state.teams?.length ? state.teams.length * 5 : startersFor(active.length);
+    $("rosterCount").textContent = active.length + " ativos · " + roster.length + " cadastrados";
     list.innerHTML = roster.length
       ? roster
-          .map(
-            (name, index) =>
-              '<li><span class="roster-number">' +
+          .map((name, index) => {
+            const off = isInactive(name),
+              activeIndex = active.indexOf(name);
+            return (
+              '<li class="' + (off ? "is-inactive" : "") + '"><span class="roster-number">' +
               String(index + 1).padStart(2, "0") +
               "</span><span>" +
               escapeHtml(displayName(name)) +
               (keeper(name) ? ' <b class="keeper-mark">* · GOLEIRO</b>' : "") +
-              (index >=
-              (state.teams?.length
-                ? state.teams.length * 5
-                : startersFor(roster.length))
-                ? ' <small class="reserve-label">· RESERVA</small>'
-                : "") +
-              '</span><button class="text-button" data-remove-player="' +
+              (off ? ' <small class="reserve-label">· FORA DO SORTEIO</small>' : activeIndex >= startersLimit ? ' <small class="reserve-label">· RESERVA</small>' : "") +
+              '</span><button type="button" class="roster-toggle' + (off ? "" : " is-active") + '" data-toggle-player="' + index + '" aria-pressed="' + String(!off) + '" aria-label="' + escapeHtml(displayName(name)) + (off ? ": inativo, tocar para ativar" : ": ativo, tocar para deixar inativo") + '">' + (off ? "Inativo" : "Ativo") + "</button>" +
+              '<button class="text-button" data-remove-player="' +
               index +
               '" aria-label="Remover ' +
               escapeHtml(displayName(name)) +
-              '">Remover</button></li>',
-          )
+              '">Remover</button></li>'
+            );
+          })
           .join("")
       : '<li class="empty-state">Nenhum jogador adicionado.</li>';
     list
@@ -1802,9 +1822,16 @@
           removePlayer(Number(button.dataset.removePlayer)),
         ),
       );
-    $("newPlayer").disabled = roster.length >= 32;
-    $("addPlayer").disabled = roster.length >= 32;
-    $("drawTeams").disabled = roster.length < MIN_PLAYERS;
+    list
+      .querySelectorAll("[data-toggle-player]")
+      .forEach((button) =>
+        button.addEventListener("click", () =>
+          toggleActivePlayer(Number(button.dataset.togglePlayer)),
+        ),
+      );
+    $("newPlayer").disabled = roster.length >= ROSTER_MAX;
+    $("addPlayer").disabled = roster.length >= ROSTER_MAX;
+    $("drawTeams").disabled = active.length < MIN_PLAYERS;
   }
   // ---------- Painel da Super Liga ----------
   function superStandings(sl = state.superLiga, history = state.gameHistory || []) {
@@ -2026,7 +2053,7 @@
     const sl = state.superLiga;
     if (!sl) return;
     if (state.currentGame?.superLigaId) { notify("Encerre a partida em andamento antes de começar uma nova Super Liga.", true); return; }
-    if (!confirm("Começar uma nova Super Liga? A tabela e a classificação atuais são apagadas; os times e jogadores continuam, e os jogos já disputados ficam no Histórico.")) return;
+    if (!confirm("Começar uma nova Super Liga? A tabela de jogos e a classificação atuais são apagadas. Os times, os jogadores e os rankings da Super Liga continuam, e os jogos já disputados ficam no Histórico.")) return;
     await saveState({ superLiga: { ...sl, id: crypto.randomUUID(), status: "setup", fixtures: [], pending: null, champion: null, createdAt: new Date().toISOString() } }, "Nova Super Liga: ajuste os times e sorteie a ordem dos jogos.");
   }
   function superChip(key) {
@@ -2048,7 +2075,9 @@
       '<span class="sl-state">' + stateText + (canPlay ? '<button type="button" class="text-button" data-sl-play="' + escapeHtml(fixture.id) + '">Jogar agora</button>' : "") + "</span></li>";
   }
   function superTeamCard(team, sl, editable) {
-    const color = colorOf(team.key),
+    // Jogadores já cadastrados no Elenco que ainda não estão em nenhum time da Super Liga.
+    const available = (state.roster || []).filter((name) => !sl.teams.some((item) => item.players.some((player) => playerKey(player) === playerKey(name)))),
+      color = colorOf(team.key),
       players = team.players.map((player, index) => {
         const starter = team.starters.includes(player);
         return '<li><span class="sl-player">' + escapeHtml(displayName(player)) + (keeper(player) ? ' <b class="keeper-mark" title="Goleiro">G</b>' : "") + "</span>" +
@@ -2064,8 +2093,11 @@
           '<select class="sl-team-color" data-sl-color="' + escapeHtml(team.key) + '" aria-label="Cor do ' + escapeHtml(team.name) + '">' + SUPER_COLORS.map((item, index) => '<option value="' + index + '"' + (index === team.color ? " selected" : "") + ">" + item.name + "</option>").join("") + "</select>"
         : "<strong>" + escapeHtml(team.name) + "</strong>") +
       '</header><ol class="sl-players">' + (players || '<li class="sl-empty">Nenhum jogador ainda.</li>') + "</ol>" +
+      (editable && available.length
+        ? '<label class="sl-pick"><select data-sl-pick="' + escapeHtml(team.key) + '" aria-label="Escolher jogador do Elenco para o ' + escapeHtml(team.name) + '"><option value="">+ Jogador do Elenco…</option>' + available.map((name) => '<option value="' + escapeHtml(name) + '">' + escapeHtml(displayName(name)) + (keeper(name) ? " · goleiro" : "") + "</option>").join("") + "</select></label>"
+        : "") +
       (editable
-        ? '<form class="sl-add" data-sl-add="' + escapeHtml(team.key) + '"><input data-focus-key="add-' + escapeHtml(team.key) + '" maxlength="50" placeholder="Nome (* no fim = goleiro)" aria-label="Adicionar jogador ao ' + escapeHtml(team.name) + '"><button type="submit" class="button button-primary button-small">Adicionar</button></form>'
+        ? '<form class="sl-add" data-sl-add="' + escapeHtml(team.key) + '"><input data-focus-key="add-' + escapeHtml(team.key) + '" maxlength="50" placeholder="Ou digite um nome novo (* = goleiro)" aria-label="Adicionar jogador ao ' + escapeHtml(team.name) + '"><button type="submit" class="button button-primary button-small">Adicionar</button></form>'
         : "") +
       '<small class="sl-count' + (team.starters.length === sl.starters ? "" : " is-short") + '">' + team.starters.length + "/" + sl.starters + " titulares · " + reserves + (reserves === 1 ? " reserva" : " reservas") + "</small></article>";
   }
@@ -2074,7 +2106,7 @@
     return '<div class="ranking-row' + (index < 3 ? " top-rank top-rank-" + (index + 1) : "") + '"><span class="rank">' + String(index + 1).padStart(2, "0") + "</span><span>" + escapeHtml(displayName(name)) + " <small>" + escapeHtml(detail) + "</small></span><strong>" + value + "</strong></div>";
   }
   function superRankings(sl) {
-    const games = (state.gameHistory || []).filter((game) => game.superLigaId === sl.id),
+    const games = (state.gameHistory || []).filter((game) => game.superLigaId),
       plural = (n, one, many) => n + " " + (n === 1 ? one : many),
       teamOf = (key) => superTeam(key)?.name || teamLabel(key);
     const scorers = new Map();
@@ -2105,7 +2137,7 @@
       playerRows = average("linha").sort((a, b) => b.average - a.average || a.name.localeCompare(b.name, "pt-BR")).slice(0, 10),
       empty = '<p class="empty-state">Aparece depois do primeiro jogo da Super Liga.</p>',
       score = (value) => value.toFixed(1).replace(".", ",");
-    return '<div class="sl-rankings">' +
+    return '<div class="sl-rankings-head"><h3>Rankings da Super Liga</h3><p class="help-text">Somam todas as Super Ligas já disputadas. Não zeram com "Nova Super Liga".</p></div><div class="sl-rankings">' +
       '<div class="sl-block"><h3>Artilheiros</h3>' + (scorerRows.map((r, i) => superRankingRow(i, r.name, teamOf(r.team), plural(r.goals, "gol", "gols"))).join("") || empty) + "</div>" +
       '<div class="sl-block"><h3>Melhores goleiros</h3>' + (keeperRows.map((r, i) => superRankingRow(i, r.name, teamOf(r.team) + " · " + plural(r.games, "jogo", "jogos") + " · " + plural(r.against, "gol sofrido", "gols sofridos"), score(r.average))).join("") || empty) + "</div>" +
       '<div class="sl-block"><h3>Score dos jogadores</h3>' + (playerRows.map((r, i) => superRankingRow(i, r.name, teamOf(r.team) + " · " + plural(r.games, "jogo", "jogos"), score(r.average))).join("") || empty) + "</div>" +
@@ -2183,6 +2215,8 @@
               ? '<p class="help-text">Com 2 times é jogo único: quem vencer é o campeão. Se empatar, vai para os pênaltis.</p>'
               : '<p class="help-text">Com ' + teams.length + " times são " + (teams.length * (teams.length - 1)) / 2 + " jogos em que todos se enfrentam uma vez, em ordem sorteada, e depois a final.</p>"
             : "");
+      // Os rankings acumulam todas as Super Ligas, então aparecem também enquanto os times são montados.
+      if (status === "setup" && (state.gameHistory || []).some((game) => game.superLigaId)) html += superRankings(sl);
     }
     if (html === superMarkup) return;
     const focusKey = box.contains(document.activeElement) ? document.activeElement?.dataset?.focusKey : "";
@@ -2212,7 +2246,8 @@
     });
     box.addEventListener("change", (event) => {
       const target = event.target;
-      if (target.dataset.slName) superRename(target.dataset.slName, target.value);
+      if (target.dataset.slPick) { if (target.value) superAddPlayer(target.dataset.slPick, target.value); }
+      else if (target.dataset.slName) superRename(target.dataset.slName, target.value);
       else if (target.dataset.slColor) superSetColor(target.dataset.slColor, target.value);
       else if (target.id === "slTeamCount" && state.superLiga) superSetCount(target.value);
       else if (target.id === "slStarters" && state.superLiga) superSetStarters(target.value);
@@ -2998,15 +3033,24 @@
   }
   async function addPlayer() {
     try {
-      const name = normalizePlayer($("newPlayer").value);
-      const roster = validateRoster([...(state.roster || []), name]);
+      const name = normalizePlayer($("newPlayer").value),
+        current = state.roster || [];
+      if (current.some((item) => playerKey(item) === playerKey(name))) throw new Error("Esse jogador já foi adicionado.");
+      if (current.length >= ROSTER_MAX) throw new Error("O cadastro pode ter no máximo " + ROSTER_MAX + " jogadores. Remova alguém que não joga mais.");
+      const roster = [...current, name],
+        // Com 32 ativos, o novo jogador entra como inativo.
+        startsInactive = activeRoster().length >= ACTIVE_MAX,
+        inactivePlayers = startsInactive ? [...(state.inactivePlayers || []), name] : state.inactivePlayers || [],
+        activeCount = roster.filter((item) => !inactivePlayers.some((off) => playerKey(off) === playerKey(item))).length;
       const reservePlayers =
-        state.teams?.length && roster.length > state.teams.length * 5
+        !startsInactive && state.teams?.length && activeCount > state.teams.length * 5
           ? [...(state.reservePlayers || []), name]
           : state.reservePlayers || [];
       await saveState(
-        { roster, reservePlayers },
-        `${roster.length} jogador${roster.length === 1 ? "" : "es"} adicionado${roster.length === 1 ? "" : "s"}.`,
+        { roster, reservePlayers, inactivePlayers },
+        startsInactive
+          ? displayName(name) + " foi cadastrado como inativo, porque já há " + ACTIVE_MAX + " ativos."
+          : `${activeCount} jogador${activeCount === 1 ? "" : "es"} ativo${activeCount === 1 ? "" : "s"} para o sorteio.`,
       );
       $("newPlayer").value = "";
       $("newPlayer").focus();
@@ -3030,6 +3074,7 @@
     await saveState(
       {
         roster,
+        inactivePlayers: (state.inactivePlayers || []).filter((item) => playerKey(item) !== playerKey(removed)),
         teams: [],
         lineups: null,
         absentPlayers: {},
@@ -3044,22 +3089,34 @@
       "Jogador removido. Sorteie novamente quando a lista estiver pronta.",
     );
   }
+  // Ativo/inativo não apaga o cadastro nem mexe nos times já sorteados: vale para o próximo sorteio.
+  async function toggleActivePlayer(index) {
+    const name = (state.roster || [])[index];
+    if (!name) return;
+    const inactive = isInactive(name);
+    if (inactive && activeRoster().length >= ACTIVE_MAX) { notify("Já há " + ACTIVE_MAX + " jogadores ativos. Deixe alguém inativo antes.", true); return; }
+    const inactivePlayers = inactive
+      ? (state.inactivePlayers || []).filter((item) => playerKey(item) !== playerKey(name))
+      : [...(state.inactivePlayers || []), name];
+    await saveState({ inactivePlayers }, displayName(name) + (inactive ? " está ativo" : " está inativo") + ". Vale para o próximo sorteio.");
+  }
   function freshTimer(mode = "liga", duration = 480) {
     return { mode, duration, endsAt: null, runningSince: null, elapsedBeforeRun: 0, remainingAtPause: null, pauseStartedAt: null, pauseUsedMs: 0 };
   }
   async function drawTeams() {
+    const pool = activeRoster();
     try {
-      validateRoster(state.roster || []);
+      validateRoster(pool);
     } catch (error) {
       notify(error.message, true);
       return;
     }
-    if ((state.roster?.length || 0) < MIN_PLAYERS) {
+    if (pool.length < MIN_PLAYERS) {
       notify(
-        "Adicione pelo menos " +
+        "Deixe pelo menos " +
           MIN_PLAYERS +
-          " jogadores. Atualmente: " +
-          (state.roster?.length || 0) +
+          " jogadores ativos. Atualmente: " +
+          pool.length +
           ".",
         true,
       );
@@ -3073,12 +3130,12 @@
     )
       return;
     swapPick = null;
-    const starterTotal = startersFor(state.roster.length);
+    const starterTotal = startersFor(pool.length);
     const teams = ["Time Águia", "Time Sol", "Time Verde", "Time Azul"]
       .slice(0, Math.ceil(starterTotal / 5))
       .map((name) => ({ name, players: [] }));
-    const starters = state.roster.slice(0, starterTotal),
-      reserves = state.roster.slice(starterTotal),
+    const starters = pool.slice(0, starterTotal),
+      reserves = pool.slice(starterTotal),
       allKeepers = randomize(starters.filter(keeper)),
       keepers = allKeepers.slice(0, teams.length),
       // Goleiros além de um por time entram no sorteio como jogadores de linha.
