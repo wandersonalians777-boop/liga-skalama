@@ -1785,6 +1785,7 @@
     renderNightHighlights();
     renderTimer();
     renderArt();
+    markActiveTab();
     applyEditLock();
   }
   const artShield = new Image();
@@ -2485,12 +2486,41 @@
       .forEach((element) =>
         element.classList.toggle("view-hidden", element.dataset.view !== view),
       );
+    markActiveTab(view);
+    localStorage.setItem("liga-skalama-view", view);
+  }
+  // Modo que vale agora: o da partida em andamento ou o escolhido para a próxima.
+  function activeLiveMode() {
+    return state?.currentGame?.timerMode || state?.timerMode || "liga";
+  }
+  const liveModeName = (mode) => (mode === "coca" ? "Modo Super Liga" : "Modo Liga");
+  // As abas "Modo Liga" e "Modo Super Liga" abrem a mesma tela de jogo; fica acesa a do modo atual.
+  function markActiveTab(view = localStorage.getItem("liga-skalama-view") || "home") {
     document
       .querySelectorAll("[data-view-button]")
       .forEach((button) =>
-        button.classList.toggle("active", button.dataset.viewButton === view),
+        button.classList.toggle(
+          "active",
+          button.dataset.viewButton === view &&
+            (!button.dataset.liveMode || button.dataset.liveMode === activeLiveMode()),
+        ),
       );
-    localStorage.setItem("liga-skalama-view", view);
+  }
+  function chooseLiveMode(mode) {
+    const current = activeLiveMode();
+    if (mode === current) return;
+    const locked = (shared && !canManageShared) || (!shared && window.LIGA_CONFIG?.publicReadOnly === true);
+    if (state.currentGame) {
+      notify(`Partida em andamento no ${liveModeName(current)}. O modo pode ser trocado quando ela terminar.`, true);
+      return;
+    }
+    if (locked) {
+      notify(`O organizador escolheu o ${liveModeName(current)} para a próxima partida.`);
+      return;
+    }
+    // Usa o mesmo caminho do seletor "Modo" em Preparar partida.
+    $("timerMode").value = mode;
+    $("timerMode").dispatchEvent(new Event("change"));
   }
   async function addPlayer() {
     try {
@@ -3100,9 +3130,10 @@
     document
       .querySelectorAll("[data-view-button]")
       .forEach((button) =>
-        button.addEventListener("click", () =>
-          setView(button.dataset.viewButton),
-        ),
+        button.addEventListener("click", () => {
+          if (button.dataset.liveMode) chooseLiveMode(button.dataset.liveMode);
+          setView(button.dataset.viewButton);
+        }),
       );
     $("themeToggle").addEventListener("click", () =>
       setTheme(
@@ -3161,7 +3192,7 @@
       renderKeeperChoices();
     });
     $("finishGame").addEventListener("click", finishGame);
-    $("timerMode").addEventListener("change", (e) => { saveState({ timerMode: e.target.value }, "Modo do cronômetro atualizado."); renderQueueControls(); renderLineupAdjustments(); });
+    $("timerMode").addEventListener("change", (e) => { saveState({ timerMode: e.target.value }, `${liveModeName(e.target.value)} selecionado.`); renderQueueControls(); renderLineupAdjustments(); });
     $("addIncident").addEventListener("click", addIncident);
     $("adminAccessButton").addEventListener("click", requestAdminAccess);
     document.querySelectorAll("[data-shortcut]").forEach((link) =>
