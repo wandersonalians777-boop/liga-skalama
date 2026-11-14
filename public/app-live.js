@@ -948,11 +948,11 @@
     for (const [select, chosen, label] of [[homeSelect, current?.home || pending?.home, "Escolha o primeiro time"], [awaySelect, current?.away || pending?.away, "Escolha o segundo time"]]) {
       const selected = select.value;
       namesForSelect(select, allTeams, label, teamLabel);
-      // Na Super Liga o confronto vem da tabela sorteada; no Modo Liga o organizador pode trocar.
+      // Na Super Liga o confronto vem da tabela (o organizador pode trocar por outro jogo da tabela); no Modo Liga, da fila.
       const value = !current && !superMode && allTeams.includes(selected) ? selected : chosen;
       if (value && allTeams.includes(value)) select.value = value;
       else if (superMode) select.value = "";
-      select.disabled = !!current || superMode || allTeams.length < 2;
+      select.disabled = !!current || allTeams.length < 2;
     }
     const home = homeSelect.value, away = awaySelect.value;
     const matchPrepared = !!pending?.prepared && !current;
@@ -1975,6 +1975,46 @@
     if (!fixture || fixture.gameId || state.currentGame) return;
     const saved = await saveSuper({ pending: { fixtureId, prepared: false } }, "Próximo jogo: " + teamLabel(fixture.home) + " × " + teamLabel(fixture.away) + ". Prepare a partida acima.");
     if (saved) $("jogo").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  // Troca o confronto pelos seletores de Preparar partida: vale qualquer jogo da tabela que ainda não foi disputado.
+  async function superChooseTeams(changedSide) {
+    const sl = state.superLiga;
+    if (!sl || sl.status !== "running" || state.currentGame) { renderQueueControls(); return; }
+    let home = $("matchHome").value, away = $("matchAway").value;
+    const open = (sl.fixtures || []).filter((fixture) => !fixture.gameId),
+      finalOpen = open.find((fixture) => fixture.stage === "final"),
+      pool = finalOpen ? [finalOpen] : open,
+      find = (a, b) => pool.find((fixture) => (fixture.home === a && fixture.away === b) || (fixture.home === b && fixture.away === a));
+    // Escolher num lado o time que estava no outro inverte o mando do mesmo jogo.
+    const before = currentPending();
+    if (home && home === away && before) {
+      if (changedSide === "home") away = before.home;
+      else home = before.away;
+    }
+    let fixture = home && away && home !== away ? find(home, away) : null;
+    // Ao trocar o time da casa, procura um adversário que ele ainda não enfrentou.
+    if (!fixture && changedSide === "home" && home) {
+      fixture = pool.find((item) => item.home === home || item.away === home) || null;
+      if (fixture) away = fixture.home === home ? fixture.away : fixture.home;
+    }
+    if (!fixture) {
+      const message = !home || !away
+        ? "Escolha os dois times."
+        : home === away
+          ? "Escolha dois times diferentes."
+          : finalOpen
+            ? "Agora só falta a final: " + teamLabel(finalOpen.home) + " × " + teamLabel(finalOpen.away) + "."
+            : teamLabel(home) + (open.some((item) => item.home === home || item.away === home) ? " e " + teamLabel(away) + " já se enfrentaram nesta Super Liga." : " já fez todos os seus jogos nesta Super Liga.");
+      notify(message, true);
+      renderQueueControls();
+      renderKeeperChoices();
+      return;
+    }
+    const fixtures = sl.fixtures.map((item) => (item.id === fixture.id ? { ...item, home, away } : item));
+    await saveState(
+      { superLiga: { ...sl, fixtures, pending: { fixtureId: fixture.id, prepared: false } } },
+      "Próximo jogo: " + teamLabel(home) + " × " + teamLabel(away) + (fixture.stage === "group" ? " (rodada " + fixture.round + ")." : "."),
+    );
   }
   async function superRestart() {
     const sl = state.superLiga;
@@ -3588,8 +3628,8 @@
       starterChoice[team] = [...current];
       renderStarterPicks();
     });
-    $("matchHome").addEventListener("change", () => { unprepareMatch(); renderQueueControls(); renderKeeperChoices(); });
-    $("matchAway").addEventListener("change", () => { unprepareMatch(); renderQueueControls(); renderKeeperChoices(); });
+    $("matchHome").addEventListener("change", () => { if (isSuperMode()) { superChooseTeams("home"); return; } unprepareMatch(); renderQueueControls(); renderKeeperChoices(); });
+    $("matchAway").addEventListener("change", () => { if (isSuperMode()) { superChooseTeams("away"); return; } unprepareMatch(); renderQueueControls(); renderKeeperChoices(); });
     $("loanHomePlayer").addEventListener("change", () => { renderLoanControls(); renderMatchPreview(); renderKeeperChoices(); });
     $("loanAwayPlayer").addEventListener("change", () => { renderLoanControls(); renderMatchPreview(); renderKeeperChoices(); });
     $("pauseTimer").addEventListener("click", pauseTimer);
