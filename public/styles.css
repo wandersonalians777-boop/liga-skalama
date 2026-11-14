@@ -344,3 +344,12 @@ body.light-theme .new-player-box{background:#fff8dc}
 body.light-theme .new-player-box>strong{color:#8a6a00}
 .reserve-controls{padding:0!important;border:0!important;background:none!important;margin-top:0}
 .reserve-controls .new-player-box{margin-top:12px}
+/* Regras oficiais: os cartões seguem o tema (antes ficavam brancos no fundo escuro, com o texto invisível). */
+.rule-card{background:var(--panel2)}
+body:not(.light-theme) .rule-note{background:#29230c;border-color:#7a5f07}
+body:not(.light-theme) .rule-note p{color:#e9dfb8}
+body.light-theme .rule-note p{color:#4f4d44}
+/* Fundo claro: textos pequenos em amarelo puro não passam no contraste; usamos um dourado escuro legível. */
+body.light-theme .eyebrow,body.light-theme .step,body.light-theme .ranking-row .rank,body.light-theme .season-badge,body.light-theme .count-badge,body.light-theme .site-footer>span:first-child{color:#7a5c00}
+body.light-theme .step,body.light-theme .season-badge{border-color:#c9a634}
+body.light-theme .fields label{color:#30302b}
