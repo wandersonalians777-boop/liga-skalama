@@ -412,3 +412,7 @@ body.light-theme .sl-fixture.is-next .sl-state{color:#8a6900}
 /* Botão Pênaltis em laranja (o mesmo do Time Águia), nos dois modos e nos dois temas */
 #openShootout{background:#f28c28;border-color:#f28c28;color:#14120a}
 #openShootout:hover:not(:disabled),#openShootout:focus-visible{background:#e07a14;border-color:#e07a14;color:#14120a}
+/* Rankings da Super Liga */
+.sl-rankings{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:16px;align-items:start}
+.sl-rankings .ranking-row{grid-template-columns:28px minmax(0,1fr) auto}
+.sl-rankings .ranking-row small{display:block;margin-top:2px}

@@ -2063,6 +2063,48 @@
         : "") +
       '<small class="sl-count' + (team.starters.length === sl.starters ? "" : " is-short") + '">' + team.starters.length + "/" + sl.starters + " titulares · " + reserves + (reserves === 1 ? " reserva" : " reservas") + "</small></article>";
   }
+  // Rankings só da Super Liga atual (fase de todos contra todos e final).
+  function superRankingRow(index, name, detail, value) {
+    return '<div class="ranking-row' + (index < 3 ? " top-rank top-rank-" + (index + 1) : "") + '"><span class="rank">' + String(index + 1).padStart(2, "0") + "</span><span>" + escapeHtml(displayName(name)) + " <small>" + escapeHtml(detail) + "</small></span><strong>" + value + "</strong></div>";
+  }
+  function superRankings(sl) {
+    const games = (state.gameHistory || []).filter((game) => game.superLigaId === sl.id),
+      plural = (n, one, many) => n + " " + (n === 1 ? one : many),
+      teamOf = (key) => superTeam(key)?.name || teamLabel(key);
+    const scorers = new Map();
+    for (const game of games)
+      for (const goal of game.goals || []) {
+        if (goal.ownGoal || !goal.player) continue;
+        const row = scorers.get(goal.player) || { goals: 0, team: goal.team };
+        row.goals++;
+        row.team = goal.team || row.team;
+        scorers.set(goal.player, row);
+      }
+    const average = (role) => {
+      const map = new Map();
+      for (const game of games)
+        for (const p of game.performance || []) {
+          if (p.role !== role) continue;
+          const row = map.get(p.player) || { sum: 0, games: 0, against: 0, team: p.team };
+          row.sum += Number(p.score) || 0;
+          row.games++;
+          row.against += Number(p.goalsAgainst) || 0;
+          row.team = p.team;
+          map.set(p.player, row);
+        }
+      return [...map.entries()].map(([name, row]) => ({ name, ...row, average: row.sum / row.games }));
+    };
+    const scorerRows = [...scorers.entries()].map(([name, row]) => ({ name, ...row })).sort((a, b) => b.goals - a.goals || a.name.localeCompare(b.name, "pt-BR")).slice(0, 10),
+      keeperRows = average("goleiro").sort((a, b) => b.average - a.average || a.against - b.against || a.name.localeCompare(b.name, "pt-BR")).slice(0, 10),
+      playerRows = average("linha").sort((a, b) => b.average - a.average || a.name.localeCompare(b.name, "pt-BR")).slice(0, 10),
+      empty = '<p class="empty-state">Aparece depois do primeiro jogo da Super Liga.</p>',
+      score = (value) => value.toFixed(1).replace(".", ",");
+    return '<div class="sl-rankings">' +
+      '<div class="sl-block"><h3>Artilheiros</h3>' + (scorerRows.map((r, i) => superRankingRow(i, r.name, teamOf(r.team), plural(r.goals, "gol", "gols"))).join("") || empty) + "</div>" +
+      '<div class="sl-block"><h3>Melhores goleiros</h3>' + (keeperRows.map((r, i) => superRankingRow(i, r.name, teamOf(r.team) + " · " + plural(r.games, "jogo", "jogos") + " · " + plural(r.against, "gol sofrido", "gols sofridos"), score(r.average))).join("") || empty) + "</div>" +
+      '<div class="sl-block"><h3>Score dos jogadores</h3>' + (playerRows.map((r, i) => superRankingRow(i, r.name, teamOf(r.team) + " · " + plural(r.games, "jogo", "jogos"), score(r.average))).join("") || empty) + "</div>" +
+      "</div>";
+  }
   let superMarkup = "",
     superTeamsOpen = false;
   function renderSuperLiga() {
@@ -2115,6 +2157,7 @@
           ? '<div class="sl-round sl-final-round"><h4>Final</h4><ol class="sl-fixtures">' + superFixtureRow(final, next, locked) + "</ol></div>"
           : '<div class="sl-round sl-final-round"><h4>Final</h4><p class="help-text">1º × 2º da classificação, depois que todos se enfrentarem.</p></div>';
         html += "</div></div>";
+        html += superRankings(sl);
       }
       const playing = new Set([state.currentGame?.home, state.currentGame?.away].filter(Boolean)),
         cards = teams.map((team) => superTeamCard(team, sl, !locked && !playing.has(team.key))).join("");
