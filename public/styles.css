@@ -409,3 +409,6 @@ body.light-theme .fields label{color:#30302b}
 body.light-theme .sl-fixture.is-next .sl-state{color:#8a6900}
 @media(max-width:820px){.sl-columns{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:620px){.super-liga{padding:15px}.sl-settings{grid-template-columns:1fr 1fr}.sl-fixture{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);row-gap:4px}.sl-state{grid-column:1/-1;flex-direction:row;justify-content:center;gap:8px}}
+/* Botão Pênaltis em laranja (o mesmo do Time Águia), nos dois modos e nos dois temas */
+#openShootout{background:#f28c28;border-color:#f28c28;color:#14120a}
+#openShootout:hover:not(:disabled),#openShootout:focus-visible{background:#e07a14;border-color:#e07a14;color:#14120a}
