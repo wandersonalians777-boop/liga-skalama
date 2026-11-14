@@ -9,6 +9,8 @@
   // 10–15 formam 2 ou 3 times; 16–19 formam 4 times com todos os jogadores; a partir de 20, quatro times titulares e reservas.
   const MIN_PLAYERS = 10;
   const SCORE_RULES = Object.freeze({ assist: 0.5 });
+  // Mínimo de jogos no gol para entrar nos destaques de goleiro (mês e noite).
+  const MIN_KEEPER_GAMES = 3;
   const startersFor = (total) => total >= 16 ? Math.min(20, total) : Math.floor(Math.max(total, MIN_PLAYERS) / 5) * 5;
   // O nome interno ("Time Águia") segue como chave; o apelido é só exibição.
   const teamLabel = (name) => state?.teamLabels?.[name] || name;
@@ -460,6 +462,13 @@
     const name = game && game[side];
     if (!name) return "";
     return game.roundId && game.roundId === state.roundId ? teamLabel(name) : (game[side + "Label"] || teamLabel(name));
+  }
+  // Converte o nome interno do time ("Time Sol") no apelido exibido daquela partida.
+  function goalTeamLabel(game, name) {
+    if (!name) return "";
+    if (game && name === game.home) return gameTeamLabel(game, "home");
+    if (game && name === game.away) return gameTeamLabel(game, "away");
+    return teamLabel(name);
   }
   function renderLoanControls() {
     const home = $("matchHome").value, away = $("matchAway").value, teams = state.teams || [];
@@ -1273,7 +1282,7 @@
       }
     const leaders = (role) => {
       const rows = [...totals.values()]
-        .filter((row) => row.role === role)
+        .filter((row) => row.role === role && (role !== "goleiro" || row.games >= MIN_KEEPER_GAMES))
         .map((row) => ({ ...row, average: row.sum / row.games }))
         .sort(
           (a, b) =>
@@ -1290,10 +1299,15 @@
       goalie = leaders("goleiro");
     const paint = (result, nameId, statsId, type) => {
       if (!result) {
-        $(nameId).textContent = games.length
+        const keeperShort = type === "keeper" && games.length && [...totals.values()].some((row) => row.role === "goleiro");
+        $(nameId).textContent = keeperShort
+          ? "Ainda sem goleiro elegível"
+          : games.length
           ? "Sem dados individuais"
           : "Aguardando jogos";
-        $(statsId).textContent = games.length
+        $(statsId).textContent = keeperShort
+          ? "É preciso ter pelo menos " + MIN_KEEPER_GAMES + " jogos no gol para entrar no destaque."
+          : games.length
           ? "Não há score registrado para esta posição."
           : "O score será calculado após as partidas.";
         return;
@@ -1311,8 +1325,8 @@
         " " +
         (row.games === 1 ? "jogo" : "jogos") +
         (type === "keeper"
-          ? " · " + row.conceded + " gols sofridos"
-          : " · " + row.goals + " gols");
+          ? " · " + row.conceded + (row.conceded === 1 ? " gol sofrido" : " gols sofridos")
+          : " · " + row.goals + (row.goals === 1 ? " gol" : " gols"));
     };
     paint(player, "nightPlayerLeader", "nightPlayerStats", "player");
     paint(goalie, "nightKeeperLeader", "nightKeeperStats", "keeper");
@@ -1375,7 +1389,7 @@
             b.average - a.average || a.player.localeCompare(b.player, "pt-BR"),
         ),
       keeperRows = scoreRows
-        .filter((row) => row.role === "goleiro")
+        .filter((row) => row.role === "goleiro" && row.games >= MIN_KEEPER_GAMES)
         .sort(
           (a, b) =>
             b.average - a.average || a.player.localeCompare(b.player, "pt-BR"),
@@ -1409,7 +1423,7 @@
         keeperRows[0].games +
         " " +
         (keeperRows[0].games === 1 ? "jogo" : "jogos")
-      : "Sem score registrado";
+      : "Nenhum goleiro com " + MIN_KEEPER_GAMES + " jogos ou mais";
     $("seasonHighlights").innerHTML = games.length
       ? '<article class="season-highlight-card season-scorer"><span class="season-kicker">ARTILHEIRO DO MÊS</span><strong>' +
         goalLeaders +
@@ -1424,21 +1438,37 @@
         "</strong><small>" +
         keeperValue +
         (keeperRows.length
-          ? " · " + keeperRows[0].conceded + " gols sofridos"
+          ? " · " + keeperRows[0].conceded + (keeperRows[0].conceded === 1 ? " gol sofrido" : " gols sofridos")
           : "") +
         "</small></article>"
       : '<p class="empty-state season-empty">Ainda não há partidas finalizadas neste mês.</p>';
   }
+  // Função pela maioria dos jogos; quem alternou mostra quantos jogos fez na outra posição.
+  function roleSummary(row) {
+    const keeper = row.keeperGames || 0, line = row.games - keeper;
+    if (!keeper) return "linha";
+    if (!line) return "goleiro";
+    return keeper > line ? "goleiro · " + line + " na linha" : "linha · " + keeper + " no gol";
+  }
   function renderIndividualStats() {
     const totals = new Map();
     for (const game of state.gameHistory || []) for (const p of game.performance || []) {
-      const row = totals.get(p.player) || { player: p.player, role: p.role, score: 0, games: 0, goals: 0, assists: 0, goalsAgainst: 0, wins: 0, draws: 0, losses: 0 };
+      const row = totals.get(p.player) || { player: p.player, role: p.role, keeperGames: 0, score: 0, games: 0, goals: 0, assists: 0, goalsAgainst: 0, wins: 0, draws: 0, losses: 0 };
+      if (p.role === "goleiro") row.keeperGames++;
       row.score += Number(p.score) || 0; row.games++; row.goals += Number(p.goalsFor) || 0; row.assists += Number(p.assists) || 0; row.goalsAgainst += Number(p.goalsAgainst) || 0;
       if (p.result === "vitória") row.wins++; else if (p.result === "empate") row.draws++; else row.losses++;
       totals.set(p.player, row);
     }
     const rows = [...totals.values()].sort((a,b) => b.score/b.games-a.score/a.games || a.player.localeCompare(b.player,"pt-BR"));
-    $("individualStats").innerHTML = rows.length ? "<table><thead><tr><th>Jogador</th><th>Função</th><th>Jogos</th><th>Score médio</th><th>Gols</th><th>Assist.</th><th>Sofridos</th><th>V-E-D</th></tr></thead><tbody>" + rows.map((row) => "<tr><td>" + escapeHtml(displayName(row.player)) + "</td><td>" + row.role + "</td><td>" + row.games + "</td><td>" + (row.score/row.games).toFixed(1).replace(".",",") + "</td><td>" + row.goals + "</td><td>" + row.assists + "</td><td>" + row.goalsAgainst + "</td><td>" + row.wins + "-" + row.draws + "-" + row.losses + "</td></tr>").join("") + "</tbody></table>" : '<p class="empty-state">As estatísticas individuais aparecem após as partidas finalizadas.</p>';
+    $("individualStats").innerHTML = rows.length ? "<table><thead><tr><th>Jogador</th><th>Função</th><th>Jogos</th><th>Score médio</th><th>Gols</th><th>Assist.</th><th>Sofridos</th><th>V-E-D</th></tr></thead><tbody>" + rows.map((row) => "<tr><td>" + escapeHtml(displayName(row.player)) + "</td><td>" + roleSummary(row) + "</td><td>" + row.games + "</td><td>" + (row.score/row.games).toFixed(1).replace(".",",") + "</td><td>" + row.goals + "</td><td>" + row.assists + "</td><td>" + row.goalsAgainst + "</td><td>" + row.wins + "-" + row.draws + "-" + row.losses + "</td></tr>").join("") + "</tbody></table>" : '<p class="empty-state">As estatísticas individuais aparecem após as partidas finalizadas.</p>';
+  }
+  // " · nos pênaltis (4 × 3)" quando o jogo terminou empatado e foi decidido nos pênaltis.
+  function penaltySummary(game) {
+    if (game.winner === "Empate" || Number(game.homeScore) !== Number(game.awayScore)) return "";
+    const shoot = game.shootout && (game.shootout.kicks || []).length ? game.shootout : null;
+    if (!shoot) return " · nos pênaltis";
+    const winnerHome = game.winner === game.home;
+    return " · nos pênaltis (" + (winnerHome ? shoot.homeScore : shoot.awayScore) + " × " + (winnerHome ? shoot.awayScore : shoot.homeScore) + ")";
   }
   function weekStart(date) {
     const result = new Date(
@@ -1492,7 +1522,7 @@
                     "</span><small>" +
                     (game.winner === "Empate"
                       ? "Empate"
-                      : "Vencedor: " + escapeHtml(historyWinner(game))) +
+                      : "Vencedor: " + escapeHtml(historyWinner(game)) + penaltySummary(game)) +
                     "</small></p>",
                 )
                 .join("") +
@@ -1523,7 +1553,7 @@
                 (g.assistedBy ? " · assistência de " + escapeHtml(displayName(g.assistedBy)) : "") +
                 (g.ownGoal ? " · gol contra" : "") +
                 " · ponto para " +
-                escapeHtml(g.scoringTeam || g.team) +
+                escapeHtml(goalTeamLabel(game, g.scoringTeam || g.team)) +
                 "</span><b>" +
                 g.minute +
                 "′</b></li>" }),
