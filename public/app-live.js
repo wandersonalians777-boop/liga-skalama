@@ -915,8 +915,6 @@
     $("preparedBtn").classList.toggle("is-on", matchPrepared);
     $("beginGame").disabled = !!current || !pending || !home || !away || home === away || allTeams.length < 2 || !matchPrepared;
     const mode = state.timerMode || "liga", duration = Math.min(180, Math.max(1, Number(state.durationMinutes) || 8));
-    $("timerMode").value = mode;
-    $("timerMode").disabled = !!current;
     $("durationMinutes").value = String(duration);
     $("durationMinutes").disabled = !!current;
     $("onCourtLabel").hidden = mode !== "coca";
@@ -2518,9 +2516,9 @@
       notify(`O organizador escolheu o ${liveModeName(current)} para a próxima partida.`);
       return;
     }
-    // Usa o mesmo caminho do seletor "Modo" em Preparar partida.
-    $("timerMode").value = mode;
-    $("timerMode").dispatchEvent(new Event("change"));
+    saveState({ timerMode: mode }, `${liveModeName(mode)} selecionado.`);
+    renderQueueControls();
+    renderLineupAdjustments();
   }
   async function addPlayer() {
     try {
@@ -3192,7 +3190,6 @@
       renderKeeperChoices();
     });
     $("finishGame").addEventListener("click", finishGame);
-    $("timerMode").addEventListener("change", (e) => { saveState({ timerMode: e.target.value }, `${liveModeName(e.target.value)} selecionado.`); renderQueueControls(); renderLineupAdjustments(); });
     $("addIncident").addEventListener("click", addIncident);
     $("adminAccessButton").addEventListener("click", requestAdminAccess);
     document.querySelectorAll("[data-shortcut]").forEach((link) =>

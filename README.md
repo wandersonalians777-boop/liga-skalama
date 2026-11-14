@@ -32,7 +32,7 @@ A seção **Regras oficiais da SKALAMA** fica na tela principal. As ocorrências
 
 ## Cronômetro, goleiros e pontuação
 
-Antes de cada jogo, selecione Modo Liga (8 minutos com até 1 minuto acumulado de pausa) ou Modo Coca (cronômetro crescente sem limite de duração, com até 2 minutos acumulados de pausa). O jogo termina quando o organizador encerra a partida.
+Antes de cada jogo, escolha o modo pela barra de abas: **Modo Liga** (duração configurável, com até 1 minuto acumulado de pausa) ou **Modo Super Liga** (duração configurável, com até 2 minutos acumulados de pausa). Durante uma partida, o modo fica travado até ela terminar. O jogo termina quando o organizador encerra a partida.
 
 Defina um goleiro para cada equipe antes de iniciar. Jogadores marcados com asterisco são atribuídos automaticamente; nos demais times, escolha um jogador da escalação.
 
