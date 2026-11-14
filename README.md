@@ -53,6 +53,7 @@ A Super Liga é uma competição à parte: o que está em **Elenco e sorteio** n
 3. Toque em **Sortear ordem dos jogos**. O site monta as rodadas de forma aleatória para que todos enfrentem todos uma vez (por exemplo, com 4 times: A × C e B × D na primeira rodada). Com número ímpar de times, um time folga em cada rodada.
 4. Jogue as partidas pela própria aba: o próximo jogo da tabela já vem escolhido em Preparar partida, e **Jogar agora** permite adiantar outro jogo.
 5. A classificação usa vitória 3 pontos, empate 1, depois saldo e gols marcados. Quando todos já se enfrentaram, o 1º e o 2º fazem a **final**. Final empatada é decidida nos pênaltis, e o vencedor é o campeão.
+6. Com apenas 2 times não há tabela: é **jogo único**, e quem vencer é o campeão. Empate é decidido nos pênaltis.
 
 Os jogos da Super Liga também entram no Histórico e nos rankings gerais. **Nova Super Liga** apaga a tabela e a classificação, mantém os times e jogadores e deixa os jogos já disputados no Histórico.
 

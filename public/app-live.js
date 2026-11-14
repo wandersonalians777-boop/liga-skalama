@@ -971,7 +971,7 @@
     const fixture = superMode ? superFixture(pending?.fixtureId) : null;
     $("nextMatchPreview").textContent = superMode
       ? fixture
-        ? (fixture.stage === "final" ? "Final da Super Liga: " : "Super Liga · Rodada " + fixture.round + ": ") + teamLabel(fixture.home) + " × " + teamLabel(fixture.away)
+        ? (fixture.stage === "final" ? (state.superLiga.teams.length === 2 ? "Super Liga · Jogo único: " : "Final da Super Liga: ") : "Super Liga · Rodada " + fixture.round + ": ") + teamLabel(fixture.home) + " × " + teamLabel(fixture.away)
         : "Monte a Super Liga e sorteie a ordem dos jogos no painel abaixo."
       : home && away && home !== away ? "Confronto escolhido: " + teamLabel(home) + " × " + teamLabel(away) : pending ? "Escolha dois times diferentes para preparar a partida." : "Sorteie os times para preparar a partida.";
     renderLoanControls();
@@ -1963,11 +1963,17 @@
       names.add(key);
       if (team.starters.length !== sl.starters) { notify(team.name + " precisa de " + sl.starters + " titulares (tem " + team.starters.length + ").", true); return; }
     }
-    const fixtures = superRoundRobin(sl.teams.map((team) => team.key)),
+    // Com 2 times é jogo único: quem vencer é o campeão (empate vai para os pênaltis).
+    const single = sl.teams.length === 2,
+      fixtures = single
+        ? [(([home, away]) => ({ id: crypto.randomUUID(), stage: "final", round: null, home, away, gameId: null }))(randomize(sl.teams.map((team) => team.key)))]
+        : superRoundRobin(sl.teams.map((team) => team.key)),
       first = fixtures[0];
     await saveState(
       { superLiga: { ...sl, status: "running", fixtures, pending: null, champion: null }, timerMode: "coca" },
-      "Ordem dos jogos sorteada: " + fixtures.length + " jogos e depois a final. Primeiro jogo: " + teamLabel(first.home) + " × " + teamLabel(first.away) + ".",
+      single
+        ? "Jogo único: " + teamLabel(first.home) + " × " + teamLabel(first.away) + ". Quem vencer é o campeão."
+        : "Ordem dos jogos sorteada: " + fixtures.length + " jogos e depois a final. Primeiro jogo: " + teamLabel(first.home) + " × " + teamLabel(first.away) + ".",
     );
   }
   async function superPlay(fixtureId) {
@@ -2143,6 +2149,9 @@
           ? '<p class="help-text">O organizador está montando os times da Super Liga.</p>'
           : '<div class="fields two sl-settings"><label>Quantos times<select id="slTeamCount">' + Array.from({ length: SUPER_MAX_TEAMS - SUPER_MIN_TEAMS + 1 }, (_, i) => i + SUPER_MIN_TEAMS).map((n) => '<option value="' + n + '"' + (n === teams.length ? " selected" : "") + ">" + n + " times</option>").join("") + '</select></label><label>Titulares por time<input id="slStarters" type="number" inputmode="numeric" min="4" max="9" step="1" value="' + sl.starters + '"></label></div>' +
             '<p class="help-text">Dê nome e cor a cada time e adicione os jogadores. Os primeiros ' + sl.starters + " de cada time entram como titulares e os demais como reservas; toque em Titular ou Reserva para trocar.</p>";
+      } else if (!groupGames.length && final) {
+        html += '<div class="sl-block sl-single"><h3>Jogo único</h3><ol class="sl-fixtures">' + superFixtureRow(final, next, locked) + '</ol><p class="help-text">Com 2 times a Super Liga é decidida em um jogo só: quem vencer é o campeão. Se empatar, vai para os pênaltis.</p></div>';
+        html += superRankings(sl);
       } else {
         html += '<div class="sl-columns"><div class="sl-block"><h3>Classificação</h3>' + standingsTable(superStandings(), "A classificação aparece depois do primeiro jogo.") + '<p class="help-text">Vitória 3 pontos, empate 1. Depois que todos se enfrentarem, os 2 primeiros fazem a final.</p></div>' +
           '<div class="sl-block"><h3>Jogos</h3>';
@@ -2166,10 +2175,14 @@
         : '<details class="sl-teams-details"' + (superTeamsOpen ? " open" : "") + "><summary>Times e jogadores · " + teams.length + " times · " + sl.starters + " titulares por time</summary><div class=\"sl-teams\">" + cards + "</div></details>";
       if (!locked)
         html += '<div class="button-row sl-actions">' +
-          (status === "setup" ? '<button type="button" class="button button-primary" data-sl-action="draw">Sortear ordem dos jogos</button>' : "") +
+          (status === "setup" ? '<button type="button" class="button button-primary" data-sl-action="draw">' + (teams.length === 2 ? "Começar jogo único" : "Sortear ordem dos jogos") + "</button>" : "") +
           (status !== "setup" ? '<button type="button" class="button button-outline" data-sl-action="restart"' + (state.currentGame?.superLigaId ? " disabled" : "") + ">Nova Super Liga</button>" : "") +
           "</div>" +
-          (status === "setup" ? '<p class="help-text">Com ' + teams.length + " times são " + (teams.length * (teams.length - 1)) / 2 + " jogos em que todos se enfrentam uma vez, em ordem sorteada, e depois a final.</p>" : "");
+          (status === "setup"
+            ? teams.length === 2
+              ? '<p class="help-text">Com 2 times é jogo único: quem vencer é o campeão. Se empatar, vai para os pênaltis.</p>'
+              : '<p class="help-text">Com ' + teams.length + " times são " + (teams.length * (teams.length - 1)) / 2 + " jogos em que todos se enfrentam uma vez, em ordem sorteada, e depois a final.</p>"
+            : "");
     }
     if (html === superMarkup) return;
     const focusKey = box.contains(document.activeElement) ? document.activeElement?.dataset?.focusKey : "";
@@ -3471,7 +3484,7 @@
       return;
     }
     if (current.stage === "final" && winner === "Empate") {
-      notify("Final empatada: decida nos pênaltis antes de encerrar.", true);
+      notify((state.superLiga?.teams?.length === 2 ? "Jogo único empatado" : "Final empatada") + ": decida nos pênaltis antes de encerrar.", true);
       gameFinishing = false;
       renderTimer();
       return;
