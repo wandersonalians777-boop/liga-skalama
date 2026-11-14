@@ -1176,6 +1176,7 @@
     const paint = (id, rows, empty) =>
       ($(id).innerHTML = rows.length
         ? rows
+            .slice(0, 11)
             .map(
               (r, i) =>
                 '<div class="ranking-row' +
@@ -1218,6 +1219,7 @@
       );
     $("keeperConcededRanking").innerHTML = rows.length
       ? rows
+          .slice(0, 11)
           .map(
             (r, i) =>
               '<div class="ranking-row' +
