@@ -535,3 +535,80 @@ body.light-theme .news-highlight span{color:#8a6900}
 .news-hero-cta b{transition:transform .15s}
 .news-hero:hover .news-hero-cta b{transform:translateX(3px)}
 @media(max-width:620px){.news-hero{flex-basis:100%}.news-hero-logo{font-size:30px}}
+/* ---------- SKALAMA News: súmula do jogo ---------- */
+.nm-report{display:grid;gap:14px}
+.nm-crest{display:grid;place-items:center;flex:none;border-radius:16px;background:#0b0b0b;border:1px solid #2c2a22;overflow:hidden}
+.nm-crest img{width:100%;height:100%;object-fit:contain;padding:6%}
+.nm-crest-lg{width:104px;height:104px}
+.nm-crest-md{width:64px;height:64px;border-radius:12px}
+.nm-crest-sm{width:34px;height:34px;border-radius:8px}
+.nm-crest-empty{background:var(--team-color);color:var(--team-ink);font:900 30px 'Barlow Condensed',sans-serif;border-color:transparent}
+.nm-crest-md.nm-crest-empty{font-size:22px}.nm-crest-sm.nm-crest-empty{font-size:13px}
+.nm-board{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:14px;padding:22px 18px;border-radius:18px;border:1px solid #2f2b1c;background:radial-gradient(ellipse at 50% -40%,#5a4708 0,transparent 60%),linear-gradient(160deg,#191917,#0f0f0f);color:#f8f8f5}
+.nm-side{display:grid;justify-items:center;gap:8px;text-align:center;min-width:0;transition:opacity .2s}
+.nm-side strong{font:900 clamp(20px,3vw,28px)/1 'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.5px;overflow-wrap:anywhere}
+.nm-side.is-winner .nm-crest{border-color:var(--yellow);box-shadow:0 0 0 3px #ffc40033,0 0 34px #ffc40055}
+.nm-side.is-loser{opacity:.62}
+.nm-win{padding:3px 10px;border-radius:99px;background:var(--yellow);color:#15130a;font-size:9px;font-weight:900;letter-spacing:1.2px}
+.nm-score{display:grid;grid-template-columns:auto auto auto;align-items:center;justify-items:center;column-gap:10px}
+.nm-score b{font:900 clamp(54px,9vw,84px)/.9 'Barlow Condensed',sans-serif;font-variant-numeric:tabular-nums;color:#cfcbbd}
+.nm-score b.is-win{color:var(--yellow);text-shadow:0 6px 30px #ffc40055}
+.nm-score span{font:700 30px 'Barlow Condensed',sans-serif;color:#6d6a5d}
+.nm-score small{grid-column:1/-1;margin-top:6px;font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#d9cfa6}
+.nm-facts{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:0}
+.nm-facts span{padding:5px 10px;border:1px solid var(--line);border-radius:99px;font-size:10px;font-weight:800;color:var(--muted);background:var(--panel2)}
+.nm-champion{display:flex;align-items:center;gap:16px;padding:16px 18px;border-radius:16px;border:2px solid #d4a514;background:linear-gradient(110deg,#2a2208,#16130a 60%,#3a2f0a);color:#f8f2da;box-shadow:0 10px 30px #d4a51433}
+.nm-champion p{margin:0;font-size:10px;font-weight:900;letter-spacing:1.6px;color:#f3cf5b}
+.nm-champion strong{display:block;font:900 clamp(28px,4.5vw,40px)/1 'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.6px}
+.nm-champion span{font-size:12px;font-weight:700;color:#e6dcbb}
+.nm-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+.nm-block{display:grid;gap:10px;min-width:0;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--panel2)}
+.nm-block h3{margin:0;font:800 19px 'Barlow Condensed',sans-serif}
+.nm-timeline{list-style:none;margin:0;padding:0;display:grid;gap:6px;position:relative}
+.nm-timeline::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;background:var(--line);transform:translateX(-1px)}
+.nm-goal{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;position:relative}
+.nm-minute{grid-column:2;z-index:1;min-width:38px;padding:3px 6px;border-radius:99px;background:var(--yellow);color:#15130a;font:800 12px 'Barlow Condensed',sans-serif;text-align:center}
+.nm-goal-text{display:grid;font-size:12px;min-width:0;overflow-wrap:anywhere}
+.nm-goal-text small{color:var(--muted);font-size:10px}
+.nm-goal-text em{color:var(--muted);font-style:normal;font-size:10px}
+.nm-home .nm-goal-text{grid-column:1;grid-row:1;text-align:right}
+.nm-away .nm-goal-text{grid-column:3;grid-row:1}
+.nm-stats-head{display:flex;justify-content:space-between;font-size:10px;font-weight:900;letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
+.nm-stat{display:grid;grid-template-columns:42px minmax(0,1fr) 42px;align-items:center;gap:8px}
+.nm-stat>b{font:800 18px 'Barlow Condensed',sans-serif;text-align:center;font-variant-numeric:tabular-nums}
+.nm-stat-mid{display:grid;gap:4px}
+.nm-stat-mid span{text-align:center;font-size:10px;font-weight:800;color:var(--muted)}
+.nm-bar{height:8px;border-radius:99px;background:#6c7078;overflow:hidden}
+.nm-bar i{display:block;height:100%;background:var(--yellow);border-radius:99px 0 0 99px}
+.nm-lineups{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.nm-lineup{min-width:0;border:1px solid var(--line);border-top:3px solid var(--team-color);border-radius:12px;padding:12px;background:var(--panel)}
+.nm-lineup.is-winner{box-shadow:inset 0 0 0 1px #ffc40055}
+.nm-lineup header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.nm-lineup header strong{font:800 17px 'Barlow Condensed',sans-serif;text-transform:uppercase;overflow-wrap:anywhere}
+.nm-lineup-label{margin:8px 0 2px;font-size:9px;font-weight:900;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+.nm-lineup ol{list-style:none;margin:0;padding:0;display:grid}
+.nm-lineup li{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px}
+.nm-lineup li:last-child{border-bottom:0}
+.nm-player{min-width:0;overflow-wrap:anywhere;font-weight:700}
+.nm-tag{padding:1px 5px;border-radius:4px;background:var(--yellow);color:#15130a;font-size:8px;font-weight:900;vertical-align:middle}
+.nm-icons{font-size:11px;letter-spacing:-1px}
+.nm-assist,.nm-sub-in,.nm-sub-out{font-size:9px;font-weight:800}
+.nm-assist{color:var(--muted)}.nm-sub-in{color:#2b8a50}.nm-sub-out{color:#c2410c}
+.nm-rating{flex:none;min-width:36px;padding:3px 6px;border-radius:6px;text-align:center;font:800 13px 'Barlow Condensed',sans-serif;font-variant-numeric:tabular-nums}
+.nm-rating.is-great{background:#16803c;color:#fff}.nm-rating.is-good{background:var(--yellow);color:#15130a}.nm-rating.is-low{background:#6c7078;color:#fff}
+.nm-bench{margin:8px 0 0;font-size:11px;color:var(--muted)}
+.nm-legend{margin:0;font-size:10px;color:var(--muted)}
+/* capa automática do card de jogo */
+.news-cover-match{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;justify-items:center;gap:8px;padding:12px;background:radial-gradient(ellipse at 50% -30%,#5a4708 0,transparent 60%),#121212;border-bottom:2px solid var(--yellow);position:relative;color:#f8f8f5}
+.ncm-side{display:grid;justify-items:center;gap:5px;min-width:0;opacity:.7}
+.ncm-side.is-winner{opacity:1}
+.ncm-side.is-winner .nm-crest{border-color:var(--yellow);box-shadow:0 0 22px #ffc40055}
+.ncm-side small{font:800 13px 'Barlow Condensed',sans-serif;text-transform:uppercase;text-align:center;overflow-wrap:anywhere}
+.news-cover-match>b{font:900 40px 'Barlow Condensed',sans-serif;color:var(--yellow)}
+.news-cover-match>b i{font-style:normal;color:#6d6a5d;margin:0 6px;font-size:26px}
+.ncm-tag{position:absolute;top:8px;left:50%;transform:translateX(-50%);padding:3px 9px;border-radius:99px;background:#d4a514;color:#15130a;font-style:normal;font-size:9px;font-weight:900;letter-spacing:.6px;white-space:nowrap}
+.news-featured .news-cover-match{min-height:240px}
+.news-featured .news-cover-match .nm-crest-md{width:96px;height:96px}
+body.light-theme .nm-block{background:#fbfaf6}
+body.light-theme .nm-lineup{background:#fff}
+@media(max-width:720px){.nm-grid,.nm-lineups{grid-template-columns:1fr}.nm-crest-lg{width:76px;height:76px}.nm-board{padding:18px 10px;gap:8px}.nm-champion{gap:12px;padding:14px}}

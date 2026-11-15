@@ -2385,24 +2385,148 @@
     const label = NEWS_STATUS[post.status] || post.status;
     return '<span class="news-status news-status-' + escapeHtml(post.status) + '">' + escapeHtml(label) + "</span>";
   }
+  // Capa automática para notícia de jogo sem foto: escudos e placar.
+  function newsMatchCover(post) {
+    const game = post.match_id && (state.gameHistory || []).find((item) => item.id === post.match_id);
+    if (!game) return "";
+    const win = game.winner === game.home ? "home" : game.winner === game.away ? "away" : null;
+    return '<div class="news-cover news-cover-match" aria-hidden="true">' +
+      '<span class="ncm-side' + (win === "home" ? " is-winner" : "") + '">' + newsCrest(game, "home", "md") + "<small>" + escapeHtml(gameTeamLabel(game, "home")) + "</small></span>" +
+      '<b>' + game.homeScore + "<i>×</i>" + game.awayScore + "</b>" +
+      '<span class="ncm-side' + (win === "away" ? " is-winner" : "") + '">' + newsCrest(game, "away", "md") + "<small>" + escapeHtml(gameTeamLabel(game, "away")) + "</small></span>" +
+      (game.superLigaId && game.stage === "final" ? '<em class="ncm-tag">🏆 Final da Super Liga</em>' : "") + "</div>";
+  }
   function newsCard(post, featured = false) {
     const cover = newsSafeUrl(post.cover_image_url);
     return '<article class="news-card' + (featured ? " news-featured" : "") + '">' +
       '<a class="news-card-link" href="#noticia-' + encodeURIComponent(post.slug) + '" data-news-open="' + escapeHtml(post.slug) + '">' +
-      (cover ? '<img class="news-cover" src="' + escapeHtml(cover) + '" alt="" loading="lazy">' : '<div class="news-cover news-cover-empty" aria-hidden="true"><span>SKALAMA <b>News</b></span></div>') +
+      (cover ? '<img class="news-cover" src="' + escapeHtml(cover) + '" alt="" loading="lazy">' : newsMatchCover(post) || '<div class="news-cover news-cover-empty" aria-hidden="true"><span>SKALAMA <b>News</b></span></div>') +
       '<div class="news-card-body"><div class="news-meta">' + newsBadge(post) + newsStatusChip(post) + (post.is_featured ? '<span class="news-flag">Destaque</span>' : "") + '<small>' + escapeHtml(newsWhen(newsDate(post))) + "</small></div>" +
       "<h3>" + escapeHtml(post.title) + "</h3>" +
       (post.excerpt ? "<p>" + escapeHtml(post.excerpt) + "</p>" : post.subtitle ? "<p>" + escapeHtml(post.subtitle) + "</p>" : "") +
       '<small class="news-stats">' + newsViews(post) + "</small></div></a></article>";
   }
-  function newsGameSummary(post) {
+  // Escudos dos times, pelo nome (vale para Liga e Super Liga). Novos escudos: arquivo em public/assets/escudos/ e uma linha aqui.
+  const TEAM_CRESTS = {
+    skalama: "./assets/escudos/skalama.png",
+    "2017fc": "./assets/escudos/2017-fc.png",
+  };
+  function crestFor(teamKey, label) {
+    const norm = (value) => String(value || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    return TEAM_CRESTS[norm(label)] || TEAM_CRESTS[norm(teamLabel(teamKey))] || teamLogos[teamKey] || "";
+  }
+  function newsCrest(game, side, size = "lg") {
+    const key = game[side], label = gameTeamLabel(game, side), src = crestFor(key, label), color = colorOf(key);
+    const initials = label.replace(/^time\s+/i, "").split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+    return src
+      ? '<span class="nm-crest nm-crest-' + size + '"><img src="' + escapeHtml(src) + '" alt="Escudo do ' + escapeHtml(label) + '"></span>'
+      : '<span class="nm-crest nm-crest-' + size + ' nm-crest-empty" style="--team-color:' + color.color + ";--team-ink:" + color.ink + '" aria-hidden="true">' + escapeHtml(initials || "?") + "</span>";
+  }
+  function newsScoreClass(score) {
+    return score >= 8 ? "is-great" : score >= 6.5 ? "is-good" : "is-low";
+  }
+  // Súmula completa do jogo ligado à notícia: placar, campeão, ficha, gols, números e escalações.
+  function newsMatchReport(post) {
     const game = post.match_id && (state.gameHistory || []).find((item) => item.id === post.match_id);
-    if (!game) return "";
-    const shoot = game.shootout && Number.isFinite(game.shootout.homeScore) ? " · pênaltis " + game.shootout.homeScore + "×" + game.shootout.awayScore : "";
-    return '<div class="news-game"><span class="news-game-team">' + superChip(game.home) + escapeHtml(gameTeamLabel(game, "home")) + '</span><b>' + game.homeScore + " × " + game.awayScore + '</b><span class="news-game-team">' + escapeHtml(gameTeamLabel(game, "away")) + superChip(game.away) + "</span><small>Jogo " + game.number + (game.superLigaId ? " · Super Liga" : " · Modo Liga") + shoot + "</small></div>";
+    if (!game) return { top: "", details: "" };
+    const sides = ["home", "away"],
+      label = (side) => gameTeamLabel(game, side),
+      score = { home: Number(game.homeScore) || 0, away: Number(game.awayScore) || 0 },
+      shoot = game.shootout && Number.isFinite(game.shootout.homeScore) ? game.shootout : null,
+      winnerSide = game.winner === game.home ? "home" : game.winner === game.away ? "away" : null,
+      isSuper = !!game.superLigaId,
+      isFinal = isSuper && game.stage === "final",
+      // Jogo único: Super Liga de 2 times (só dá para saber na edição atual; nas antigas aparece "Final").
+      single = isFinal && state.superLiga?.id === game.superLigaId && (state.superLiga?.teams || []).length === 2,
+      perf = game.performance || [],
+      goals = [...(game.goals || [])].sort((a, b) => (Number(a.minute) || 0) - (Number(b.minute) || 0)),
+      subs = game.substitutions || [],
+      incidents = (game.incidents || []).filter((item) => item.type !== "sub" && (!item.gameId || item.gameId === game.id)),
+      finished = new Date(game.finishedAt || 0),
+      sideOfTeam = (team) => (team === game.home ? "home" : team === game.away ? "away" : null),
+      sideOfPlayer = (player) => {
+        const p = perf.find((item) => item.player === player);
+        if (p) return sideOfTeam(p.team);
+        if ([...(game.homeStart || game.homePlayers || []), ...(game.homeBench || [])].includes(player)) return "home";
+        if ([...(game.awayStart || game.awayPlayers || []), ...(game.awayBench || [])].includes(player)) return "away";
+        return null;
+      };
+    // Ficha do jogo
+    const facts = [
+      isSuper ? (isFinal ? (single ? "Super Liga · Jogo único" : "Super Liga · Final") : "Super Liga · Rodada " + (game.round || "")) : "Modo Liga",
+      "Jogo " + game.number,
+      Number.isFinite(finished.getTime()) ? finished.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }) + " · " + finished.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "",
+      game.durationSeconds ? Math.round(game.durationSeconds / 60) + " min de bola rolando" : "",
+      state.venue || "",
+    ].filter(Boolean);
+    // Números por time
+    const stat = (name, home, away, format = (v) => v) => {
+      const total = home + away, pct = total > 0 ? Math.round((home / total) * 100) : 50;
+      return '<div class="nm-stat"><b>' + format(home) + '</b><div class="nm-stat-mid"><span>' + name + '</span><div class="nm-bar"><i style="width:' + pct + '%"></i></div></div><b>' + format(away) + "</b></div>";
+    };
+    const goalsBy = (side) => goals.filter((goal) => sideOfTeam(goal.scoringTeam || goal.team) === side).length,
+      assistsBy = (side) => goals.filter((goal) => goal.assistedBy && sideOfTeam(goal.scoringTeam || goal.team) === side && !goal.ownGoal).length,
+      subsBy = (side) => subs.filter((item) => sideOfTeam(item.team) === side).length,
+      incidentsBy = (side) => incidents.filter((item) => (item.team ? sideOfTeam(item.team) : sideOfPlayer(item.player)) === side).length,
+      avgBy = (side) => { const rows = perf.filter((p) => sideOfTeam(p.team) === side); return rows.length ? rows.reduce((sum, p) => sum + Number(p.score || 0), 0) / rows.length : 0; };
+    const stats =
+      stat("Gols", goalsBy("home"), goalsBy("away")) +
+      stat("Assistências", assistsBy("home"), assistsBy("away")) +
+      (perf.length ? stat("Nota média", avgBy("home"), avgBy("away"), (v) => v.toFixed(1).replace(".", ",")) : "") +
+      stat("Substituições", subsBy("home"), subsBy("away")) +
+      (incidents.length ? stat("Ocorrências", incidentsBy("home"), incidentsBy("away")) : "");
+    // Linha do tempo dos gols
+    const timeline = goals.length
+      ? '<ol class="nm-timeline">' + goals.map((goal) => {
+          const side = sideOfTeam(goal.scoringTeam || goal.team) || "home";
+          return '<li class="nm-goal nm-' + side + '"><span class="nm-minute">' + (Number(goal.minute) || "–") + "'</span><span class=\"nm-goal-text\"><strong>" + escapeHtml(displayName(goal.player || "Gol")) + "</strong>" + (goal.ownGoal ? " <em>(contra)</em>" : "") + (goal.assistedBy ? "<small>assist. " + escapeHtml(displayName(goal.assistedBy)) + "</small>" : "") + "</span></li>";
+        }).join("") + "</ol>"
+      : '<p class="empty-state">Jogo sem gols.</p>';
+    // Escalações
+    const lineup = (side) => {
+      const team = game[side],
+        starters = game[side + "Start"] || game[side + "Players"] || [],
+        bench = game[side + "Bench"] || [],
+        keeperName = game[side + "KeeperStart"] || game[side + "Keeper"],
+        rowsFor = (names, benchRow) => names.map((name) => {
+          const p = perf.find((item) => item.player === name), scored = goals.filter((goal) => goal.player === name && !goal.ownGoal).length, assists = goals.filter((goal) => goal.assistedBy === name).length,
+            moves = subs.filter((item) => sideOfTeam(item.team) === side && (item.in === name || item.out === name)).sort((a, b) => (Number(a.minute) || 0) - (Number(b.minute) || 0)),
+            enteredAt = moves.find((item) => item.in === name);
+          if (benchRow && !enteredAt && !p) return "";
+          return '<li><span class="nm-player">' + escapeHtml(displayName(name)) + (name === keeperName || keeper(name) ? ' <b class="nm-tag">GOL</b>' : "") +
+            (scored ? ' <span class="nm-icons" title="' + scored + ' gol(s)">' + "⚽".repeat(Math.min(scored, 5)) + "</span>" : "") +
+            (assists ? ' <small class="nm-assist">' + assists + " assist.</small>" : "") +
+            moves.map((item) => (item.in === name ? ' <small class="nm-sub-in">↑ ' : ' <small class="nm-sub-out">↓ ') + (item.minute || "") + "'</small>").join("") +
+            "</span>" + (p ? '<span class="nm-rating ' + newsScoreClass(Number(p.score)) + '">' + Number(p.score).toFixed(1).replace(".", ",") + "</span>" : "") + "</li>";
+        }).join("");
+      // Quem entrou vem das substituições do time (e de quem tem nota sem ser titular); ninguém aparece duas vezes.
+      const entered = [...new Set([
+          ...subs.filter((item) => sideOfTeam(item.team) === side).map((item) => item.in),
+          ...perf.filter((p) => sideOfTeam(p.team) === side).map((p) => p.player),
+        ])].filter((name) => name && !starters.includes(name)),
+        unused = bench.filter((name) => !starters.includes(name) && !entered.includes(name));
+      return '<div class="nm-lineup' + (winnerSide === side ? " is-winner" : "") + '" style="--team-color:' + colorOf(team).color + '"><header>' + newsCrest(game, side, "sm") + "<strong>" + escapeHtml(label(side)) + '</strong></header><p class="nm-lineup-label">Titulares</p><ol>' + rowsFor(starters, false) + "</ol>" +
+        (entered.length ? '<p class="nm-lineup-label">Entraram</p><ol>' + rowsFor(entered, false) + "</ol>" : "") +
+        (unused.length ? '<p class="nm-bench">Banco: ' + unused.map((name) => escapeHtml(displayName(name))).join(", ") + "</p>" : "") + "</div>";
+    };
+    const champion = isFinal && winnerSide
+      ? '<div class="nm-champion" style="--team-color:' + colorOf(game[winnerSide]).color + '">' + newsCrest(game, winnerSide, "md") + '<div><p>🏆 CAMPEÃO DA SUPER LIGA</p><strong>' + escapeHtml(label(winnerSide)) + "</strong><span>" + (single ? "Venceu o jogo único" : "Venceu a final") + " por " + Math.max(score.home, score.away) + " a " + Math.min(score.home, score.away) + (shoot ? " nos pênaltis (" + shoot.homeScore + "×" + shoot.awayScore + ")" : "") + "</span></div></div>"
+      : "";
+    const top = '<section class="nm-report" aria-label="Placar do jogo">' +
+      '<div class="nm-board">' + sides.map((side, i) =>
+        (i === 1 ? '<div class="nm-score"><b class="' + (winnerSide === "home" ? "is-win" : "") + '">' + score.home + '</b><span>×</span><b class="' + (winnerSide === "away" ? "is-win" : "") + '">' + score.away + "</b>" + (shoot ? '<small>pênaltis ' + shoot.homeScore + " × " + shoot.awayScore + "</small>" : winnerSide ? "" : "<small>empate</small>") + "</div>" : "") +
+        '<div class="nm-side' + (winnerSide === side ? " is-winner" : winnerSide ? " is-loser" : "") + '">' + newsCrest(game, side) + "<strong>" + escapeHtml(label(side)) + "</strong>" + (winnerSide === side ? '<span class="nm-win">VENCEU</span>' : "") + "</div>"
+      ).join("") + '</div><p class="nm-facts">' + facts.map((item) => "<span>" + escapeHtml(item) + "</span>").join("") + "</p>" +
+      champion + "</section>";
+    const details = '<section class="nm-report" aria-label="Súmula do jogo">' +
+      '<div class="nm-grid"><div class="nm-block"><h3>Gols do jogo</h3>' + timeline + '</div><div class="nm-block"><h3>Números do jogo</h3><div class="nm-stats-head"><span>' + escapeHtml(label("home")) + "</span><span>" + escapeHtml(label("away")) + "</span></div>" + stats + "</div></div>" +
+      '<div class="nm-block"><h3>Escalações e notas</h3><div class="nm-lineups">' + lineup("home") + lineup("away") + '</div><p class="nm-legend">Nota de 0 a 10 calculada pelo site · ⚽ gol · ↑ entrou · ↓ saiu</p></div>' +
+      "</section>";
+    return { top, details };
   }
   function renderNewsPost(post) {
-    const cover = newsSafeUrl(post.cover_image_url),
+    const report = newsMatchReport(post),
+      cover = newsSafeUrl(post.cover_image_url),
       highlights = (post.news_highlights || []).filter((item) => item.player_name || item.label),
       players = post.news_post_players || [],
       media = [...(post.news_media || [])].sort((a, b) => (a.order_index || 0) - (b.order_index || 0)).filter((item) => newsSafeUrl(item.url));
@@ -2413,9 +2537,10 @@
       "<h2>" + escapeHtml(post.title) + "</h2>" +
       (post.subtitle ? '<p class="news-subtitle">' + escapeHtml(post.subtitle) + "</p>" : "") +
       (cover ? '<img class="news-post-cover" src="' + escapeHtml(cover) + '" alt="">' : "") +
-      newsGameSummary(post) +
+      report.top +
       (highlights.length ? '<div class="news-highlights">' + highlights.map((item) => '<div class="news-highlight"><small>' + escapeHtml(item.label || NEWS_HIGHLIGHTS[item.type] || "Destaque") + "</small><strong>" + escapeHtml(displayName(item.player_name || "")) + "</strong>" + (item.value !== null && item.value !== undefined && item.value !== "" ? "<span>" + escapeHtml(String(item.value).replace(".", ",")) + (item.type === "top_scorer" ? " gol(s)" : "") + "</span>" : "") + "</div>").join("") + "</div>" : "") +
       '<div class="news-content">' + newsParagraphs(post.content) + "</div>" +
+      report.details +
       (media.length ? '<div class="news-media">' + media.map((item) => '<figure><img src="' + escapeHtml(newsSafeUrl(item.url)) + '" alt="' + escapeHtml(item.caption || "") + '" loading="lazy">' + (item.caption ? "<figcaption>" + escapeHtml(item.caption) + "</figcaption>" : "") + "</figure>").join("") + "</div>" : "") +
       (players.length ? '<div class="news-players"><small>Na notícia</small>' + players.map((item) => '<span class="news-player">' + escapeHtml(displayName(item.player_name)) + (item.role && item.role !== "mentioned" ? " · " + escapeHtml(NEWS_ROLES[item.role] || item.role) : "") + (Number(item.goals) ? " · " + item.goals + " gol" + (item.goals > 1 ? "s" : "") : "") + "</span>").join("") + "</div>" : "") +
       '<div class="button-row"><button type="button" class="button button-primary" data-news-share="' + escapeHtml(post.id) + '">Compartilhar</button></div>' +

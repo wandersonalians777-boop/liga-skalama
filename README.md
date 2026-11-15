@@ -71,6 +71,8 @@ O **SKALAMA News** é o portal de notícias da liga. Ele abre pelo botão em des
 
 - Visitantes veem só as notícias publicadas, e as agendadas cujo horário já chegou. Dá para filtrar por categoria, abrir a notícia e compartilhar o link (`skalama.com.br/#noticia-...`). As visualizações e os compartilhamentos são contados.
 - O organizador cria, edita, arquiva e apaga notícias pela própria aba. Cada notícia tem título, subtítulo, resumo, texto (linha em branco separa parágrafos; `**assim**` fica em negrito), categoria, situação (rascunho, publicada, agendada, arquivada), destaque da capa, imagem de capa e fotos por endereço `https://`, jogo relacionado, jogadores citados e cards de destaque.
+- Notícia ligada a um jogo mostra a **súmula**: placar com os escudos e o vencedor em destaque, faixa de campeão quando é final da Super Liga, ficha (competição, fase, data, duração e local), linha do tempo dos gols com assistências, números do jogo (gols, assistências, nota média, substituições e ocorrências) e escalações com a nota de cada jogador, entradas e saídas. Sem foto de capa, o card da notícia usa os escudos e o placar.
+- **Escudos dos times**: ficam em `public/assets/escudos/` e são ligados pelo nome do time em `TEAM_CRESTS` (`public/app-live.js`). Hoje: SKALAMA e 2017 FC. Time sem escudo aparece com as iniciais na cor do time.
 - **Gerar texto do jogo**: escolha uma partida do histórico e o site monta um rascunho com placar, gols, craque e goleiro do jogo, para revisar antes de publicar.
 - Os dados ficam nas tabelas `news_posts`, `news_post_players`, `news_media` e `news_highlights`. Para ativar num banco existente, execute `supabase/migrations/20261115_skalama_news.sql`. Sem Supabase, as notícias ficam só no navegador.
 
