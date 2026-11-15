@@ -634,14 +634,15 @@
       const color = teamColors[index] || teamColors[0], players = lineupForTeam(team.name), short = players.length === 4;
       const locked = swapLocked(team.name), canDrop = !!swapPick && swapPick.team !== team.name && !locked && players.length < swapCapacity();
       const items = players.map((name) => '<li class="swap-row' + (swapPick && swapPick.team === team.name && swapPick.player === name ? ' selected' : '') + (swapPick && swapPick.team !== team.name && !locked ? ' swap-target' : '') + '"><span class="swap-name">' + escapeHtml(displayName(name)) + (keeper(name) ? ' <b class="keeper-mark">*</b>' : '') + '</span>' + swapButton(team.name, name, locked) + '</li>').join('');
-      return '<article class="team-card ' + (short ? 'team-card-short' : '') + '"><header class="team-head" style="--team-color:' + color.color + ';--team-ink:' + color.ink + '"><span>' + (teamLogos[team.name] ? '<img class="team-logo" src="' + teamLogos[team.name] + '" alt="">' : '') + escapeHtml(teamLabel(team.name)) + '</span><small>' + players.length + ' JOGADORES' + (short ? ' · VAGA' : players.length < 4 ? ' · INCOMPLETO' : '') + '</small></header>' + (canDrop ? '<button type="button" class="swap-drop" data-swap-drop="' + escapeHtml(team.name) + '">Mover ' + escapeHtml(displayName(swapPick.player)) + ' para cá</button>' : '') + '<input class="team-label-input" data-team-label="' + escapeHtml(team.name) + '" maxlength="30" placeholder="Nome do time (opcional)" aria-label="Nome do ' + escapeHtml(team.name) + ' (opcional)" value="' + escapeHtml(state.teamLabels?.[team.name] || '') + '"><ol>' + items + '</ol></article>';
+      return '<article class="team-card ' + (short ? 'team-card-short' : '') + '"><header class="team-head" style="--team-color:' + color.color + ';--team-ink:' + color.ink + '"><span>' + (crestFor(team.name) ? '<img class="team-logo" src="' + crestFor(team.name) + '" alt="">' : '') + escapeHtml(teamLabel(team.name)) + '</span><small>' + players.length + ' JOGADORES' + (short ? ' · VAGA' : players.length < 4 ? ' · INCOMPLETO' : '') + '</small></header>' + (canDrop ? '<button type="button" class="swap-drop" data-swap-drop="' + escapeHtml(team.name) + '">Mover ' + escapeHtml(displayName(swapPick.player)) + ' para cá</button>' : '') + '<input class="team-label-input" data-team-label="' + escapeHtml(team.name) + '" maxlength="30" placeholder="Nome do time (opcional)" aria-label="Nome do ' + escapeHtml(team.name) + ' (opcional)" value="' + escapeHtml(state.teamLabels?.[team.name] || '') + '"><ol>' + items + '</ol></article>';
     }).join('');
     grid.innerHTML = swapHintMarkup() + markup + swapReservesMarkup();
     if (publicGrid) {
       const sizes = teams.map((team) => lineupForTeam(team.name).length), min = Math.min(...sizes), max = Math.max(...sizes);
       publicGrid.innerHTML = teams.map((team) => {
         const players = lineupForTeam(team.name);
-        return '<article class="home-team-card"><header><strong>' + escapeHtml(teamLabel(team.name)) + '</strong><span>' + players.length + (players.length === 1 ? ' JOGADOR' : ' JOGADORES') + '</span></header><ol>' + players.map((name) => '<li><span>' + escapeHtml(displayName(name)) + '</span>' + (keeper(name) ? '<b class="home-keeper" title="Goleiro" aria-label="Goleiro">G</b>' : '') + '</li>').join('') + '</ol></article>';
+        const crest = crestFor(team.name);
+        return '<article class="home-team-card"><header><strong>' + (crest ? '<span class="home-team-crest"><img src="' + escapeHtml(crest) + '" alt=""></span>' : '') + escapeHtml(teamLabel(team.name)) + '</strong><span>' + players.length + (players.length === 1 ? ' JOGADOR' : ' JOGADORES') + '</span></header><ol>' + players.map((name) => '<li><span>' + escapeHtml(displayName(name)) + '</span>' + (keeper(name) ? '<b class="home-keeper" title="Goleiro" aria-label="Goleiro">G</b>' : '') + '</li>').join('') + '</ol></article>';
       }).join('');
       const count = $("publicTeamsCount");
       if (count) count.textContent = teams.length + (teams.length === 1 ? " time" : " times") + " · " + (min === max ? max + (max === 1 ? " jogador" : " jogadores") + " cada" : min + " a " + max + " jogadores");
@@ -2420,10 +2421,16 @@
   const TEAM_CRESTS = {
     skalama: "./assets/escudos/skalama.png",
     "2017fc": "./assets/escudos/2017-fc.png",
+    // Time Sol (Modo Liga): escudo fixo, vale mesmo se o time ganhar outro nome na rodada.
+    timesol: "./assets/escudos/time-sol.png",
   };
-  function crestFor(teamKey, label) {
+  // Escudo fixo do time (pela chave ou pelo nome); tem prioridade sobre o logo enviado no aparelho.
+  function fixedCrest(teamKey, label) {
     const norm = (value) => String(value || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
-    return TEAM_CRESTS[norm(label)] || TEAM_CRESTS[norm(teamLabel(teamKey))] || teamLogos[teamKey] || "";
+    return TEAM_CRESTS[norm(teamKey)] || TEAM_CRESTS[norm(label)] || TEAM_CRESTS[norm(teamLabel(teamKey))] || "";
+  }
+  function crestFor(teamKey, label) {
+    return fixedCrest(teamKey, label) || teamLogos[teamKey] || "";
   }
   function newsCrest(game, side, size = "lg") {
     const key = game[side], label = gameTeamLabel(game, side), src = crestFor(key, label), color = colorOf(key);
@@ -2576,7 +2583,7 @@
           const label = gameTeamLabel(game, key), src = crestFor(game[key], label),
             initials = label.replace(/^time\s+/i, "").split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
           return '<div class="hn-team' + (win === key ? " is-winner" : win ? " is-loser" : "") + '">' +
-            (src ? '<span class="hn-crest"><img src="' + escapeHtml(src) + '" alt=""></span>' : '<span class="hn-crest hn-initials" aria-hidden="true">' + escapeHtml(initials || "?") + "</span>") +
+            (src ? '<span class="hn-crest hn-crest-img"><img src="' + escapeHtml(src) + '" alt=""></span>' : '<span class="hn-crest hn-initials" aria-hidden="true">' + escapeHtml(initials || "?") + "</span>") +
             "<strong>" + escapeHtml(label) + "</strong></div>";
         },
         num = (key) => '<b class="' + (win === key ? "is-winner" : win ? "is-loser" : "") + '">' + (Number(game[key + "Score"]) || 0) + "</b>";
@@ -3209,7 +3216,7 @@
   }
   const logoImages = {};
   function logoImage(name) {
-    const src = teamLogos[name];
+    const src = fixedCrest(name) || teamLogos[name];
     if (!src) return null;
     if (logoImages[name]?.src !== src) {
       const image = new Image();
@@ -3306,7 +3313,9 @@
     const logos = teams
       .map(
         (team) =>
-          '<div class="art-logo-row">' +
+          (fixedCrest(team.name)
+            ? '<div class="art-logo-row"><img src="' + fixedCrest(team.name) + '" alt=""><strong>' + escapeHtml(teamLabel(team.name)) + '</strong><span class="help-text">Escudo oficial</span></div>'
+            : '<div class="art-logo-row">' +
           (teamLogos[team.name]
             ? '<img src="' + teamLogos[team.name] + '" alt="">'
             : '<span class="art-logo-empty" aria-hidden="true"></span>') +
@@ -3322,7 +3331,7 @@
               escapeHtml(team.name) +
               '">Remover</button>'
             : "") +
-          "</div>",
+          "</div>"),
       )
       .join("");
     if ($("artLogos").innerHTML !== logos) $("artLogos").innerHTML = logos;
