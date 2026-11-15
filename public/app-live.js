@@ -2428,6 +2428,8 @@
     // Time Sol (Modo Liga): escudo fixo, vale mesmo se o time ganhar outro nome na rodada.
     timesol: "./assets/escudos/time-sol.png",
     timeaguia: "./assets/escudos/time-aguia.png",
+    // Time Azul: usa o escudo da SKALAMA.
+    timeazul: "./assets/escudos/skalama.png",
     // Time Lobo (antigo Time Verde, que segue com esse nome interno).
     timelobo: "./assets/escudos/time-lobo.png",
     timeverde: "./assets/escudos/time-lobo.png",
