@@ -3,7 +3,7 @@
   const teamColors = [
     { name: "Águia", color: "#f28c28", ink: "#14120a" },
     { name: "Sol", color: "#ffc400", ink: "#14120a" },
-    { name: "Verde", color: "#2b8a50", ink: "#ffffff" },
+    { name: "Lobo", color: "#2b8a50", ink: "#ffffff" },
     { name: "Azul", color: "#334fa0", ink: "#ffffff" },
   ];
   // 10–15 formam 2 ou 3 times; 16–19 formam 4 times com todos os jogadores; a partir de 20, quatro times titulares e reservas.
@@ -16,7 +16,11 @@
   const MIN_KEEPER_GAMES = 3;
   const startersFor = (total) => total >= 16 ? Math.min(20, total) : Math.floor(Math.max(total, MIN_PLAYERS) / 5) * 5;
   // O nome interno ("Time Águia") segue como chave; o apelido é só exibição.
-  const teamLabel = (name) => superTeam(name)?.name || state?.teamLabels?.[name] || name;
+  // Nome padrão exibido de cada time do Modo Liga. O nome interno continua o mesmo ("Time Verde"),
+  // para não quebrar histórico, gols e escalações já salvos.
+  const DEFAULT_TEAM_LABELS = { "Time Verde": "Time Lobo" };
+  const defaultTeamLabel = (name) => DEFAULT_TEAM_LABELS[name] || name;
+  const teamLabel = (name) => superTeam(name)?.name || state?.teamLabels?.[name] || defaultTeamLabel(name);
   // Super Liga: até 8 times, cada um com uma cor (as 4 do site e mais 4).
   const SUPER_COLORS = [
     ...teamColors,
@@ -634,7 +638,7 @@
       const color = teamColors[index] || teamColors[0], players = lineupForTeam(team.name), short = players.length === 4;
       const locked = swapLocked(team.name), canDrop = !!swapPick && swapPick.team !== team.name && !locked && players.length < swapCapacity();
       const items = players.map((name) => '<li class="swap-row' + (swapPick && swapPick.team === team.name && swapPick.player === name ? ' selected' : '') + (swapPick && swapPick.team !== team.name && !locked ? ' swap-target' : '') + '"><span class="swap-name">' + escapeHtml(displayName(name)) + (keeper(name) ? ' <b class="keeper-mark">*</b>' : '') + '</span>' + swapButton(team.name, name, locked) + '</li>').join('');
-      return '<article class="team-card ' + (short ? 'team-card-short' : '') + '"><header class="team-head" style="--team-color:' + color.color + ';--team-ink:' + color.ink + '"><span>' + (crestFor(team.name) ? '<img class="team-logo" src="' + crestFor(team.name) + '" alt="">' : '') + escapeHtml(teamLabel(team.name)) + '</span><small>' + players.length + ' JOGADORES' + (short ? ' · VAGA' : players.length < 4 ? ' · INCOMPLETO' : '') + '</small></header>' + (canDrop ? '<button type="button" class="swap-drop" data-swap-drop="' + escapeHtml(team.name) + '">Mover ' + escapeHtml(displayName(swapPick.player)) + ' para cá</button>' : '') + '<input class="team-label-input" data-team-label="' + escapeHtml(team.name) + '" maxlength="30" placeholder="Nome do time (opcional)" aria-label="Nome do ' + escapeHtml(team.name) + ' (opcional)" value="' + escapeHtml(state.teamLabels?.[team.name] || '') + '"><ol>' + items + '</ol></article>';
+      return '<article class="team-card ' + (short ? 'team-card-short' : '') + '"><header class="team-head" style="--team-color:' + color.color + ';--team-ink:' + color.ink + '"><span>' + (crestFor(team.name) ? '<img class="team-logo" src="' + crestFor(team.name) + '" alt="">' : '') + escapeHtml(teamLabel(team.name)) + '</span><small>' + players.length + ' JOGADORES' + (short ? ' · VAGA' : players.length < 4 ? ' · INCOMPLETO' : '') + '</small></header>' + (canDrop ? '<button type="button" class="swap-drop" data-swap-drop="' + escapeHtml(team.name) + '">Mover ' + escapeHtml(displayName(swapPick.player)) + ' para cá</button>' : '') + '<input class="team-label-input" data-team-label="' + escapeHtml(team.name) + '" maxlength="30" placeholder="Nome do time (opcional)" aria-label="Nome do ' + escapeHtml(defaultTeamLabel(team.name)) + ' (opcional)" value="' + escapeHtml(state.teamLabels?.[team.name] || '') + '"><ol>' + items + '</ol></article>';
     }).join('');
     grid.innerHTML = swapHintMarkup() + markup + swapReservesMarkup();
     if (publicGrid) {
@@ -2423,6 +2427,9 @@
     "2017fc": "./assets/escudos/2017-fc.png",
     // Time Sol (Modo Liga): escudo fixo, vale mesmo se o time ganhar outro nome na rodada.
     timesol: "./assets/escudos/time-sol.png",
+    // Time Lobo (antigo Time Verde, que segue com esse nome interno).
+    timelobo: "./assets/escudos/time-lobo.png",
+    timeverde: "./assets/escudos/time-lobo.png",
   };
   // Escudo fixo do time (pela chave ou pelo nome); tem prioridade sobre o logo enviado no aparelho.
   function fixedCrest(teamKey, label) {
@@ -4619,7 +4626,7 @@
       if (!team) return;
       const value = event.target.value.trim().slice(0, 30);
       const teamLabels = { ...(state.teamLabels || {}), [team]: value };
-      const gameHistory = (state.gameHistory || []).map((game) => game.roundId === state.roundId ? { ...game, homeLabel: teamLabels[game.home] || game.home, awayLabel: teamLabels[game.away] || game.away } : game);
+      const gameHistory = (state.gameHistory || []).map((game) => game.roundId === state.roundId ? { ...game, homeLabel: teamLabels[game.home] || defaultTeamLabel(game.home), awayLabel: teamLabels[game.away] || defaultTeamLabel(game.away) } : game);
       saveState(
         { teamLabels, gameHistory },
         value ? "Nome do time salvo." : "Nome do time removido.",
