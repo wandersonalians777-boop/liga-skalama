@@ -2296,6 +2296,7 @@
     newsFilter = "todas",
     newsOpenSlug = null,
     newsDraft = null,
+    newsJustPublished = null,
     newsError = "";
   function newsLocalRead() {
     try { return JSON.parse(localStorage.getItem(NEWS_LOCAL_KEY) || "[]"); } catch { return []; }
@@ -2404,7 +2405,7 @@
       '<div class="news-card-body"><div class="news-meta">' + newsBadge(post) + newsStatusChip(post) + (post.is_featured ? '<span class="news-flag">Destaque</span>' : "") + '<small>' + escapeHtml(newsWhen(newsDate(post))) + "</small></div>" +
       "<h3>" + escapeHtml(post.title) + "</h3>" +
       (post.excerpt ? "<p>" + escapeHtml(post.excerpt) + "</p>" : post.subtitle ? "<p>" + escapeHtml(post.subtitle) + "</p>" : "") +
-      '<small class="news-stats">' + newsViews(post) + "</small></div></a></article>";
+      '<small class="news-stats">' + newsViews(post) + (Number(post.shares_count) && !isEditLocked() ? " · " + post.shares_count + (Number(post.shares_count) === 1 ? " compartilhamento" : " compartilhamentos") : "") + "</small></div></a>" + newsShareTools(post, true) + "</article>";
   }
   // Escudos dos times, pelo nome (vale para Liga e Super Liga). Novos escudos: arquivo em public/assets/escudos/ e uma linha aqui.
   const TEAM_CRESTS = {
@@ -2532,6 +2533,7 @@
       media = [...(post.news_media || [])].sort((a, b) => (a.order_index || 0) - (b.order_index || 0)).filter((item) => newsSafeUrl(item.url));
     return '<div class="news-post-actions"><button type="button" class="button button-outline button-small" data-news-back>← Voltar para as notícias</button>' +
       (!isEditLocked() ? '<button type="button" class="button button-dark button-small news-edit-btn" data-news-edit="' + escapeHtml(post.id) + '">Editar</button>' : "") + "</div>" +
+      newsShareTools(post) +
       '<article class="news-post">' +
       '<div class="news-meta">' + newsBadge(post) + newsStatusChip(post) + "<small>" + escapeHtml(newsWhen(newsDate(post))) + " · " + newsViews(post) + "</small></div>" +
       "<h2>" + escapeHtml(post.title) + "</h2>" +
@@ -2597,6 +2599,7 @@
   }
   function closeNewsPost() {
     newsOpenSlug = null;
+    newsJustPublished = null;
     if (location.hash.startsWith("#noticia-")) history.pushState(null, "", location.pathname + location.search);
     renderNews();
   }
@@ -2611,18 +2614,83 @@
     else newsLocalWrite(newsLocalRead().map((item) => (item.id === post.id ? { ...item, [field]: post[field] } : item)));
     renderNews();
   }
-  async function shareNews(id) {
+  // ---------- Divulgação (WhatsApp: canal e grupos) ----------
+  function newsShareUrl(post) {
+    return "https://skalama.com.br/#noticia-" + encodeURIComponent(post.slug);
+  }
+  // Mensagem pronta para o WhatsApp (*texto* = negrito). Sem resumo, a linha é pulada.
+  function newsShareText(post) {
+    return [
+      "📰 *SKALAMA News*",
+      "*" + String(post.title || "").trim() + "*",
+      String(post.excerpt || "").trim(),
+      "👉 " + newsShareUrl(post),
+    ].filter(Boolean).join("\n");
+  }
+  function newsIsMobile() {
+    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  }
+  async function newsCopyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Navegadores sem acesso à área de transferência: cópia pelo jeito antigo.
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+      document.body.appendChild(area);
+      area.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch {}
+      area.remove();
+      return ok;
+    }
+  }
+  // channel: "auto" (botão Compartilhar da notícia), "whatsapp" (Enviar pro WhatsApp) ou "copy" (Copiar mensagem).
+  // Todos somam no contador de compartilhamentos.
+  async function shareNews(id, channel = "auto") {
     const post = newsPosts.find((item) => item.id === id);
     if (!post) return;
     const url = location.origin + location.pathname + "#noticia-" + encodeURIComponent(post.slug),
-      text = post.title + (post.excerpt ? " — " + post.excerpt : "");
+      text = post.title + (post.excerpt ? " — " + post.excerpt : ""),
+      message = newsShareText(post),
+      openWhatsApp = () => window.open("https://wa.me/?text=" + encodeURIComponent(message), "_blank", "noopener");
     try {
-      if (navigator.share) await navigator.share({ title: "SKALAMA News", text, url });
+      if (channel === "copy") {
+        if (!(await newsCopyText(message))) { notify("Não deu para copiar. Segure o dedo no texto da notícia para copiar.", true); return; }
+        notify("Mensagem copiada");
+      } else if (channel === "whatsapp") {
+        // No celular, o compartilhamento nativo vem primeiro (dá para escolher grupo ou canal); se não houver, wa.me.
+        if (newsIsMobile() && navigator.share) {
+          try {
+            await navigator.share({ text: message });
+          } catch (error) {
+            if (error?.name === "AbortError") return;
+            openWhatsApp();
+          }
+        } else openWhatsApp();
+      } else if (navigator.share) await navigator.share({ title: "SKALAMA News", text, url });
       else { await navigator.clipboard.writeText(url); notify("Link da notícia copiado."); }
       newsCount(post, "share");
     } catch (error) {
       if (error?.name !== "AbortError") notify("Não deu para compartilhar. Copie o endereço da página.", true);
     }
+  }
+  const NEWS_WA_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2c-1.5 0-3-.4-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.4.1-.6.3-.2.2-.8.8-.8 2s.8 2.3.9 2.5c.1.2 1.6 2.5 4 3.5 1.5.6 2 .7 2.8.6.4-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.2-.2-.5-.3Z"/></svg>',
+    NEWS_COPY_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M16 1H6a2 2 0 0 0-2 2v12h2V3h10V1Zm3 4H10a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 16h-9V7h9v14Z"/></svg>';
+  // Botões de divulgação (só organizador, só notícia publicada).
+  function newsShareTools(post, compact = false) {
+    if (isEditLocked() || !newsIsPublic(post)) return "";
+    const buttons = '<div class="news-share-buttons"><button type="button" class="news-share-btn news-share-wa" data-news-wa="' + escapeHtml(post.id) + '">' + NEWS_WA_ICON + "<span>Enviar pro WhatsApp</span></button>" +
+      '<button type="button" class="news-share-btn news-share-copy" data-news-copy="' + escapeHtml(post.id) + '">' + NEWS_COPY_ICON + "<span>Copiar mensagem</span></button></div>";
+    if (compact) return '<div class="news-card-share">' + buttons + "</div>";
+    const fresh = newsJustPublished === post.id;
+    return '<section class="news-share-tools' + (fresh ? " is-fresh" : "") + '" aria-label="Divulgar no WhatsApp">' +
+      "<p><strong>" + (fresh ? "✅ Notícia publicada! Agora é só divulgar no WhatsApp:" : "📣 Divulgar no WhatsApp") + "</strong></p>" + buttons +
+      '<small>Grupos: use <b>Enviar pro WhatsApp</b>. Canal: toque em <b>Copiar mensagem</b> e cole no canal.</small>' +
+      '<pre class="news-share-preview" aria-label="Prévia da mensagem">' + escapeHtml(newsShareText(post)) + "</pre></section>";
   }
   function openNewsFromHash() {
     const match = location.hash.match(/^#noticia-(.+)$/);
@@ -2812,6 +2880,7 @@
       return;
     }
     newsDraft = null;
+    newsJustPublished = row.status === "published" && !row.deleted_at ? row.id : null;
     await loadNews(true);
     notify(message || (row.status === "published" ? "Notícia publicada." : row.status === "scheduled" ? "Notícia agendada para " + newsWhen(row.scheduled_for) + "." : row.status === "archived" ? "Notícia arquivada." : "Rascunho salvo.") + (shared ? "" : " (somente neste navegador)"));
     if (!row.deleted_at && row.status !== "archived") openNewsPost(row.slug);
@@ -2971,7 +3040,7 @@
     const section = $("news");
     if (!section) return;
     section.addEventListener("click", (event) => {
-      const target = event.target.closest("[data-news-open],[data-news-filter],[data-news-back],[data-news-new],[data-news-edit],[data-news-cancel],[data-news-share],[data-news-generate],[data-news-add],[data-news-remove],[data-news-archive],[data-news-delete]");
+      const target = event.target.closest("[data-news-open],[data-news-filter],[data-news-back],[data-news-new],[data-news-edit],[data-news-cancel],[data-news-share],[data-news-generate],[data-news-add],[data-news-remove],[data-news-archive],[data-news-delete],[data-news-wa],[data-news-copy]");
       if (!target || target.disabled) return;
       const data = target.dataset;
       if (data.newsOpen) { event.preventDefault(); openNewsPost(data.newsOpen); }
@@ -2981,6 +3050,8 @@
       else if (data.newsEdit) newsStartDraft(newsPosts.find((post) => post.id === data.newsEdit));
       else if ("newsCancel" in data) { newsDraft = null; renderNews(); }
       else if (data.newsShare) shareNews(data.newsShare);
+      else if (data.newsWa) shareNews(data.newsWa, "whatsapp");
+      else if (data.newsCopy) shareNews(data.newsCopy, "copy");
       else if ("newsGenerate" in data) newsGenerateFromGame();
       else if (data.newsAdd) { newsCollect(); newsDraft[data.newsAdd].push(data.newsAdd === "players" ? { player_name: "", role: "mentioned", goals: 0 } : data.newsAdd === "highlights" ? { type: "player_of_the_night", player_name: "", value: null, label: "" } : { url: "", caption: "" }); renderNewsEditor(); }
       else if (data.newsRemove) { newsCollect(); newsDraft[data.newsRemove].splice(Number(data.index), 1); renderNewsEditor(); }

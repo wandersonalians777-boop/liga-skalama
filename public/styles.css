@@ -624,3 +624,26 @@ body.light-theme .nm-lineup{background:#fff}
 .news-push-on{display:flex;flex-wrap:wrap;align-items:center;gap:12px;font-weight:800;font-size:13px}
 .news-push-on>span{color:#16803c}
 body:not(.light-theme) .news-push-on>span{color:#73cf8d}
+/* SKALAMA News: divulgação no WhatsApp (organizador) */
+.news-share-tools{display:grid;gap:10px;max-width:760px;width:100%;margin:0 auto;padding:14px 16px;border:1px solid var(--line);border-left:4px solid var(--yellow);border-radius:14px;background:var(--panel2)}
+.news-share-tools.is-fresh{border-color:var(--yellow);box-shadow:0 0 0 3px #ffc40033}
+.news-share-tools p{margin:0;font-size:13px}
+.news-share-tools small{color:var(--muted);font-size:11px;line-height:1.5}
+.news-share-buttons{display:flex;flex-wrap:wrap;gap:8px}
+.news-share-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 16px;border-radius:10px;font:800 13px 'DM Sans',system-ui,sans-serif;cursor:pointer;transition:filter .15s,transform .15s;flex:1 1 180px}
+.news-share-btn svg{flex:none}
+.news-share-btn:hover{filter:brightness(1.06);transform:translateY(-1px)}
+.news-share-btn:focus-visible{outline:3px solid #6f8fe8;outline-offset:2px}
+.news-share-wa{background:var(--yellow);border:1px solid var(--yellow);color:#15130a}
+.news-share-copy{background:#151515;border:1px solid #151515;color:#f8f8f5}
+body:not(.light-theme) .news-share-copy{background:transparent;border-color:#5a5a52;color:#f8f8f5}
+.news-share-preview{margin:0;padding:10px 12px;border-radius:10px;background:var(--panel);border:1px solid var(--line);color:var(--ink);font:500 12px/1.55 'DM Sans',system-ui,sans-serif;white-space:pre-wrap;overflow-wrap:anywhere}
+.news-card-share{padding:0 14px 14px}
+.news-card-share .news-share-btn{flex:1 1 140px;font-size:12px;padding:0 10px}
+@media(max-width:420px){.news-share-btn{flex-basis:100%}}
+/* Card do News: link + faixa de divulgação empilhados, sem cortar nada */
+.news-card{display:flex;flex-direction:column}
+.news-card-link{height:auto;flex:1 1 auto;min-width:0;grid-template-columns:minmax(0,1fr)}
+.news-card-body,.news-cover-match{min-width:0}
+.news-featured .news-card-link{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}
+@media(max-width:720px){.news-featured .news-card-link{grid-template-columns:minmax(0,1fr)}}
