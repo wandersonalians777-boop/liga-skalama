@@ -209,7 +209,7 @@
     const publicTeams = $("publicTeamsSection");
     if (publicTeams) publicTeams.hidden = !locked || !(state?.teams || []).length;
     document.querySelectorAll("button,input,select,textarea").forEach((element) => {
-      if (element.id === "themeToggle" || element.id === "adminAccessButton" || element.id === "footerAdminButton" || element.closest(".home-top") || element.closest("#adminLogin") || element.closest("#artStudio") || element.closest("#newsPublic") || element.closest("#newsPush") || element.hasAttribute("data-view-button")) return;
+      if (element.id === "themeToggle" || element.id === "adminAccessButton" || element.id === "footerAdminButton" || element.closest(".home-top") || element.closest("#historico") || element.closest("#adminLogin") || element.closest("#artStudio") || element.closest("#newsPublic") || element.closest("#newsPush") || element.hasAttribute("data-view-button")) return;
       if (locked) {
         if (!element.hasAttribute("data-access-locked")) { element.dataset.accessWasDisabled = String(element.disabled); element.setAttribute("data-access-locked", ""); }
         element.disabled = true;
@@ -1169,6 +1169,71 @@
     }
     updateBeginGameAvailability();
   }
+  // ---------- Gol sofrido vai para quem estava no gol na hora ----------
+  // Horário de uma troca: o próprio registro ou o item "sub" guardado em incidents (mesmo id).
+  function subMoment(game, sub) {
+    return sub.createdAt || (game.incidents || []).find((item) => item.id === sub.id)?.createdAt || null;
+  }
+  // Goleiros de um lado, em ordem: o titular e cada troca de goleiro (keeper: true ou saída de quem estava no gol).
+  function keeperSpells(game, side) {
+    const team = game[side];
+    let current = game[side + "KeeperStart"] || game[side + "Keeper"] || null;
+    const spells = current ? [{ player: current, minute: 0, at: null }] : [];
+    (game.substitutions || [])
+      .map((sub, index) => ({ sub, index }))
+      .filter(({ sub }) => sub.team === team)
+      .sort((a, b) => (Number(a.sub.minute) || 0) - (Number(b.sub.minute) || 0) || a.index - b.index)
+      .forEach(({ sub }) => {
+        if (sub.keeper || (current && sub.out === current)) {
+          current = sub.in;
+          spells.push({ player: sub.in, minute: Number(sub.minute) || 0, at: subMoment(game, sub), out: sub.out });
+        }
+      });
+    return spells;
+  }
+  // Quem estava no gol quando saiu o gol. No mesmo minuto, compara os horários; sem horário, a troca vale antes do gol.
+  function keeperAtGoal(spells, goal) {
+    const minute = Number(goal.minute) || 0, at = goal.created_at || goal.createdAt || null;
+    let current = spells[0]?.player || null;
+    for (const spell of spells.slice(1)) {
+      if (spell.minute < minute) current = spell.player;
+      else if (spell.minute === minute && (!spell.at || !at || new Date(spell.at) <= new Date(at))) current = spell.player;
+    }
+    return current;
+  }
+  // Score individual com a regra nova: cada goleiro fica só com os gols sofridos enquanto estava no gol,
+  // e quem foi para o gol em parte do jogo conta como goleiro naquele jogo. Os dados salvos não são alterados.
+  const perfCache = new WeakMap();
+  function gamePerformance(game) {
+    if (!game) return [];
+    const stored = game.performance || [];
+    if (!stored.length) return stored;
+    const cached = perfCache.get(game);
+    if (cached) return cached;
+    const assist = Math.max(0, Number(state?.scoreRules?.assist ?? SCORE_RULES.assist)),
+      rows = stored.map((row) => ({ ...row }));
+    for (const side of ["home", "away"]) {
+      const team = game[side], other = game[side === "home" ? "away" : "home"], spells = keeperSpells(game, side);
+      if (!spells.length) continue;
+      const against = new Map(spells.map((spell) => [spell.player, 0]));
+      for (const goal of game.goals || []) {
+        if ((goal.scoringTeam || goal.team) !== other) continue;
+        const who = keeperAtGoal(spells, goal);
+        if (who) against.set(who, (against.get(who) || 0) + 1);
+      }
+      for (const row of rows) {
+        if (row.team !== team || !against.has(row.player)) continue;
+        const goalsAgainst = against.get(row.player);
+        if (row.role === "goleiro" && Number(row.goalsAgainst) === goalsAgainst) continue;
+        const delta = row.result === "vitória" ? 1.5 : row.result === "derrota" ? -1.5 : 0.5;
+        row.role = "goleiro";
+        row.goalsAgainst = goalsAgainst;
+        row.score = Number(Math.max(0, Math.min(10, 7 + delta + (Number(row.goalsFor) || 0) + (Number(row.assists) || 0) * assist - 1.5 * Math.min(goalsAgainst, 2) - 2 * (Number(row.ownGoals) || 0))).toFixed(1));
+      }
+    }
+    perfCache.set(game, rows);
+    return rows;
+  }
   function performanceForGame(game, homeScore, awayScore, gameGoals) {
     const stats = [], assistPoints = Math.max(0, Number(state.scoreRules?.assist ?? SCORE_RULES.assist));
     for (const team of [game.home, game.away].filter(Boolean).map((name) => ({ name }))) {
@@ -1225,7 +1290,7 @@
     host.innerHTML = entries.length ? entries.map(([key, games], index) => {
       const date = games.map((game) => game.matchDate).find(Boolean);
       const rows = standingsForGames(games);
-      return '<details class="past-round"><summary>' + (date ? new Date(date + 'T12:00:00').toLocaleDateString('pt-BR') : 'Rodada anterior ' + (entries.length-index)) + ' · ' + games.length + ' partidas</summary>' + standingsTable(rows, 'Sem resultados finalizados nesta rodada.') + '</details>';
+      return '<details class="past-round hx-round"><summary><span>' + (date ? new Date(date + 'T12:00:00').toLocaleDateString('pt-BR') : 'Rodada anterior ' + (entries.length-index)) + ' · ' + games.length + (games.length === 1 ? ' partida' : ' partidas') + '</span>' + HX_CHEVRON + '</summary>' + standingsTable(rows, 'Sem resultados finalizados nesta rodada.') + '</details>';
     }).join('') : '<p class="empty-state">As classificações das rodadas anteriores aparecerão aqui.</p>';
   }
   // Rankings da Tela principal: só jogos do Modo Liga (a Super Liga tem os seus na própria aba).
@@ -1234,7 +1299,7 @@
   }
   function renderScoreRankings() {
     const all = ligaGames().flatMap(
-        (game) => game.performance || [],
+        (game) => gamePerformance(game),
       ),
       players = all.filter((p) => p.role === "linha"),
       keepers = all.filter((p) => p.role === "goleiro");
@@ -1345,7 +1410,7 @@
         " nesta rodada.";
     const totals = new Map();
     for (const game of games)
-      for (const player of game.performance || []) {
+      for (const player of gamePerformance(game)) {
         const role = player.role,
           key = role + "|" + player.player;
         let row = totals.get(key);
@@ -1446,7 +1511,7 @@
             (goalsByPlayer.get(goal.player) || 0) + 1,
           ),
         );
-      (game.performance || []).forEach((p) => {
+      gamePerformance(game).forEach((p) => {
         const key = p.role + "|" + p.player,
           entry = scores.get(key) || {
             player: p.player,
@@ -1538,15 +1603,29 @@
   }
   function renderIndividualStats() {
     const totals = new Map();
-    for (const game of state.gameHistory || []) for (const p of game.performance || []) {
+    const games = [...(state.gameHistory || [])].sort((a, b) => (hxTime(a.finishedAt)?.getTime() || 0) - (hxTime(b.finishedAt)?.getTime() || 0));
+    for (const game of games) for (const p of gamePerformance(game)) {
       const row = totals.get(p.player) || { player: p.player, role: p.role, keeperGames: 0, score: 0, games: 0, goals: 0, assists: 0, goalsAgainst: 0, wins: 0, draws: 0, losses: 0 };
       if (p.role === "goleiro") row.keeperGames++;
       row.score += Number(p.score) || 0; row.games++; row.goals += Number(p.goalsFor) || 0; row.assists += Number(p.assists) || 0; row.goalsAgainst += Number(p.goalsAgainst) || 0;
       if (p.result === "vitória") row.wins++; else if (p.result === "empate") row.draws++; else row.losses++;
+      // Time do jogo mais recente do jogador.
+      row.teamKey = p.team; row.teamLabel = teamName(game, p.team);
       totals.set(p.player, row);
     }
-    const rows = [...totals.values()].sort((a,b) => b.score/b.games-a.score/a.games || a.player.localeCompare(b.player,"pt-BR"));
-    $("individualStats").innerHTML = rows.length ? "<table><thead><tr><th>Jogador</th><th>Função</th><th>Jogos</th><th>Score médio</th><th>Gols</th><th>Assist.</th><th>Sofridos</th><th>V-E-D</th></tr></thead><tbody>" + rows.map((row) => "<tr><td>" + escapeHtml(displayName(row.player)) + "</td><td>" + roleSummary(row) + "</td><td>" + row.games + "</td><td>" + (row.score/row.games).toFixed(1).replace(".",",") + "</td><td>" + row.goals + "</td><td>" + row.assists + "</td><td>" + row.goalsAgainst + "</td><td>" + row.wins + "-" + row.draws + "-" + row.losses + "</td></tr>").join("") + "</tbody></table>" : '<p class="empty-state">As estatísticas individuais aparecem após as partidas finalizadas.</p>';
+    const rows = [...totals.values()].map((row) => ({ ...row, avg: row.score / row.games })).sort((a, b) => b.avg - a.avg || a.player.localeCompare(b.player, "pt-BR"));
+    if (!rows.length) { $("individualStats").innerHTML = '<p class="empty-state">As estatísticas individuais aparecem após as partidas finalizadas.</p>'; return; }
+    const best = (field) => { const max = Math.max(...rows.map((row) => Number(row[field].toFixed ? row[field].toFixed(1) : row[field]))); return max > 0 ? max : null; },
+      topAvg = best("avg"), topGoals = best("goals"), topAssists = best("assists"),
+      lead = (value, top) => (top !== null && Number(value.toFixed ? value.toFixed(1) : value) === top ? " is-lead" : ""),
+      roleText = (row) => { const r = roleSummary(row); return r.charAt(0).toUpperCase() + r.slice(1); };
+    $("individualStats").innerHTML = '<table class="hx-stats"><thead><tr><th scope="col">Jogador</th><th scope="col">Jogos</th><th scope="col">Score médio</th><th scope="col">Gols</th><th scope="col">Assist.</th><th scope="col">Sofridos</th><th scope="col"><abbr title="Vitórias · Empates · Derrotas">V · E · D</abbr></th></tr></thead><tbody>' +
+      rows.map((row) => {
+        const isKeeper = row.keeperGames > row.games - row.keeperGames;
+        return '<tr><th scope="row"><span class="hx-player">' + hxCrest(row.teamKey, row.teamLabel, "sm") + '<span class="hx-pinfo"><strong>' + escapeHtml(displayName(row.player)) + (isKeeper ? ' <b class="hx-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "</strong><small>" + escapeHtml((row.teamLabel || "") + " · " + roleText(row)) + "</small></span></span></th>" +
+          '<td class="hx-n">' + row.games + '</td><td class="hx-n' + lead(row.avg, topAvg) + '">' + row.avg.toFixed(1).replace(".", ",") + '</td><td class="hx-n' + lead(row.goals, topGoals) + '">' + row.goals + '</td><td class="hx-n' + lead(row.assists, topAssists) + '">' + row.assists + '</td><td class="hx-n">' + row.goalsAgainst + "</td>" +
+          '<td><span class="hx-ved" aria-label="' + row.wins + " vitórias, " + row.draws + " empates, " + row.losses + ' derrotas"><i class="v">' + row.wins + '</i><i class="e">' + row.draws + '</i><i class="d">' + row.losses + "</i></span></td></tr>";
+      }).join("") + "</tbody></table>";
   }
   // " · nos pênaltis (4 × 3)" quando o jogo terminou empatado e foi decidido nos pênaltis.
   function penaltySummary(game) {
@@ -1617,110 +1696,191 @@
           .join("")
       : '<p class="empty-state">Ainda não há partidas arquivadas para compor as publicações semanais.</p>';
   }
+  // ---------- Aba Histórico ----------
+  const historyOpenGames = new Set(), historyOpenPanels = new Set();
+  const HX_BALL = '<svg class="hx-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path fill="currentColor" d="m12 7.2 3.4 2.5-1.3 4h-4.2l-1.3-4Z"/><path d="M12 7.2V3M15.4 9.7l4-1.4M14.1 13.7l2.5 3.4M9.9 13.7l-2.5 3.4M8.6 9.7l-4-1.4" stroke="currentColor" stroke-width="1.6"/></svg>',
+    HX_SWAP = '<svg class="hx-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M7 4v13m0 0-3.5-3.5M7 17l3.5-3.5M17 20V7m0 0-3.5 3.5M17 7l3.5 3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    HX_CHEVRON = '<svg class="hx-chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  function hxCrest(key, label, size) {
+    const src = crestFor(key, label),
+      initials = String(label || "").replace(/^time\s+/i, "").split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+    return '<span class="hx-crest hx-crest-' + size + (src ? "" : " hx-initials") + '" aria-hidden="true">' + (src ? '<img src="' + escapeHtml(src) + '" alt="">' : escapeHtml(initials || "?")) + "</span>";
+  }
+  function hxTime(value) {
+    const date = typeof value === "number" || /^\d+$/.test(String(value || "")) ? new Date(Number(value)) : new Date(value || 0);
+    return Number.isFinite(date.getTime()) && date.getTime() > 0 ? date : null;
+  }
+  function hxClock(date) {
+    return date ? date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
+  }
+  function hxDayKey(game) {
+    const date = hxTime(game.finishedAt);
+    return date ? date.toLocaleDateString("pt-BR") : "sem-data";
+  }
+  function hxDayLabel(game) {
+    const date = game.matchDate ? new Date(game.matchDate + "T12:00:00") : hxTime(game.finishedAt);
+    if (!date || !Number.isFinite(date.getTime())) return "";
+    const weekday = date.toLocaleDateString("pt-BR", { weekday: "long" }).split("-")[0];
+    return weekday.charAt(0).toUpperCase() + weekday.slice(1) + ", " + date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  }
+  // Jogo que decide a Super Liga daquele jogo (o primeiro com stage "final").
+  function hxIsTitleGame(game) {
+    if (!game.superLigaId || game.stage !== "final") return false;
+    const finals = (state.gameHistory || []).filter((item) => item.superLigaId === game.superLigaId && item.stage === "final").sort((a, b) => (hxTime(a.finishedAt)?.getTime() || 0) - (hxTime(b.finishedAt)?.getTime() || 0));
+    return finals[0]?.id === game.id;
+  }
+  // Lances do jogo: gols e substituições juntos, por minuto e, no mesmo minuto, pela ordem em que foram registrados.
+  function hxEvents(game) {
+    const sideOf = (team) => (team === game.home ? "home" : team === game.away ? "away" : null),
+      spells = { home: keeperSpells(game, "home"), away: keeperSpells(game, "away") },
+      items = [];
+    (game.goals || []).forEach((goal, index) => items.push({ kind: "goal", side: sideOf(goal.scoringTeam || goal.team) || "home", minute: Number(goal.minute) || 0, at: goal.created_at || goal.createdAt || null, index, goal }));
+    (game.substitutions || []).forEach((sub, index) => items.push({ kind: "sub", side: sideOf(sub.team) || "home", minute: Number(sub.minute) || 0, at: subMoment(game, sub), index: 1000 + index, sub }));
+    items.sort((a, b) => a.minute - b.minute || (a.at && b.at ? new Date(a.at) - new Date(b.at) : 0) || a.index - b.index);
+    // Vários gols do mesmo jogador no mesmo minuto viram uma linha só.
+    const merged = [];
+    for (const item of items) {
+      const last = merged[merged.length - 1];
+      if (item.kind === "goal" && last?.kind === "goal" && last.minute === item.minute && last.side === item.side && last.goal.player === item.goal.player && !!last.goal.ownGoal === !!item.goal.ownGoal) {
+        last.count = (last.count || 1) + 1;
+        if (item.goal.assistedBy) last.assists = [...new Set([...(last.assists || []), item.goal.assistedBy])];
+        continue;
+      }
+      merged.push({ ...item, count: 1, assists: item.kind === "goal" && item.goal.assistedBy ? [item.goal.assistedBy] : [] });
+    }
+    return merged.map((item) => {
+      if (item.kind === "goal") {
+        const goal = item.goal, times = item.count > 1 ? " ×" + item.count + (item.count === 3 ? " · hat-trick" : "") : "";
+        return { ...item, html: '<span class="hx-ev hx-ev-goal">' + HX_BALL + '<span><span class="sr-only">Gol: </span><strong>' + escapeHtml(displayName(goal.player || "Gol")) + escapeHtml(times) + "</strong>" + (goal.ownGoal ? ' <em class="hx-own">contra</em>' : "") + (item.assists.length ? '<small>assist. ' + item.assists.map((name) => escapeHtml(displayName(name))).join(", ") + "</small>" : "") + "</span></span>" };
+      }
+      const sub = item.sub, sideSpells = spells[item.side], toGoal = sub.keeper || sideSpells.some((spell) => spell.player === sub.in && spell.minute === (Number(sub.minute) || 0) && spell.out === sub.out),
+        wasKeeper = toGoal && sideSpells.some((spell) => spell.player === sub.in && spell.minute < (Number(sub.minute) || 0)),
+        inText = displayName(sub.in) + (toGoal ? (wasKeeper ? " volta pro gol" : " vai pro gol") : "");
+      return { ...item, html: '<span class="hx-ev hx-ev-sub">' + HX_SWAP + '<span><span class="sr-only">Substituição: </span><strong class="hx-in"><span aria-hidden="true">↑ </span><span class="sr-only">entra </span>' + escapeHtml(inText) + '</strong><strong class="hx-out"><span aria-hidden="true">↓ </span><span class="sr-only">sai </span>' + escapeHtml(displayName(sub.out)) + "</strong></span></span>" };
+    });
+  }
+  function hxPanel(game, key, title, html) {
+    const id = "hx-" + game.id + "-" + key, open = historyOpenPanels.has(id);
+    return { button: '<button type="button" class="hx-pbtn" data-hx-panel="' + id + '" aria-expanded="' + open + '" aria-controls="' + id + '">' + title + HX_CHEVRON + "</button>", panel: '<div class="hx-panel" id="' + id + '" role="region" aria-label="' + escapeHtml(title) + '"' + (open ? "" : " hidden") + '><h4 class="hx-panel-title">' + title + "</h4>" + html + "</div>" };
+  }
+  function hxGameCard(game) {
+    const home = gameTeamLabel(game, "home"), away = gameTeamLabel(game, "away"),
+      hs = Number(game.homeScore) || 0, as = Number(game.awayScore) || 0,
+      winSide = game.winner === game.home ? "home" : game.winner === game.away ? "away" : null,
+      shoot = game.shootout && Number.isFinite(game.shootout.homeScore) ? game.shootout : null,
+      title = hxIsTitleGame(game), friendly = game.stage === "amistoso",
+      competition = game.superLigaId || game.timerMode === "coca" ? "Super Liga" : "Modo Liga",
+      tag = title ? '<span class="hx-tag hx-tag-final">FINAL · VALE O TÍTULO</span>'
+        : friendly ? '<span class="hx-tag hx-tag-line">AMISTOSO · CONTA PARA O RANKING</span>'
+        : game.superLigaId && game.stage === "group" ? '<span class="hx-tag hx-tag-line">RODADA ' + escapeHtml(String(game.round || "")) + "</span>"
+        : game.superLigaId && game.stage === "final" ? '<span class="hx-tag hx-tag-line">FINAL</span>'
+        : '<span class="hx-tag hx-tag-line">' + (game.superLigaId ? "SUPER LIGA" : "MODO LIGA") + "</span>",
+      start = hxTime(game.startedAt), end = hxTime(game.finishedAt),
+      minutes = game.durationSeconds ? Math.round(game.durationSeconds / 60) : game.durationMinutes || null,
+      timeText = [start && end ? hxClock(start) + " – " + hxClock(end) : hxClock(end), minutes ? minutes + " min" : ""].filter(Boolean).join(" · "),
+      winnerName = winSide ? gameTeamLabel(game, winSide) : "",
+      result = !winSide ? "Empate"
+        : title ? "🏆 " + winnerName + " campeão da Super Liga"
+        : hs === as && shoot ? winnerName + " venceu nos pênaltis (" + shoot[winSide + "Score"] + " × " + shoot[(winSide === "home" ? "away" : "home") + "Score"] + ")"
+        : "Vencedor: " + winnerName,
+      goalsCount = (game.goals || []).length, subsCount = (game.substitutions || []).length,
+      openText = "Ver lance a lance · " + goalsCount + (goalsCount === 1 ? " gol" : " gols") + " · " + subsCount + (subsCount === 1 ? " troca" : " trocas"),
+      team = (side, key, label) => '<span class="hx-team hx-' + side + (winSide && winSide !== side ? " is-lose" : "") + '">' + hxCrest(key, label, "lg") + '<span class="hx-tname">' + escapeHtml(label) + "</span></span>",
+      num = (side, value) => '<b class="' + (winSide === side ? "is-win" : winSide ? "is-lose" : "") + '">' + value + "</b>";
+    const events = hxEvents(game),
+      timeline = events.length
+        ? '<ol class="hx-timeline">' + events.map((item) => '<li class="hx-row"><span class="hx-cell hx-left">' + (item.side === "home" ? item.html : "") + '</span><span class="hx-min">' + item.minute + '′</span><span class="hx-cell hx-right">' + (item.side === "away" ? item.html : "") + "</span></li>").join("") + "</ol>"
+        : '<p class="empty-state">Sem gols nem substituições registrados.</p>';
+    // Conteúdo que já existia: escalações e goleiros, score individual e advertências.
+    const keeperLine = (side) => {
+      const spells = keeperSpells(game, side);
+      if (!spells.length) return "não registrado";
+      return spells.map((spell, index) => displayName(spell.player) + (spells.length > 1 ? " (" + spell.minute + "′–" + (spells[index + 1] ? spells[index + 1].minute + "′" : "fim") + ")" : "")).join(" · ");
+    };
+    const roster = (side) => {
+      const players = [...new Set([...(game[side + "Start"] || []), ...(game[side + "Players"] || []), ...(game[side + "Bench"] || [])])];
+      return '<div class="hx-lineup"><p><strong>' + escapeHtml(gameTeamLabel(game, side)) + "</strong></p><p class=\"hx-keepers\">Goleiro: " + escapeHtml(keeperLine(side)) + '</p><ul>' + players.map((name) => "<li>" + escapeHtml(displayName(name)) + ((game.loans || []).some((loan) => loan.player === name) ? " · emprestado" : "") + "</li>").join("") + "</ul></div>";
+    };
+    const perf = gamePerformance(game),
+      scoreRows = perf.length
+        ? '<ul class="hx-score-list">' + [...perf].sort((a, b) => Number(b.score) - Number(a.score)).map((p) => '<li><span><strong>' + escapeHtml(displayName(p.player)) + "</strong><small>" + escapeHtml(teamName(game, p.team) + " · " + (p.role === "goleiro" ? "goleiro · sofreu " + p.goalsAgainst : "linha") + " · " + p.result + (Number(p.goalsFor) ? " · " + p.goalsFor + (Number(p.goalsFor) === 1 ? " gol" : " gols") : "") + (Number(p.assists) ? " · " + p.assists + " assist." : "") + (Number(p.ownGoals) ? " · " + p.ownGoals + " contra" : "")) + "</small></span><b>" + Number(p.score).toFixed(1).replace(".", ",") + "</b></li>").join("") + "</ul>"
+        : '<p class="empty-state">Sem score individual registrado.</p>',
+      warnings = (game.incidents || []).filter((item) => item.type !== "sub" && (!item.gameId || item.gameId === game.id)),
+      warningRows = warnings.length
+        ? '<ul class="hx-warn-list">' + warnings.map((item) => "<li><span>" + escapeHtml(item.type === "warning" ? item.warningType || "Advertência" : incidentLabels[item.type] || item.type) + " · " + escapeHtml(displayName(item.player || "")) + (item.note ? ' <small>' + escapeHtml(item.note) + "</small>" : "") + "</span><b>" + (Number(item.minute) || 0) + "′</b></li>").join("") + "</ul>"
+        : '<p class="empty-state">Sem advertências ou ocorrências registradas.</p>',
+      shootRows = shoot && (shoot.kicks || []).length ? '<ul class="hx-warn-list">' + shoot.kicks.map((kick, index) => "<li><span>" + (index + 1) + ". " + escapeHtml(teamName(game, kick.team)) + " · " + escapeHtml(kick.player ? displayName(kick.player) : "Batedor não identificado") + "</span><b>" + (kick.scored ? "✓ Gol" : "✗ Errou") + "</b></li>").join("") + "</ul>" : "",
+      panels = [hxPanel(game, "lineups", "Escalações e goleiros", '<div class="hx-lineups">' + roster("home") + roster("away") + "</div>"), hxPanel(game, "score", "Score individual", scoreRows), hxPanel(game, "warnings", "Advertências", warningRows), ...(shootRows ? [hxPanel(game, "shootout", "Pênaltis", shootRows)] : [])];
+    return '<details class="hx-game' + (title ? " is-final" : "") + '" data-hx-game="' + escapeHtml(game.id) + '"' + (historyOpenGames.has(game.id) ? " open" : "") + "><summary>" +
+      '<span class="hx-strip"><b class="hx-num">JOGO ' + game.number + '</b><span class="hx-comp">' + competition + "</span>" + tag + (timeText ? '<span class="hx-time">' + escapeHtml(timeText) + "</span>" : "") + "</span>" +
+      '<span class="hx-board">' + team("home", game.home, home) + '<span class="hx-score" aria-label="' + escapeHtml(home + " " + hs + " a " + as + " " + away) + '">' + num("home", hs) + '<i aria-hidden="true">×</i>' + num("away", as) + "</span>" + team("away", game.away, away) + "</span>" +
+      '<span class="hx-result">' + escapeHtml(result) + "</span>" +
+      '<span class="hx-toggle"><span class="hx-when-closed">' + escapeHtml(openText) + '</span><span class="hx-when-open">Minimizar</span>' + HX_CHEVRON + "</span></summary>" +
+      '<div class="hx-body"><p class="hx-legend"><span>' + HX_BALL + 'gol</span><span>' + HX_SWAP + 'substituição: <b class="hx-in">↑ entra</b> <b class="hx-out">↓ sai</b></span></p>' +
+      '<h3 class="hx-body-title">LANCE A LANCE</h3>' + timeline +
+      '<div class="hx-pbtns">' + panels.map((item) => item.button).join("") + "</div>" + panels.map((item) => item.panel).join("") + "</div></details>";
+  }
+  function teamName(game, key) {
+    return key === game.home ? gameTeamLabel(game, "home") : key === game.away ? gameTeamLabel(game, "away") : teamLabel(key);
+  }
+  function bindHistory() {
+    const list = $("gameHistory");
+    list.addEventListener("toggle", (event) => {
+      const id = event.target.dataset?.hxGame;
+      if (id) { if (event.target.open) historyOpenGames.add(id); else historyOpenGames.delete(id); list.dataset.markup = ""; }
+    }, true);
+    list.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-hx-panel]");
+      if (!button) return;
+      const id = button.dataset.hxPanel, panel = document.getElementById(id), open = button.getAttribute("aria-expanded") !== "true";
+      button.setAttribute("aria-expanded", String(open));
+      if (panel) panel.hidden = !open;
+      if (open) historyOpenPanels.add(id); else historyOpenPanels.delete(id);
+      list.dataset.markup = "";
+    });
+    // Atalhos do topo: levam à seção e acendem conforme a rolagem.
+    const links = [...document.querySelectorAll("[data-hx-link]")];
+    const mark = (id) => links.forEach((link) => { if (link.dataset.hxLink === id) link.setAttribute("aria-current", "true"); else link.removeAttribute("aria-current"); });
+    links.forEach((link) => link.addEventListener("click", (event) => {
+      event.preventDefault();
+      const target = document.getElementById(link.dataset.hxLink);
+      if (!target) return;
+      mark(link.dataset.hxLink);
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      link.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }));
+    let ticking = false;
+    window.addEventListener("scroll", () => {
+      if (ticking || $("historico")?.classList.contains("view-hidden")) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        ticking = false;
+        let current = links[0]?.dataset.hxLink;
+        for (const link of links) { const section = document.getElementById(link.dataset.hxLink); if (section && section.getBoundingClientRect().top <= 160) current = link.dataset.hxLink; }
+        if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) current = links[links.length - 1]?.dataset.hxLink;
+        mark(current);
+      });
+    }, { passive: true });
+  }
   function renderHistory() {
     const list = $("gameHistory"),
-      history = [...(state.gameHistory || [])].reverse();
+      history = [...(state.gameHistory || [])].sort((a, b) => (hxTime(b.finishedAt)?.getTime() || 0) - (hxTime(a.finishedAt)?.getTime() || 0)),
+      night = $("historyNight");
     if (!history.length) {
-      list.innerHTML =
-        '<p class="empty-state">Nenhum jogo encerrado ainda.</p>';
+      if (night) night.textContent = "";
+      list.innerHTML = '<p class="empty-state">Nenhum jogo encerrado ainda.</p>';
       return;
     }
-    list.innerHTML = history
-      .map((game) => {
-        const homeWinner = game.winner === game.home,
-          awayWinner = game.winner === game.away;
-        const subItems = (game.substitutions || []).map((item) => ({ minute: Number(item.minute) || 0, html: "<li><span>⇄ " + escapeHtml(gameTeamLabel(game, item.team === game.home ? "home" : "away")) + " · sai " + escapeHtml(displayName(item.out)) + " · entra " + escapeHtml(displayName(item.in)) + (item.keeper ? " (assume o gol)" : "") + "</span><b>" + item.minute + "′</b></li>" }));
-        const goalItems =
-          (game.goals || [])
-            .map(
-              (g) => ({ minute: Number(g.minute) || 0, html:
-                "<li><span>⚽ " +
-                escapeHtml(displayName(g.player)) +
-                (g.assistedBy ? " · assistência de " + escapeHtml(displayName(g.assistedBy)) : "") +
-                (g.ownGoal ? " · gol contra" : "") +
-                " · ponto para " +
-                escapeHtml(goalTeamLabel(game, g.scoringTeam || g.team)) +
-                "</span><b>" +
-                g.minute +
-                "′</b></li>" }),
-            );
-        const goalRows = [...goalItems, ...subItems].sort((a, b) => a.minute - b.minute).map((item) => item.html).join("") || "<li>Sem gols registrados</li>";
-        const subs = game.substitutions || [];
-        const subNote = (player) => subs.filter((item) => item.in === player).map((item) => " · entrou aos " + item.minute + "′").join("") + subs.filter((item) => item.out === player).map((item) => " · saiu aos " + item.minute + "′").join("");
-        const subRows = subs.map((item) => "<li><span>⇄ " + escapeHtml(gameTeamLabel(game, item.team === game.home ? "home" : "away")) + " · sai " + escapeHtml(displayName(item.out)) + " · entra " + escapeHtml(displayName(item.in)) + (item.keeper ? " (assume o gol)" : "") + "</span><b>" + item.minute + "′</b></li>").join("") || "<li>Sem substituições nesta partida</li>";
-        const shootInfo = game.shootout && (game.shootout.kicks || []).length ? game.shootout : null;
-        const byPenalties = game.winner !== "Empate" && Number(game.homeScore) === Number(game.awayScore);
-        const penaltyNote = byPenalties
-          ? " · venceu nos pênaltis" + (shootInfo ? " (" + (game.winner === game.home ? shootInfo.homeScore : shootInfo.awayScore) + " × " + (game.winner === game.home ? shootInfo.awayScore : shootInfo.homeScore) + ")" : "")
-          : "";
-        const shootLine = shootInfo && !byPenalties ? '<p class="history-shootout">🥅 Pênaltis: ' + escapeHtml(gameTeamLabel(game, "home")) + " " + (shootInfo.homeScore || 0) + " × " + (shootInfo.awayScore || 0) + " " + escapeHtml(gameTeamLabel(game, "away")) + "</p>" : "";
-        const shootRows = shootInfo ? shootInfo.kicks.map((kick, index) => "<li><span>" + (index + 1) + ". " + escapeHtml(gameTeamLabel(game, kick.team === game.home ? "home" : "away")) + " · " + escapeHtml(kick.player ? displayName(kick.player) : "Batedor não identificado") + "</span><b>" + (kick.scored ? "✓ Gol" : "✗ Errou") + "</b></li>").join("") : "";
-        const stats =
-          (game.performance || [])
-            .map(
-              (p) =>
-                "<li><span>" +
-                escapeHtml(displayName(p.player)) +
-                " · " +
-                p.role +
-                " · " +
-                p.result +
-                " · gols " +
-                p.goalsFor +
-                " · assistências " +
-                (p.assists || 0) +
-                " · sofridos " +
-                p.goalsAgainst +
-                " · contra " +
-                p.ownGoals +
-                escapeHtml(subNote(p.player)) +
-                "</span><b>" +
-                Number(p.score).toFixed(1).replace(".", ",") +
-                "</b></li>",
-            )
-            .join("") || "<li>Sem score individual registrado.</li>";
-        const eventRows = (game.incidents || []).map((item) => '<li>' + escapeHtml(item.type === 'warning' ? (item.warningType || 'Advertência') : (incidentLabels[item.type] || item.type)) + ' · ' + escapeHtml(displayName(item.player || '')) + ' · ' + (item.minute || 0) + '′</li>').join('') || '<li>Sem advertências ou ocorrências registradas</li>';
-        const homePlayers = [...new Set([...(game.homeStart || []), ...(game.homePlayers || []), ...(game.homeBench || [])])], awayPlayers = [...new Set([...(game.awayStart || []), ...(game.awayPlayers || []), ...(game.awayBench || [])])];
-        const lineups = '<details class="history-lineups"><summary>Ver escalações e goleiros</summary><p><strong>' + escapeHtml(gameTeamLabel(game, "home")) + '</strong> · Goleiro: ' + escapeHtml(displayName(game.homeKeeper || 'não registrado')) + '</p><ul>' + homePlayers.map((name) => '<li>' + escapeHtml(displayName(name)) + ((game.loans || []).some((loan) => loan.player === name) ? ' · emprestado' : '') + '</li>').join('') + '</ul><p><strong>' + escapeHtml(gameTeamLabel(game, "away")) + '</strong> · Goleiro: ' + escapeHtml(displayName(game.awayKeeper || 'não registrado')) + '</p><ul>' + awayPlayers.map((name) => '<li>' + escapeHtml(displayName(name)) + ((game.loans || []).some((loan) => loan.player === name) ? ' · emprestado' : '') + '</li>').join('') + '</ul></details>';
-        return (
-          '<article class="history-game"><header><strong>JOGO ' +
-          game.number +
-          " · " +
-          (game.timerMode === "coca" ? "MODO SUPER LIGA SKALAMA" : "MODO LIGA") +
-          (game.durationMinutes ? " · " + game.durationMinutes + " MIN" : "") +
-          "</strong><span>" +
-          new Date(game.finishedAt).toLocaleTimeString("pt-BR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }) +
-          " · " +
-          clockText(game.durationSeconds || 0) +
-          '</span></header><div class="history-score"><span class="' +
-          (homeWinner ? "winner-team" : "") +
-          '">' +
-          escapeHtml(gameTeamLabel(game, "home")) +
-          "</span><b>" +
-          game.homeScore +
-          " × " +
-          game.awayScore +
-          '</b><span class="' +
-          (awayWinner ? "winner-team" : "") +
-          '">' +
-          escapeHtml(gameTeamLabel(game, "away")) +
-          '</span></div><p class="history-winner">' +
-          (game.winner === "Empate"
-            ? "Empate"
-            : "🏆 Vencedor: " + escapeHtml(historyWinner(game)) + penaltyNote) +
-          "</p>" + shootLine + lineups + "<ul>" +
-          goalRows +
-          '</ul><details class="history-incidents"><summary>Advertências e ocorrências</summary><ul>' + eventRows + '</ul></details><details class="history-performance"><summary>Ver score e estatísticas individuais</summary><ul>' +
-          stats +
-          '</ul><p class="history-subhead">Substituições</p><ul>' + subRows + "</ul>" +
-          (shootInfo ? '<p class="history-subhead">Pênaltis</p><ul>' + shootRows + "</ul>" : "") +
-          "</details></article>"
-        );
-      })
-      .join("");
+    const groups = [];
+    for (const game of history) {
+      const key = hxDayKey(game), last = groups[groups.length - 1];
+      if (last && last.key === key) last.games.push(game);
+      else groups.push({ key, games: [game] });
+    }
+    const summary = (games) => [hxDayLabel(games[0]), String(games[0].venue || state.venue || "").trim(), games.length + (games.length === 1 ? " jogo" : " jogos")].filter(Boolean).join(" · ");
+    if (night) night.textContent = summary(groups[0].games) + " · toque no jogo para abrir";
+    const markup = groups.map((group, index) => (index ? '<h3 class="hx-day">' + escapeHtml(summary(group.games)) + "</h3>" : "") + group.games.map(hxGameCard).join("")).join("");
+    if (list.dataset.markup !== markup) { list.dataset.markup = markup; list.innerHTML = markup; }
   }
   function renderGoals() {
     const totals = new Map(),
@@ -1742,8 +1902,8 @@
           .map(([name, count], index) => {
             const past = ligaGames().filter(
               (game) =>
-                (game.performance || []).some((p) => p.player === name) ||
-                (!(game.performance || []).length &&
+                gamePerformance(game).some((p) => p.player === name) ||
+                (!gamePerformance(game).length &&
                   (game.goals || []).some((g) => g.player === name)),
             ).length;
             const teams = selectedTeams(),
@@ -2165,7 +2325,7 @@
     const average = (role) => {
       const map = new Map();
       for (const game of games)
-        for (const p of game.performance || []) {
+        for (const p of gamePerformance(game)) {
           if (p.role !== role) continue;
           const row = map.get(p.player) || { sum: 0, games: 0, against: 0, team: p.team };
           row.sum += Number(p.score) || 0;
@@ -2634,7 +2794,7 @@
       isFinal = isSuper && game.stage === "final",
       // Jogo único: Super Liga de 2 times (só dá para saber na edição atual; nas antigas aparece "Final").
       single = isFinal && state.superLiga?.id === game.superLigaId && (state.superLiga?.teams || []).length === 2,
-      perf = game.performance || [],
+      perf = gamePerformance(game),
       goals = [...(game.goals || [])].sort((a, b) => (Number(a.minute) || 0) - (Number(b.minute) || 0)),
       subs = game.substitutions || [],
       incidents = (game.incidents || []).filter((item) => item.type !== "sub" && (!item.gameId || item.gameId === game.id)),
@@ -3059,7 +3219,7 @@
       byPlayer = new Map();
     for (const goal of goalsList) byPlayer.set(goal.player, (byPlayer.get(goal.player) || 0) + 1);
     const scorers = [...byPlayer.entries()].sort((a, b) => b[1] - a[1]),
-      perf = game.performance || [],
+      perf = gamePerformance(game),
       best = [...perf].filter((p) => p.role === "linha").sort((a, b) => b.score - a.score)[0],
       gk = [...perf].filter((p) => p.role === "goleiro").sort((a, b) => b.score - a.score)[0];
     const title = !winnerSide
@@ -4690,6 +4850,8 @@
         finishedAt: new Date().toISOString(),
         ...(current.superLigaId ? { homeColor: colorOf(current.home), awayColor: colorOf(current.away) } : {}),
       };
+    // Gols sofridos por quem estava no gol na hora de cada gol (trocas de goleiro).
+    entry.performance = gamePerformance(entry);
     if (current.superLigaId) {
       try {
         const history = [...(state.gameHistory || []), entry],
@@ -4883,6 +5045,7 @@
     $("addIncident").addEventListener("click", addIncident);
     $("adminAccessButton").addEventListener("click", requestAdminAccess);
     $("footerAdminButton").addEventListener("click", requestAdminAccess);
+    bindHistory();
     $("liveBadge").addEventListener("click", (event) => {
       event.preventDefault();
       if (isEditLocked()) { viewerMode = activeLiveMode(); superMarkup = ""; renderAll(); }
