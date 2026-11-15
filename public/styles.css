@@ -833,3 +833,22 @@ body.light-theme .site-footer{border-color:#deded8;background:#fff;color:#5f5f59
 .hn-crest-img{background:transparent}
 .hn-crest-img img{top:0;left:0;width:100%;height:100%}
 .hn-team.is-loser .hn-crest-img{filter:none;opacity:1}
+/* Correção: cabeçalho do organizador no celular (compacto, sem ficar preso no topo, todas as abas à vista) */
+@media(max-width:620px){
+  body .site-header{position:relative}
+  body:not(.visitor-header) .site-header{grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"brand badge toggle" "status access access" "tabs tabs tabs";align-items:center}
+  body:not(.visitor-header) .site-header .header-actions{display:contents}
+  body:not(.visitor-header) .site-header .live-badge{grid-area:badge}
+  body:not(.visitor-header) .site-header .theme-toggle{grid-area:toggle}
+  body:not(.visitor-header) .site-header .live-pill{grid-area:status;min-width:0}
+  body:not(.visitor-header) .site-header .access-tools{grid-area:access;justify-self:end}
+  body:not(.visitor-header) .site-header #accessLabel{display:none}
+  body .site-header .access-tools .button{min-height:44px;padding:0 14px;font-size:12px}
+  body:not(.visitor-header) .site-header .view-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;border-radius:18px;overflow:visible}
+  body:not(.visitor-header) .site-header .view-tabs button{padding:0 6px;border-radius:14px;font-size:11.5px;white-space:normal;line-height:1.15}
+}
+.site-header .access-tools .button{min-height:40px}
+@media(max-width:620px){
+  body:not(.visitor-header) .site-header .brand-lockup h1{white-space:nowrap;font-size:20px}
+  body:not(.visitor-header) .site-header .brand-lockup .eyebrow{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+}

@@ -3218,8 +3218,10 @@
   function logoImage(name) {
     const src = fixedCrest(name) || teamLogos[name];
     if (!src) return null;
-    if (logoImages[name]?.src !== src) {
+    // Compara com o endereço pedido (image.src vira endereço completo e nunca bateria com "./assets/...").
+    if (logoImages[name]?.dataset.source !== src) {
       const image = new Image();
+      image.dataset.source = src;
       image.onload = () => drawArt(true);
       image.src = src;
       logoImages[name] = image;
@@ -3932,6 +3934,12 @@
             (!button.dataset.liveMode || button.dataset.liveMode === shownLiveMode()),
         ),
       );
+    // Barra de abas que rola para o lado (celular): deixa a aba ativa à vista.
+    const tabs = document.querySelector(".site-header .view-tabs"), active = tabs?.querySelector("button.active");
+    if (tabs && active && tabs.scrollWidth > tabs.clientWidth) {
+      const box = tabs.getBoundingClientRect(), item = active.getBoundingClientRect();
+      if (item.left < box.left || item.right > box.right) tabs.scrollLeft += item.left - box.left - 12;
+    }
   }
   function chooseLiveMode(mode) {
     const current = activeLiveMode();
