@@ -201,7 +201,7 @@
     const publicTeams = $("publicTeamsSection");
     if (publicTeams) publicTeams.hidden = !locked || !(state?.teams || []).length;
     document.querySelectorAll("button,input,select,textarea").forEach((element) => {
-      if (element.id === "themeToggle" || element.id === "adminAccessButton" || element.closest("#adminLogin") || element.closest("#artStudio") || element.hasAttribute("data-view-button")) return;
+      if (element.id === "themeToggle" || element.id === "adminAccessButton" || element.closest("#adminLogin") || element.closest("#artStudio") || element.closest("#newsPublic") || element.hasAttribute("data-view-button")) return;
       if (locked) {
         if (!element.hasAttribute("data-access-locked")) { element.dataset.accessWasDisabled = String(element.disabled); element.setAttribute("data-access-locked", ""); }
         element.disabled = true;
@@ -230,8 +230,11 @@
       if (error) throw error;
       canManageShared = !!data;
     }
+    newsLoadedAt = 0;
+    newsDraft = null;
     await refreshSharedState();
     renderAll();
+    if (localStorage.getItem("liga-skalama-view") === "news") loadNews(true);
   }
   async function requestAdminAccess() {
     if (!shared || !client?.auth) {
@@ -2279,6 +2282,446 @@
       if (event.target.classList?.contains("sl-teams-details")) { superTeamsOpen = event.target.open; superMarkup = ""; }
     }, true);
   }
+  // ---------- SKALAMA News: portal de notícias da liga ----------
+  // Com Supabase as notícias ficam nas tabelas news_*; no modo local, só neste navegador.
+  const NEWS_LOCAL_KEY = "liga-skalama-news",
+    NEWS_CATEGORIES = { resultado: "Resultado", destaque: "Destaque", anuncio: "Anúncio", comunidade: "Comunidade" },
+    NEWS_STATUS = { draft: "Rascunho", published: "Publicada", scheduled: "Agendada", archived: "Arquivada" },
+    NEWS_ROLES = { mentioned: "Citado", scorer: "Fez gol", player_of_the_night: "Craque da noite", goalkeeper_of_the_night: "Goleiro da noite" },
+    NEWS_HIGHLIGHTS = { player_of_the_night: "Craque da noite", goalkeeper_of_the_night: "Goleiro da noite", top_scorer: "Artilheiro" },
+    NEWS_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  let newsPosts = [],
+    newsLoadedAt = 0,
+    newsLoading = null,
+    newsFilter = "todas",
+    newsOpenSlug = null,
+    newsDraft = null,
+    newsError = "";
+  function newsLocalRead() {
+    try { return JSON.parse(localStorage.getItem(NEWS_LOCAL_KEY) || "[]"); } catch { return []; }
+  }
+  function newsLocalWrite(posts) {
+    try { localStorage.setItem(NEWS_LOCAL_KEY, JSON.stringify(posts)); } catch { notify("Não foi possível guardar a notícia neste navegador (sem espaço).", true); }
+  }
+  // Publicada, ou agendada com horário já alcançado; nunca apagada.
+  function newsIsPublic(post) {
+    if (!post || post.deleted_at) return false;
+    const now = Date.now();
+    if (post.status === "published") return !post.published_at || new Date(post.published_at).getTime() <= now;
+    if (post.status === "scheduled") return !!post.scheduled_for && new Date(post.scheduled_for).getTime() <= now;
+    return false;
+  }
+  function newsDate(post) {
+    return post.status === "scheduled" ? post.scheduled_for : post.published_at || post.created_at;
+  }
+  function newsSortTime(post) {
+    return new Date(newsDate(post) || 0).getTime();
+  }
+  async function loadNews(force = false) {
+    if (newsLoading) return newsLoading;
+    if (!force && Date.now() - newsLoadedAt < 30000) return;
+    newsLoading = (async () => {
+      // Garante que newsLoading já guarde esta promessa antes de qualquer retorno (no modo local tudo é imediato).
+      await Promise.resolve();
+      try {
+        if (shared && client) {
+          const { data, error } = await client
+            .from("news_posts")
+            .select("*, news_post_players(*), news_media(*), news_highlights(*)")
+            .is("deleted_at", null)
+            .order("created_at", { ascending: false });
+          if (error) throw error;
+          newsPosts = data || [];
+        } else {
+          newsPosts = newsLocalRead().filter((post) => !post.deleted_at);
+        }
+        newsError = "";
+        newsLoadedAt = Date.now();
+      } catch (error) {
+        newsError = /news_posts|relation|schema cache/i.test(error.message || "")
+          ? "O SKALAMA News ainda não foi ativado no banco."
+          : "Não deu para carregar as notícias agora: " + error.message;
+      } finally {
+        newsLoading = null;
+        renderNews();
+      }
+    })();
+    return newsLoading;
+  }
+  function newsVisible() {
+    const locked = isEditLocked();
+    return newsPosts
+      .filter((post) => !post.deleted_at && (locked ? newsIsPublic(post) : true))
+      .sort((a, b) => newsSortTime(b) - newsSortTime(a));
+  }
+  function newsWhen(value) {
+    if (!value) return "";
+    const date = new Date(value), diff = Date.now() - date.getTime(), hour = 3600000;
+    if (diff >= 0 && diff < hour) return "há " + Math.max(1, Math.round(diff / 60000)) + " min";
+    if (diff >= 0 && diff < 24 * hour) return "há " + Math.round(diff / hour) + " h";
+    return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }) + " · " + date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  }
+  function newsParagraphs(text) {
+    return String(text || "")
+      .split(/\n{2,}/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => "<p>" + escapeHtml(part).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\n/g, "<br>") + "</p>")
+      .join("");
+  }
+  function newsSafeUrl(url) {
+    const value = String(url || "").trim();
+    return /^https:\/\//i.test(value) || /^data:image\//i.test(value) ? value : "";
+  }
+  function newsViews(post) {
+    const n = Number(post.views_count) || 0;
+    return n + (n === 1 ? " visualização" : " visualizações");
+  }
+  function newsBadge(post) {
+    return '<span class="news-badge news-cat-' + escapeHtml(post.category) + '">' + escapeHtml(NEWS_CATEGORIES[post.category] || post.category) + "</span>";
+  }
+  function newsStatusChip(post) {
+    if (isEditLocked() || newsIsPublic(post)) return "";
+    const label = NEWS_STATUS[post.status] || post.status;
+    return '<span class="news-status news-status-' + escapeHtml(post.status) + '">' + escapeHtml(label) + "</span>";
+  }
+  function newsCard(post, featured = false) {
+    const cover = newsSafeUrl(post.cover_image_url);
+    return '<article class="news-card' + (featured ? " news-featured" : "") + '">' +
+      '<a class="news-card-link" href="#noticia-' + encodeURIComponent(post.slug) + '" data-news-open="' + escapeHtml(post.slug) + '">' +
+      (cover ? '<img class="news-cover" src="' + escapeHtml(cover) + '" alt="" loading="lazy">' : '<div class="news-cover news-cover-empty" aria-hidden="true"><span>SKALAMA <b>News</b></span></div>') +
+      '<div class="news-card-body"><div class="news-meta">' + newsBadge(post) + newsStatusChip(post) + (post.is_featured ? '<span class="news-flag">Destaque</span>' : "") + '<small>' + escapeHtml(newsWhen(newsDate(post))) + "</small></div>" +
+      "<h3>" + escapeHtml(post.title) + "</h3>" +
+      (post.excerpt ? "<p>" + escapeHtml(post.excerpt) + "</p>" : post.subtitle ? "<p>" + escapeHtml(post.subtitle) + "</p>" : "") +
+      '<small class="news-stats">' + newsViews(post) + "</small></div></a></article>";
+  }
+  function newsGameSummary(post) {
+    const game = post.match_id && (state.gameHistory || []).find((item) => item.id === post.match_id);
+    if (!game) return "";
+    const shoot = game.shootout && Number.isFinite(game.shootout.homeScore) ? " · pênaltis " + game.shootout.homeScore + "×" + game.shootout.awayScore : "";
+    return '<div class="news-game"><span class="news-game-team">' + superChip(game.home) + escapeHtml(gameTeamLabel(game, "home")) + '</span><b>' + game.homeScore + " × " + game.awayScore + '</b><span class="news-game-team">' + escapeHtml(gameTeamLabel(game, "away")) + superChip(game.away) + "</span><small>Jogo " + game.number + (game.superLigaId ? " · Super Liga" : " · Modo Liga") + shoot + "</small></div>";
+  }
+  function renderNewsPost(post) {
+    const cover = newsSafeUrl(post.cover_image_url),
+      highlights = (post.news_highlights || []).filter((item) => item.player_name || item.label),
+      players = post.news_post_players || [],
+      media = [...(post.news_media || [])].sort((a, b) => (a.order_index || 0) - (b.order_index || 0)).filter((item) => newsSafeUrl(item.url));
+    return '<div class="news-post-actions"><button type="button" class="button button-outline button-small" data-news-back>← Voltar para as notícias</button>' +
+      (!isEditLocked() ? '<button type="button" class="button button-dark button-small news-edit-btn" data-news-edit="' + escapeHtml(post.id) + '">Editar</button>' : "") + "</div>" +
+      '<article class="news-post">' +
+      '<div class="news-meta">' + newsBadge(post) + newsStatusChip(post) + "<small>" + escapeHtml(newsWhen(newsDate(post))) + " · " + newsViews(post) + "</small></div>" +
+      "<h2>" + escapeHtml(post.title) + "</h2>" +
+      (post.subtitle ? '<p class="news-subtitle">' + escapeHtml(post.subtitle) + "</p>" : "") +
+      (cover ? '<img class="news-post-cover" src="' + escapeHtml(cover) + '" alt="">' : "") +
+      newsGameSummary(post) +
+      (highlights.length ? '<div class="news-highlights">' + highlights.map((item) => '<div class="news-highlight"><small>' + escapeHtml(item.label || NEWS_HIGHLIGHTS[item.type] || "Destaque") + "</small><strong>" + escapeHtml(displayName(item.player_name || "")) + "</strong>" + (item.value !== null && item.value !== undefined && item.value !== "" ? "<span>" + escapeHtml(String(item.value).replace(".", ",")) + (item.type === "top_scorer" ? " gol(s)" : "") + "</span>" : "") + "</div>").join("") + "</div>" : "") +
+      '<div class="news-content">' + newsParagraphs(post.content) + "</div>" +
+      (media.length ? '<div class="news-media">' + media.map((item) => '<figure><img src="' + escapeHtml(newsSafeUrl(item.url)) + '" alt="' + escapeHtml(item.caption || "") + '" loading="lazy">' + (item.caption ? "<figcaption>" + escapeHtml(item.caption) + "</figcaption>" : "") + "</figure>").join("") + "</div>" : "") +
+      (players.length ? '<div class="news-players"><small>Na notícia</small>' + players.map((item) => '<span class="news-player">' + escapeHtml(displayName(item.player_name)) + (item.role && item.role !== "mentioned" ? " · " + escapeHtml(NEWS_ROLES[item.role] || item.role) : "") + (Number(item.goals) ? " · " + item.goals + " gol" + (item.goals > 1 ? "s" : "") : "") + "</span>").join("") + "</div>" : "") +
+      '<div class="button-row"><button type="button" class="button button-primary" data-news-share="' + escapeHtml(post.id) + '">Compartilhar</button></div>' +
+      "</article>";
+  }
+  function renderNews() {
+    const box = $("newsPublic"), editor = $("newsEditor");
+    if (!box || !editor) return;
+    const locked = isEditLocked();
+    if (newsDraft && !locked) {
+      box.hidden = true;
+      editor.hidden = false;
+      renderNewsEditor();
+      return;
+    }
+    editor.hidden = true;
+    editor.innerHTML = "";
+    box.hidden = false;
+    const posts = newsVisible();
+    if (newsOpenSlug) {
+      const post = posts.find((item) => item.slug === newsOpenSlug);
+      if (post) { box.innerHTML = renderNewsPost(post); return; }
+      if (newsLoadedAt) box.innerHTML = '<div class="news-post-actions"><button type="button" class="button button-outline button-small" data-news-back>← Voltar para as notícias</button></div><p class="empty-state">Essa notícia não existe ou ainda não foi publicada.</p>';
+      else box.innerHTML = '<p class="empty-state">Carregando a notícia…</p>';
+      return;
+    }
+    const filtered = posts.filter((post) => newsFilter === "todas" || post.category === newsFilter),
+      featured = newsFilter === "todas" ? filtered.find((post) => post.is_featured && (locked || newsIsPublic(post))) : null,
+      rest = filtered.filter((post) => post !== featured);
+    box.innerHTML =
+      '<div class="news-toolbar"><div class="news-filters" role="group" aria-label="Filtrar por categoria">' +
+      [["todas", "Todas"], ...Object.entries(NEWS_CATEGORIES)].map(([key, label]) => '<button type="button" class="news-filter' + (newsFilter === key ? " active" : "") + '" data-news-filter="' + key + '" aria-pressed="' + (newsFilter === key) + '">' + label + "</button>").join("") +
+      "</div>" + (!locked ? '<button type="button" class="button button-primary button-small" data-news-new>+ Nova notícia</button>' : "") + "</div>" +
+      (newsError ? '<p class="notice">' + escapeHtml(newsError) + "</p>" : "") +
+      (featured ? newsCard(featured, true) : "") +
+      (rest.length ? '<div class="news-grid">' + rest.map((post) => newsCard(post)).join("") + "</div>" : !featured ? '<p class="empty-state">' + (newsLoadedAt || newsError ? (newsFilter === "todas" ? "Nenhuma notícia ainda. A primeira resenha da pelada vem aí!" : "Nada nessa categoria por enquanto.") : "Carregando as notícias…") + "</p>" : "");
+  }
+  function openNewsPost(slug, push = true) {
+    newsOpenSlug = slug;
+    newsDraft = null;
+    if (push && location.hash !== "#noticia-" + slug) history.pushState(null, "", "#noticia-" + encodeURIComponent(slug));
+    renderNews();
+    $("news")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const post = newsPosts.find((item) => item.slug === slug);
+    if (post) newsCount(post, "view");
+  }
+  function closeNewsPost() {
+    newsOpenSlug = null;
+    if (location.hash.startsWith("#noticia-")) history.pushState(null, "", location.pathname + location.search);
+    renderNews();
+  }
+  // Uma visualização por notícia a cada sessão do navegador.
+  async function newsCount(post, kind) {
+    if (!newsIsPublic(post)) return;
+    const key = "liga-skalama-news-" + kind + "-" + post.id;
+    try { if (kind === "view" && sessionStorage.getItem(key)) return; sessionStorage.setItem(key, "1"); } catch {}
+    const field = kind === "view" ? "views_count" : "shares_count";
+    post[field] = (Number(post[field]) || 0) + 1;
+    if (shared && client) client.rpc(kind === "view" ? "news_register_view" : "news_register_share", { p_post: post.id }).then(({ error }) => error && console.warn(error));
+    else newsLocalWrite(newsLocalRead().map((item) => (item.id === post.id ? { ...item, [field]: post[field] } : item)));
+    renderNews();
+  }
+  async function shareNews(id) {
+    const post = newsPosts.find((item) => item.id === id);
+    if (!post) return;
+    const url = location.origin + location.pathname + "#noticia-" + encodeURIComponent(post.slug),
+      text = post.title + (post.excerpt ? " — " + post.excerpt : "");
+    try {
+      if (navigator.share) await navigator.share({ title: "SKALAMA News", text, url });
+      else { await navigator.clipboard.writeText(url); notify("Link da notícia copiado."); }
+      newsCount(post, "share");
+    } catch (error) {
+      if (error?.name !== "AbortError") notify("Não deu para compartilhar. Copie o endereço da página.", true);
+    }
+  }
+  function openNewsFromHash() {
+    const match = location.hash.match(/^#noticia-(.+)$/);
+    if (!match) return false;
+    setView("news");
+    newsOpenSlug = decodeURIComponent(match[1]);
+    renderNews();
+    loadNews(true).then(() => { const post = newsPosts.find((item) => item.slug === newsOpenSlug); if (post) newsCount(post, "view"); });
+    return true;
+  }
+
+  // ---------- Editor (só organizador) ----------
+  function newsSlug(title) {
+    const base = String(title || "noticia").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "noticia";
+    return base + "-" + crypto.randomUUID().slice(0, 4);
+  }
+  function newsKnownPlayers() {
+    const names = new Map();
+    const add = (name) => { if (name && !names.has(playerKey(name))) names.set(playerKey(name), name); };
+    (state.roster || []).forEach(add);
+    (state.superLiga?.teams || []).forEach((team) => team.players.forEach(add));
+    (state.gameHistory || []).forEach((game) => [...(game.homePlayers || []), ...(game.awayPlayers || []), ...(game.homeBench || []), ...(game.awayBench || [])].forEach(add));
+    return [...names.values()].sort((a, b) => displayName(a).localeCompare(displayName(b), "pt-BR"));
+  }
+  function newsLocalInput(iso) {
+    if (!iso) return "";
+    const date = new Date(iso);
+    if (!Number.isFinite(date.getTime())) return "";
+    const pad = (n) => String(n).padStart(2, "0");
+    return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()) + "T" + pad(date.getHours()) + ":" + pad(date.getMinutes());
+  }
+  function newsStartDraft(post = null) {
+    newsDraft = post
+      ? JSON.parse(JSON.stringify({ ...post, players: post.news_post_players || [], highlights: post.news_highlights || [], media: post.news_media || [], isNew: false }))
+      : { id: crypto.randomUUID(), slug: "", title: "", subtitle: "", excerpt: "", content: "", category: "resultado", status: "draft", is_featured: false, scheduled_for: null, published_at: null, cover_image_url: "", match_id: null, round_id: null, views_count: 0, shares_count: 0, players: [], highlights: [], media: [], isNew: true };
+    newsOpenSlug = null;
+    renderNews();
+    $("news")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  // Lê o formulário para o rascunho antes de redesenhar ou salvar.
+  function newsCollect() {
+    if (!newsDraft) return;
+    const value = (id) => $(id)?.value ?? "";
+    Object.assign(newsDraft, {
+      title: value("newsTitle").trim(),
+      subtitle: value("newsSubtitle").trim(),
+      excerpt: value("newsExcerpt").trim(),
+      content: value("newsContent"),
+      category: value("newsCategory") || "resultado",
+      status: value("newsStatus") || "draft",
+      is_featured: !!$("newsFeatured")?.checked,
+      scheduled_for: value("newsSchedule") ? new Date(value("newsSchedule")).toISOString() : null,
+      cover_image_url: value("newsCover").trim(),
+      match_id: value("newsMatch") || null,
+    });
+    const rows = (selector, map) => [...document.querySelectorAll(selector)].map(map);
+    newsDraft.players = rows("[data-news-player-row]", (row) => ({ player_name: row.querySelector("[data-f=name]").value.trim(), role: row.querySelector("[data-f=role]").value, goals: Math.max(0, Number(row.querySelector("[data-f=goals]").value) || 0) }));
+    newsDraft.highlights = rows("[data-news-highlight-row]", (row) => ({ type: row.querySelector("[data-f=type]").value, player_name: row.querySelector("[data-f=name]").value.trim(), value: row.querySelector("[data-f=value]").value === "" ? null : Number(String(row.querySelector("[data-f=value]").value).replace(",", ".")), label: row.querySelector("[data-f=label]").value.trim() }));
+    newsDraft.media = rows("[data-news-media-row]", (row, index) => ({ url: row.querySelector("[data-f=url]").value.trim(), caption: row.querySelector("[data-f=caption]").value.trim(), type: "image", order_index: index }));
+  }
+  function renderNewsEditor() {
+    const editor = $("newsEditor"), d = newsDraft;
+    const option = (value, label, current) => '<option value="' + escapeHtml(value) + '"' + (String(current) === String(value) ? " selected" : "") + ">" + escapeHtml(label) + "</option>";
+    const games = [...(state.gameHistory || [])].sort((a, b) => new Date(b.finishedAt) - new Date(a.finishedAt));
+    const known = newsKnownPlayers();
+    editor.innerHTML =
+      '<div class="news-post-actions"><button type="button" class="button button-outline button-small" data-news-cancel>← Cancelar</button></div>' +
+      '<form class="news-form" id="newsForm" novalidate>' +
+      "<h3>" + (d.isNew ? "Nova notícia" : "Editar notícia") + "</h3>" +
+      '<div class="news-generate"><label>Jogo relacionado (opcional)<select id="newsMatch"><option value="">Nenhum</option>' + games.map((game) => option(game.id, "Jogo " + game.number + " · " + gameTeamLabel(game, "home") + " " + game.homeScore + " × " + game.awayScore + " " + gameTeamLabel(game, "away") + (game.superLigaId ? " · Super Liga" : ""), d.match_id || "")).join("") + '</select></label><button type="button" class="button button-dark button-small" data-news-generate' + (games.length ? "" : " disabled") + '>Gerar texto do jogo</button></div>' +
+      '<div class="fields two"><label>Título<input id="newsTitle" maxlength="140" required value="' + escapeHtml(d.title) + '" placeholder="Ex.: Águia atropela o Sol e segue no topo"></label><label>Subtítulo<input id="newsSubtitle" maxlength="200" value="' + escapeHtml(d.subtitle || "") + '"></label></div>' +
+      '<label class="news-field">Resumo (aparece no card)<textarea id="newsExcerpt" maxlength="280" rows="2">' + escapeHtml(d.excerpt || "") + "</textarea></label>" +
+      '<label class="news-field">Texto da notícia<textarea id="newsContent" rows="10" placeholder="Deixe uma linha em branco entre os parágrafos. **Assim** fica em negrito.">' + escapeHtml(d.content || "") + "</textarea></label>" +
+      '<div class="fields three"><label>Categoria<select id="newsCategory">' + Object.entries(NEWS_CATEGORIES).map(([key, label]) => option(key, label, d.category)).join("") + '</select></label><label>Situação<select id="newsStatus">' + Object.entries(NEWS_STATUS).map(([key, label]) => option(key, label, d.status)).join("") + '</select></label><label>Agendar para<input id="newsSchedule" type="datetime-local" value="' + escapeHtml(newsLocalInput(d.scheduled_for)) + '"></label></div>' +
+      '<div class="fields two"><label>Imagem de capa (endereço https://, opcional)<input id="newsCover" type="url" inputmode="url" value="' + escapeHtml(d.cover_image_url || "") + '" placeholder="https://…"></label><label class="news-check"><input id="newsFeatured" type="checkbox"' + (d.is_featured ? " checked" : "") + "> Destaque da capa do News</label></div>" +
+      '<datalist id="newsPlayersList">' + known.map((name) => '<option value="' + escapeHtml(name) + '">' + escapeHtml(displayName(name)) + "</option>").join("") + "</datalist>" +
+      '<fieldset class="news-rows"><legend>Jogadores na notícia</legend>' + d.players.map((p, i) => '<div class="news-row" data-news-player-row><input data-f="name" list="newsPlayersList" placeholder="Nome" value="' + escapeHtml(p.player_name || "") + '" aria-label="Jogador"><select data-f="role" aria-label="Papel">' + Object.entries(NEWS_ROLES).map(([key, label]) => option(key, label, p.role || "mentioned")).join("") + '</select><input data-f="goals" type="number" min="0" max="20" value="' + (Number(p.goals) || 0) + '" aria-label="Gols"><button type="button" class="text-button" data-news-remove="players" data-index="' + i + '">Remover</button></div>').join("") + '<button type="button" class="button button-outline button-small" data-news-add="players">+ Jogador</button></fieldset>' +
+      '<fieldset class="news-rows"><legend>Destaques (cards na notícia)</legend>' + d.highlights.map((h, i) => '<div class="news-row" data-news-highlight-row><select data-f="type" aria-label="Tipo">' + Object.entries(NEWS_HIGHLIGHTS).map(([key, label]) => option(key, label, h.type || "player_of_the_night")).join("") + '</select><input data-f="name" list="newsPlayersList" placeholder="Jogador" value="' + escapeHtml(h.player_name || "") + '" aria-label="Jogador"><input data-f="value" inputmode="decimal" placeholder="Nota ou gols" value="' + escapeHtml(h.value ?? "") + '" aria-label="Valor"><input data-f="label" placeholder="Título do card (opcional)" value="' + escapeHtml(h.label || "") + '" aria-label="Título"><button type="button" class="text-button" data-news-remove="highlights" data-index="' + i + '">Remover</button></div>').join("") + '<button type="button" class="button button-outline button-small" data-news-add="highlights">+ Destaque</button></fieldset>' +
+      '<fieldset class="news-rows"><legend>Fotos (endereços https://)</legend>' + d.media.map((m, i) => '<div class="news-row" data-news-media-row><input data-f="url" type="url" placeholder="https://…" value="' + escapeHtml(m.url || "") + '" aria-label="Endereço da foto"><input data-f="caption" placeholder="Legenda (opcional)" value="' + escapeHtml(m.caption || "") + '" aria-label="Legenda"><button type="button" class="text-button" data-news-remove="media" data-index="' + i + '">Remover</button></div>').join("") + '<button type="button" class="button button-outline button-small" data-news-add="media">+ Foto</button></fieldset>' +
+      '<div class="button-row news-form-actions"><button type="submit" class="button button-primary">Salvar notícia</button>' +
+      (!d.isNew ? '<button type="button" class="button button-outline" data-news-archive>' + (d.status === "archived" ? "Tirar do arquivo" : "Arquivar") + '</button><button type="button" class="button button-danger" data-news-delete>Apagar</button>' : "") +
+      "</div></form>";
+  }
+  // Rascunho em tom de resenha da pelada, a partir de um jogo do histórico.
+  function newsGenerateFromGame() {
+    newsCollect();
+    const game = (state.gameHistory || []).find((item) => item.id === newsDraft.match_id);
+    if (!game) { notify("Escolha um jogo para gerar o texto.", true); return; }
+    const home = gameTeamLabel(game, "home"), away = gameTeamLabel(game, "away"),
+      hs = Number(game.homeScore) || 0, as = Number(game.awayScore) || 0,
+      shoot = game.shootout && Number.isFinite(game.shootout.homeScore) ? game.shootout : null,
+      winnerSide = game.winner === game.home ? "home" : game.winner === game.away ? "away" : null,
+      winner = winnerSide ? gameTeamLabel(game, winnerSide) : "", loser = winnerSide === "home" ? away : winnerSide === "away" ? home : "",
+      where = state.venue || "na quadra", mode = game.superLigaId ? (game.stage === "final" ? "na final da Super Liga" : "pela Super Liga") : "na Liga",
+      goalsList = (game.goals || []).filter((goal) => goal.player && !goal.ownGoal),
+      byPlayer = new Map();
+    for (const goal of goalsList) byPlayer.set(goal.player, (byPlayer.get(goal.player) || 0) + 1);
+    const scorers = [...byPlayer.entries()].sort((a, b) => b[1] - a[1]),
+      perf = game.performance || [],
+      best = [...perf].filter((p) => p.role === "linha").sort((a, b) => b.score - a.score)[0],
+      gk = [...perf].filter((p) => p.role === "goleiro").sort((a, b) => b.score - a.score)[0];
+    const title = !winnerSide
+      ? home + " e " + away + " ficam no " + hs + " a " + as
+      : hs === as
+        ? winner + " leva a melhor nos pênaltis contra " + loser
+        : Math.abs(hs - as) >= 3
+          ? winner + " atropela " + loser + ": " + Math.max(hs, as) + " a " + Math.min(hs, as)
+          : winner + " vence " + loser + " por " + Math.max(hs, as) + " a " + Math.min(hs, as);
+    const excerpt = "Jogo " + game.number + " " + mode + ", " + where + ". " + (scorers.length ? "Gols de " + scorers.map(([name, n]) => displayName(name) + (n > 1 ? " (" + n + ")" : "")).join(", ") + "." : "Placar sem gols, mas com muita disputa.");
+    const paragraphs = [
+      !winnerSide
+        ? "Ninguém quis sair perdendo: **" + home + "** e **" + away + "** empataram em " + hs + " a " + as + " " + mode + ". Jogo pegado do começo ao fim."
+        : hs === as
+          ? "Foi no sufoco! Depois do " + hs + " a " + as + " no tempo normal, **" + winner + "** levou a melhor nos pênaltis (" + shoot.homeScore + " × " + shoot.awayScore + ") e despachou o " + loser + "."
+          : "**" + winner + "** fez a festa " + mode + " e passou pelo " + loser + " por " + Math.max(hs, as) + " a " + Math.min(hs, as) + ". " + (Math.abs(hs - as) >= 3 ? "Passeio de bola, sem dó." : "Vitória suada, decidida nos detalhes."),
+      scorers.length ? "Na rede: " + scorers.map(([name, n]) => "**" + displayName(name) + "**" + (n > 1 ? " (" + n + " gols)" : "")).join(", ") + "." : "",
+      best ? "O craque do jogo foi **" + displayName(best.player) + "**, com nota " + Number(best.score).toFixed(1).replace(".", ",") + ". Jogou muita bola!" : "",
+      gk ? "Debaixo das traves, **" + displayName(gk.player) + "** fechou o gol e levou nota " + Number(gk.score).toFixed(1).replace(".", ",") + "." : "",
+      "Semana que vem tem mais. Bora, SKALAMA!",
+    ].filter(Boolean);
+    Object.assign(newsDraft, {
+      title,
+      excerpt,
+      content: paragraphs.join("\n\n"),
+      category: "resultado",
+      round_id: NEWS_UUID.test(String(game.roundId || "")) ? game.roundId : null,
+      players: [
+        ...scorers.map(([name, n]) => ({ player_name: name, role: "scorer", goals: n })),
+        ...(best && !byPlayer.has(best.player) ? [{ player_name: best.player, role: "player_of_the_night", goals: 0 }] : []),
+        ...(gk ? [{ player_name: gk.player, role: "goalkeeper_of_the_night", goals: 0 }] : []),
+      ],
+      highlights: [
+        ...(best ? [{ type: "player_of_the_night", player_name: best.player, value: Number(best.score), label: "Craque do jogo" }] : []),
+        ...(gk ? [{ type: "goalkeeper_of_the_night", player_name: gk.player, value: Number(gk.score), label: "Paredão" }] : []),
+        ...(scorers.length ? [{ type: "top_scorer", player_name: scorers[0][0], value: scorers[0][1], label: "Artilheiro do jogo" }] : []),
+      ],
+    });
+    renderNewsEditor();
+    notify("Texto gerado. Revise, ajuste do seu jeito e salve.");
+  }
+  async function saveNews(changes = {}, message) {
+    newsCollect();
+    const d = { ...newsDraft, ...changes };
+    if (!d.title) { notify("A notícia precisa de um título.", true); $("newsTitle")?.focus(); return; }
+    if (d.status === "scheduled" && !d.scheduled_for) { notify("Escolha a data e o horário do agendamento.", true); $("newsSchedule")?.focus(); return; }
+    if (d.cover_image_url && !newsSafeUrl(d.cover_image_url)) { notify("A imagem de capa precisa de um endereço que comece com https://.", true); return; }
+    if (d.media.some((m) => m.url && !newsSafeUrl(m.url))) { notify("Os endereços das fotos precisam começar com https://.", true); return; }
+    const now = new Date().toISOString();
+    const row = {
+      id: d.id,
+      slug: d.slug || newsSlug(d.title),
+      title: d.title,
+      subtitle: d.subtitle || null,
+      excerpt: d.excerpt || null,
+      content: d.content || null,
+      category: d.category,
+      status: d.status,
+      is_featured: !!d.is_featured,
+      scheduled_for: d.status === "scheduled" ? d.scheduled_for : null,
+      published_at: d.status === "published" ? d.published_at || now : d.status === "scheduled" ? d.scheduled_for : d.published_at || null,
+      cover_image_url: d.cover_image_url || null,
+      match_id: NEWS_UUID.test(String(d.match_id || "")) ? d.match_id : null,
+      round_id: NEWS_UUID.test(String(d.round_id || "")) ? d.round_id : null,
+      deleted_at: d.deleted_at || null,
+    };
+    const players = d.players.filter((p) => p.player_name).map((p) => ({ post_id: row.id, player_name: p.player_name, role: p.role || "mentioned", goals: Number(p.goals) || 0 })),
+      highlights = d.highlights.filter((h) => h.player_name || h.label).map((h) => ({ post_id: row.id, player_name: h.player_name || null, type: h.type, value: Number.isFinite(h.value) ? h.value : null, label: h.label || null })),
+      media = d.media.filter((m) => m.url).map((m, i) => ({ post_id: row.id, url: m.url, type: "image", caption: m.caption || null, order_index: i }));
+    if (isEditLocked()) { notify("Somente o organizador autorizado pode alterar as notícias.", true); return; }
+    try {
+      if (shared && client) {
+        const { error } = await client.from("news_posts").upsert(row);
+        if (error) throw error;
+        for (const [table, items] of [["news_post_players", players], ["news_highlights", highlights], ["news_media", media]]) {
+          const removed = await client.from(table).delete().eq("post_id", row.id);
+          if (removed.error) throw removed.error;
+          if (items.length) { const added = await client.from(table).insert(items); if (added.error) throw added.error; }
+        }
+      } else {
+        const local = newsLocalRead().filter((item) => item.id !== row.id);
+        const previous = newsLocalRead().find((item) => item.id === row.id);
+        local.push({ ...row, views_count: previous?.views_count || 0, shares_count: previous?.shares_count || 0, created_at: previous?.created_at || now, updated_at: now, news_post_players: players, news_highlights: highlights, news_media: media });
+        newsLocalWrite(local);
+      }
+    } catch (error) {
+      notify("Não deu para salvar a notícia: " + (error.message || error), true);
+      return;
+    }
+    newsDraft = null;
+    await loadNews(true);
+    notify(message || (row.status === "published" ? "Notícia publicada." : row.status === "scheduled" ? "Notícia agendada para " + newsWhen(row.scheduled_for) + "." : row.status === "archived" ? "Notícia arquivada." : "Rascunho salvo.") + (shared ? "" : " (somente neste navegador)"));
+    if (!row.deleted_at && row.status !== "archived") openNewsPost(row.slug);
+  }
+  async function deleteNews() {
+    if (!newsDraft || newsDraft.isNew) return;
+    if (!confirm("Apagar esta notícia? Ela some do SKALAMA News para todo mundo.")) return;
+    await saveNews({ deleted_at: new Date().toISOString() }, "Notícia apagada.");
+    closeNewsPost();
+  }
+  function bindNews() {
+    const section = $("news");
+    if (!section) return;
+    section.addEventListener("click", (event) => {
+      const target = event.target.closest("[data-news-open],[data-news-filter],[data-news-back],[data-news-new],[data-news-edit],[data-news-cancel],[data-news-share],[data-news-generate],[data-news-add],[data-news-remove],[data-news-archive],[data-news-delete]");
+      if (!target || target.disabled) return;
+      const data = target.dataset;
+      if (data.newsOpen) { event.preventDefault(); openNewsPost(data.newsOpen); }
+      else if (data.newsFilter) { newsFilter = data.newsFilter; renderNews(); }
+      else if ("newsBack" in data) closeNewsPost();
+      else if ("newsNew" in data) newsStartDraft();
+      else if (data.newsEdit) newsStartDraft(newsPosts.find((post) => post.id === data.newsEdit));
+      else if ("newsCancel" in data) { newsDraft = null; renderNews(); }
+      else if (data.newsShare) shareNews(data.newsShare);
+      else if ("newsGenerate" in data) newsGenerateFromGame();
+      else if (data.newsAdd) { newsCollect(); newsDraft[data.newsAdd].push(data.newsAdd === "players" ? { player_name: "", role: "mentioned", goals: 0 } : data.newsAdd === "highlights" ? { type: "player_of_the_night", player_name: "", value: null, label: "" } : { url: "", caption: "" }); renderNewsEditor(); }
+      else if (data.newsRemove) { newsCollect(); newsDraft[data.newsRemove].splice(Number(data.index), 1); renderNewsEditor(); }
+      else if ("newsArchive" in data) saveNews({ status: newsDraft.status === "archived" ? "draft" : "archived" }, newsDraft.status === "archived" ? "Notícia voltou para rascunho." : "Notícia arquivada.");
+      else if ("newsDelete" in data) deleteNews();
+    });
+    section.addEventListener("submit", (event) => {
+      if (event.target.id !== "newsForm") return;
+      event.preventDefault();
+      saveNews();
+    });
+    // Agendar uma data já muda a situação para "Agendada".
+    section.addEventListener("change", (event) => {
+      if (event.target.id === "newsSchedule" && event.target.value && $("newsStatus")) $("newsStatus").value = "scheduled";
+    });
+    window.addEventListener("hashchange", () => {
+      if (!openNewsFromHash() && newsOpenSlug) { newsOpenSlug = null; renderNews(); }
+    });
+  }
   function renderAll() {
     if (!state) return;
     if (document.activeElement !== $("venue"))
@@ -2310,6 +2753,7 @@
     renderTimer();
     renderArt();
     renderSuperLiga();
+    if (!newsDraft) renderNews();
     markActiveTab();
     applyEditLock();
   }
@@ -3019,6 +3463,7 @@
       );
     markActiveTab(view);
     localStorage.setItem("liga-skalama-view", view);
+    if (view === "news") { renderNews(); loadNews(); }
   }
   // Visitantes podem olhar qualquer uma das duas abas, sem mudar o modo escolhido pelo organizador.
   let viewerMode = null;
@@ -3703,6 +4148,7 @@
       drawArt();
     });
     bindSuperLiga();
+    bindNews();
     $("artDownload").addEventListener("click", downloadArt);
     $("artShare").addEventListener("click", shareArt);
     bindSwapGrid();
@@ -3877,6 +4323,8 @@
     }
     renderAll();
     setView(localStorage.getItem("liga-skalama-view") || "home");
+    // Link direto de notícia (#noticia-slug) abre o SKALAMA News.
+    openNewsFromHash();
     setTheme(localStorage.getItem("liga-skalama-theme-v2") || "light");
     setInterval(() => {
       renderTimer();

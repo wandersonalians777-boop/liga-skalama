@@ -65,6 +65,15 @@ Nos times da Super Liga dá para escolher jogadores já cadastrados no Elenco ou
 
 **Banco Supabase já existente:** execute a migração `supabase/migrations/20261114_league_public_super_liga.sql` (ou o `schema.sql` atualizado) para que os visitantes também vejam a Super Liga.
 
+## SKALAMA News
+
+A aba **SKALAMA News** é o portal de notícias da liga, no tom da resenha da pelada. Categorias: **Resultado**, **Destaque**, **Anúncio** e **Comunidade**.
+
+- Visitantes veem só as notícias publicadas, e as agendadas cujo horário já chegou. Dá para filtrar por categoria, abrir a notícia e compartilhar o link (`skalama.com.br/#noticia-...`). As visualizações e os compartilhamentos são contados.
+- O organizador cria, edita, arquiva e apaga notícias pela própria aba. Cada notícia tem título, subtítulo, resumo, texto (linha em branco separa parágrafos; `**assim**` fica em negrito), categoria, situação (rascunho, publicada, agendada, arquivada), destaque da capa, imagem de capa e fotos por endereço `https://`, jogo relacionado, jogadores citados e cards de destaque.
+- **Gerar texto do jogo**: escolha uma partida do histórico e o site monta um rascunho com placar, gols, craque e goleiro do jogo, para revisar antes de publicar.
+- Os dados ficam nas tabelas `news_posts`, `news_post_players`, `news_media` e `news_highlights`. Para ativar num banco existente, execute `supabase/migrations/20261115_skalama_news.sql`. Sem Supabase, as notícias ficam só no navegador.
+
 ## Destaques da rodada
 
 A tela principal apresenta Jogador da noite e Goleiro da noite a partir da média de score das partidas concluídas desde o último sorteio. Um novo sorteio inicia uma nova rodada para esses destaques, sem apagar o histórico ou os rankings acumulados.
