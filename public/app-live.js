@@ -175,6 +175,10 @@
         : "Aguardando banco compartilhado",
       online,
     );
+    // Visitante (sem login): cabeçalho limpo; o acesso do organizador fica no rodapé.
+    document.body.classList.toggle("visitor-header", online && !adminSession);
+    const footerButton = $("footerAdminButton");
+    if (footerButton) footerButton.hidden = !online || !!adminSession;
     if (!button || !label) return;
     if (!online) {
       const publicOnly = window.LIGA_CONFIG?.publicReadOnly === true;
@@ -185,8 +189,8 @@
         : "Modo local";
       return;
     }
-    button.hidden = false;
-    label.hidden = false;
+    button.hidden = !adminSession;
+    label.hidden = !adminSession;
     label.textContent = canManageShared
       ? "Edição autorizada"
       : "Visualização pública";
@@ -201,7 +205,7 @@
     const publicTeams = $("publicTeamsSection");
     if (publicTeams) publicTeams.hidden = !locked || !(state?.teams || []).length;
     document.querySelectorAll("button,input,select,textarea").forEach((element) => {
-      if (element.id === "themeToggle" || element.id === "adminAccessButton" || element.closest("#adminLogin") || element.closest("#artStudio") || element.closest("#newsPublic") || element.closest("#newsPush") || element.hasAttribute("data-view-button")) return;
+      if (element.id === "themeToggle" || element.id === "adminAccessButton" || element.id === "footerAdminButton" || element.closest(".home-top") || element.closest("#adminLogin") || element.closest("#artStudio") || element.closest("#newsPublic") || element.closest("#newsPush") || element.hasAttribute("data-view-button")) return;
       if (locked) {
         if (!element.hasAttribute("data-access-locked")) { element.dataset.accessWasDisabled = String(element.disabled); element.setAttribute("data-access-locked", ""); }
         element.disabled = true;
@@ -633,10 +637,15 @@
       return '<article class="team-card ' + (short ? 'team-card-short' : '') + '"><header class="team-head" style="--team-color:' + color.color + ';--team-ink:' + color.ink + '"><span>' + (teamLogos[team.name] ? '<img class="team-logo" src="' + teamLogos[team.name] + '" alt="">' : '') + escapeHtml(teamLabel(team.name)) + '</span><small>' + players.length + ' JOGADORES' + (short ? ' · VAGA' : players.length < 4 ? ' · INCOMPLETO' : '') + '</small></header>' + (canDrop ? '<button type="button" class="swap-drop" data-swap-drop="' + escapeHtml(team.name) + '">Mover ' + escapeHtml(displayName(swapPick.player)) + ' para cá</button>' : '') + '<input class="team-label-input" data-team-label="' + escapeHtml(team.name) + '" maxlength="30" placeholder="Nome do time (opcional)" aria-label="Nome do ' + escapeHtml(team.name) + ' (opcional)" value="' + escapeHtml(state.teamLabels?.[team.name] || '') + '"><ol>' + items + '</ol></article>';
     }).join('');
     grid.innerHTML = swapHintMarkup() + markup + swapReservesMarkup();
-    if (publicGrid) publicGrid.innerHTML = teams.map((team, index) => {
-      const color = teamColors[index] || teamColors[0], players = lineupForTeam(team.name);
-      return '<article class="public-team-card"><header style="--team-color:' + color.color + ';--team-ink:' + color.ink + '"><strong>' + escapeHtml(teamLabel(team.name)) + '</strong><span>' + players.length + ' jogadores</span></header><ol>' + players.map((name) => '<li>' + escapeHtml(displayName(name)) + (keeper(name) ? ' <b class="keeper-mark">*</b>' : '') + '</li>').join('') + '</ol></article>';
-    }).join('');
+    if (publicGrid) {
+      const sizes = teams.map((team) => lineupForTeam(team.name).length), min = Math.min(...sizes), max = Math.max(...sizes);
+      publicGrid.innerHTML = teams.map((team) => {
+        const players = lineupForTeam(team.name);
+        return '<article class="home-team-card"><header><strong>' + escapeHtml(teamLabel(team.name)) + '</strong><span>' + players.length + (players.length === 1 ? ' JOGADOR' : ' JOGADORES') + '</span></header><ol>' + players.map((name) => '<li><span>' + escapeHtml(displayName(name)) + '</span>' + (keeper(name) ? '<b class="home-keeper" title="Goleiro" aria-label="Goleiro">G</b>' : '') + '</li>').join('') + '</ol></article>';
+      }).join('');
+      const count = $("publicTeamsCount");
+      if (count) count.textContent = teams.length + (teams.length === 1 ? " time" : " times") + " · " + (min === max ? max + (max === 1 ? " jogador" : " jogadores") + " cada" : min + " a " + max + " jogadores");
+    }
   }
   function renderLineupAdjustments() {
     const details = $("lineupAdjustDetails"),
@@ -2549,11 +2558,86 @@
       "</article>";
   }
   // Botão do News na Tela principal: mostra a manchete mais recente publicada.
+  // Tela principal: a notícia em destaque (ou a mais recente), com placar quando é de um jogo.
   function renderNewsHero() {
-    const line = $("heroNewsHeadline");
-    if (!line) return;
-    const latest = newsPosts.filter(newsIsPublic).sort((a, b) => newsSortTime(b) - newsSortTime(a))[0];
-    line.textContent = latest ? "Última: " + latest.title : "Resultados, destaques e recados da liga";
+    const box = $("homeNews");
+    if (!box) return;
+    const posts = newsPosts.filter(newsIsPublic).sort((a, b) => newsSortTime(b) - newsSortTime(a)),
+      post = posts.find((item) => item.is_featured) || posts[0];
+    box.hidden = !post;
+    box.closest(".home-top")?.classList.toggle("no-news", !post);
+    if (!post) { box.innerHTML = ""; return; }
+    const game = post.match_id && (state?.gameHistory || []).find((item) => item.id === post.match_id);
+    let board = "";
+    if (game) {
+      const win = game.winner === game.home ? "home" : game.winner === game.away ? "away" : null,
+        shoot = game.shootout && Number.isFinite(game.shootout.homeScore) ? game.shootout : null,
+        side = (key) => {
+          const label = gameTeamLabel(game, key), src = crestFor(game[key], label),
+            initials = label.replace(/^time\s+/i, "").split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+          return '<div class="hn-team' + (win === key ? " is-winner" : win ? " is-loser" : "") + '">' +
+            (src ? '<span class="hn-crest"><img src="' + escapeHtml(src) + '" alt=""></span>' : '<span class="hn-crest hn-initials" aria-hidden="true">' + escapeHtml(initials || "?") + "</span>") +
+            "<strong>" + escapeHtml(label) + "</strong></div>";
+        },
+        num = (key) => '<b class="' + (win === key ? "is-winner" : win ? "is-loser" : "") + '">' + (Number(game[key + "Score"]) || 0) + "</b>";
+      board = '<div class="hn-board" role="img" aria-label="' + escapeHtml(gameTeamLabel(game, "home") + " " + (Number(game.homeScore) || 0) + " a " + (Number(game.awayScore) || 0) + " " + gameTeamLabel(game, "away")) + '">' +
+        side("home") + '<div class="hn-score">' + num("home") + '<i aria-hidden="true">×</i>' + num("away") + (shoot ? "<small>Pênaltis " + shoot.homeScore + " × " + shoot.awayScore + "</small>" : "") + "</div>" + side("away") + "</div>";
+    }
+    box.innerHTML = '<p class="hn-kicker"><span class="hn-tag">SKALAMA NEWS</span><span>O jornal da pelada · última notícia</span></p>' +
+      '<h2 class="hn-title">' + escapeHtml(post.title) + "</h2>" + (!game && post.excerpt ? '<p class="hn-excerpt">' + escapeHtml(post.excerpt) + "</p>" : "") + board +
+      '<div class="hn-actions"><a class="hn-btn hn-btn-primary" href="#noticia-' + encodeURIComponent(post.slug) + '">Ler notícia</a><button type="button" class="hn-btn hn-btn-outline" data-home-news-all>Todas as notícias</button></div>';
+  }
+  // Tela principal: próximo jogo com os dados da rodada (linha sem dado não aparece).
+  function renderHomeNext() {
+    const box = $("homeNext");
+    if (!box || !state) return;
+    const date = state.matchDate ? new Date(state.matchDate + "T12:00:00") : null,
+      validDate = date && Number.isFinite(date.getTime()),
+      weekday = validDate ? date.toLocaleDateString("pt-BR", { weekday: "long" }).split("-")[0].toUpperCase() : "",
+      dayMonth = validDate ? date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "",
+      teams = state.teams || [],
+      players = teams.reduce((sum, team) => sum + lineupForTeam(team.name).length, 0),
+      time = /^\d{2}:\d{2}/.test(state.startTime || "") ? state.startTime.slice(0, 5).replace(":00", "h").replace(":", "h") : "",
+      venue = String(state.venue || "").trim(),
+      icon = (path) => '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">' + path + "</svg>",
+      rows = [
+        time && [icon('<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'), time],
+        venue && [icon('<path d="M12 22s7-6.6 7-12.2A7 7 0 0 0 5 9.8C5 15.4 12 22 12 22Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="9.8" r="2.6" fill="currentColor"/>'), venue],
+        teams.length && players && [icon('<circle cx="9" cy="8" r="3.4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M2.5 20c.6-3.6 3.2-5.6 6.5-5.6s5.9 2 6.5 5.6M15.5 4.8a3.4 3.4 0 0 1 0 6.4M18 14.6c2 .7 3.2 2.6 3.5 5.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'), teams.length + (teams.length === 1 ? " time · " : " times · ") + players + (players === 1 ? " jogador" : " jogadores")],
+      ].filter(Boolean);
+    box.innerHTML = '<p class="hx-kicker" id="homeNextTitle">PRÓXIMO JOGO</p>' +
+      (weekday ? '<p class="hx-day">' + escapeHtml(weekday) + "</p>" : "") +
+      (dayMonth ? '<p class="hx-date">' + escapeHtml(dayMonth) + "</p>" : "") +
+      (rows.length ? '<ul class="hx-list">' + rows.map(([svg, text]) => "<li>" + svg + "<span>" + escapeHtml(text) + "</span></li>").join("") + "</ul>" : "") +
+      (!weekday && !rows.length ? '<p class="hx-empty">A data da próxima rodada ainda vai ser definida.</p>' : "") +
+      (teams.length ? '<button type="button" class="hx-btn" data-home-teams>Ver equipes</button>' : "");
+    const footerVenue = $("footerVenue");
+    if (footerVenue) footerVenue.textContent = venue || "Quadra do Jemb";
+  }
+  // Antes do primeiro jogo da rodada, os cards sem dados somem e aparece um aviso só.
+  function renderHomeVisibility() {
+    const roundId = state.roundId || state.currentGame?.roundId,
+      roundGames = roundId ? (state.gameHistory || []).filter((game) => game.roundId === roundId).length : 0,
+      empty = (id) => { const host = $(id); return !host || !host.children.length || (host.children.length === 1 && host.firstElementChild.classList.contains("empty-state")); },
+      cards = [
+        [$("homeGoalsCard"), empty("goalRanking")],
+        [$("playerScoreRanking")?.closest(".panel"), empty("playerScoreRanking")],
+        [$("keeperRanking")?.closest(".panel"), empty("keeperRanking")],
+        [$("keeperConcededRanking")?.closest(".panel"), empty("keeperConcededRanking")],
+      ];
+    cards.forEach(([card, hide]) => { if (card) card.hidden = hide; });
+    const grid = document.querySelector('.score-grid[data-view="home"]');
+    if (grid) grid.hidden = cards.every(([, hide]) => hide);
+    $("homeStandings").hidden = !roundGames;
+    $("destaques-noite").hidden = !roundGames;
+    $("seasonHighlights").closest(".panel").hidden = empty("seasonHighlights");
+    const waiting = $("homeWaiting");
+    waiting.hidden = !!roundGames;
+    $("homeWaitingText").textContent = cards.every(([, hide]) => hide)
+      ? "A rodada ainda não começou. Classificação, artilharia, rankings e destaques da noite aparecem aqui depois do primeiro jogo."
+      : "A rodada ainda não começou. Classificação e destaques da noite aparecem aqui depois do primeiro jogo.";
+    const badge = $("liveBadge");
+    if (badge) badge.hidden = !state.currentGame;
   }
   function renderNews() {
     renderNewsHero();
@@ -3104,6 +3188,9 @@
     renderSuperLiga();
     if (!newsDraft) renderNews();
     renderNewsPush();
+    renderNewsHero();
+    renderHomeNext();
+    renderHomeVisibility();
     markActiveTab();
     applyEditLock();
   }
@@ -4467,10 +4554,17 @@
       );
     } finally { gameFinishing = false; renderTimer(); }
   }
+  const THEME_ICONS = {
+    moon: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M20.7 14.6A8.6 8.6 0 0 1 9.4 3.3a.8.8 0 0 0-1-1A10 10 0 1 0 21.7 15.6a.8.8 0 0 0-1-1Z"/></svg>',
+    sun: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4.6" fill="currentColor"/><path d="M12 1.8v2.6M12 19.6v2.6M4.8 4.8l1.8 1.8M17.4 17.4l1.8 1.8M1.8 12h2.6M19.6 12h2.6M4.8 19.2l1.8-1.8M17.4 6.6l1.8-1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  };
   function setTheme(theme) {
     const light = theme === "light";
     document.body.classList.toggle("light-theme", light);
-    $("themeToggle").textContent = light ? "Fundo escuro" : "Fundo claro";
+    const toggle = $("themeToggle");
+    toggle.innerHTML = light ? THEME_ICONS.moon : THEME_ICONS.sun;
+    toggle.setAttribute("aria-label", light ? "Ativar fundo escuro" : "Ativar fundo claro");
+    toggle.title = light ? "Fundo escuro" : "Fundo claro";
     localStorage.setItem("liga-skalama-theme-v2", light ? "light" : "dark");
   }
   function bindEvents() {
@@ -4590,6 +4684,25 @@
     $("finishGame").addEventListener("click", finishGame);
     $("addIncident").addEventListener("click", addIncident);
     $("adminAccessButton").addEventListener("click", requestAdminAccess);
+    $("footerAdminButton").addEventListener("click", requestAdminAccess);
+    $("liveBadge").addEventListener("click", (event) => {
+      event.preventDefault();
+      if (isEditLocked()) { viewerMode = activeLiveMode(); superMarkup = ""; renderAll(); }
+      setView("live");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    document.querySelector(".home-top").addEventListener("click", (event) => {
+      if (event.target.closest("[data-home-news-all]")) {
+        newsOpenSlug = null;
+        if (location.hash.startsWith("#noticia-")) history.pushState(null, "", location.pathname + location.search);
+        setView("news");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } else if (event.target.closest("[data-home-teams]")) {
+        const section = $("publicTeamsSection");
+        if (section && !section.hidden) section.scrollIntoView({ behavior: "smooth", block: "start" });
+        else { setView("elenco"); setTimeout(() => $("teamsGrid")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); }
+      }
+    });
     document.querySelectorAll("[data-shortcut]").forEach((link) =>
       link.addEventListener("click", (event) => {
         event.preventDefault();
