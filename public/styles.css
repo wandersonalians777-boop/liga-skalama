@@ -519,3 +519,19 @@ body.light-theme .news-highlight span{color:#8a6900}
 .news-rows>.button{justify-self:start}
 .news-form-actions{flex-wrap:wrap}
 @media(max-width:720px){.news-featured .news-card-link{grid-template-columns:1fr}.news-featured .news-cover{min-height:0;aspect-ratio:16/9}.news-generate{grid-template-columns:1fr}.news-section{padding:15px}}
+/* Tela principal: botão em destaque do SKALAMA News (no lugar do selo "10+") */
+.hero{gap:18px;flex-wrap:wrap}
+.news-hero{flex:0 1 330px;min-width:0;display:grid;gap:6px;text-align:left;padding:16px 18px;border:2px solid var(--yellow);border-radius:14px;background:radial-gradient(ellipse at 100% 0,#5a4708 0,transparent 62%),#121212;color:#f8f8f5;cursor:pointer;box-shadow:0 10px 28px #ffc4001f;transition:transform .15s,box-shadow .15s}
+.news-hero:hover,.news-hero:focus-visible{transform:translateY(-2px);box-shadow:0 14px 34px #ffc40040}
+.news-hero:focus-visible{outline:3px solid #6f8fe8;outline-offset:3px}
+.news-hero-top{display:flex;align-items:center;gap:7px;font-size:9px;font-weight:900;letter-spacing:1.4px;color:#d9cfa6}
+.news-hero-dot{width:8px;height:8px;border-radius:50%;background:#e5484d;box-shadow:0 0 0 0 #e5484d99;animation:newsPulse 1.8s infinite}
+@keyframes newsPulse{70%{box-shadow:0 0 0 7px #e5484d00}100%{box-shadow:0 0 0 0 #e5484d00}}
+@media(prefers-reduced-motion:reduce){.news-hero-dot{animation:none}}
+.news-hero-logo{font:900 34px/.95 'Barlow Condensed',sans-serif;letter-spacing:.6px;text-transform:uppercase}
+.news-hero-logo span{color:var(--yellow)}
+.news-hero-headline{font-size:12px;line-height:1.4;color:#e9e6da;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.news-hero-cta{display:flex;align-items:center;gap:6px;margin-top:2px;font-size:11px;font-weight:900;color:var(--yellow)}
+.news-hero-cta b{transition:transform .15s}
+.news-hero:hover .news-hero-cta b{transform:translateX(3px)}
+@media(max-width:620px){.news-hero{flex-basis:100%}.news-hero-logo{font-size:30px}}

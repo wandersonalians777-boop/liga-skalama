@@ -67,7 +67,7 @@ Nos times da Super Liga dá para escolher jogadores já cadastrados no Elenco ou
 
 ## SKALAMA News
 
-A aba **SKALAMA News** é o portal de notícias da liga, no tom da resenha da pelada. Categorias: **Resultado**, **Destaque**, **Anúncio** e **Comunidade**.
+O **SKALAMA News** é o portal de notícias da liga. Ele abre pelo botão em destaque no topo da Tela principal, que mostra a manchete mais recente, no tom da resenha da pelada. Categorias: **Resultado**, **Destaque**, **Anúncio** e **Comunidade**.
 
 - Visitantes veem só as notícias publicadas, e as agendadas cujo horário já chegou. Dá para filtrar por categoria, abrir a notícia e compartilhar o link (`skalama.com.br/#noticia-...`). As visualizações e os compartilhamentos são contados.
 - O organizador cria, edita, arquiva e apaga notícias pela própria aba. Cada notícia tem título, subtítulo, resumo, texto (linha em branco separa parágrafos; `**assim**` fica em negrito), categoria, situação (rascunho, publicada, agendada, arquivada), destaque da capa, imagem de capa e fotos por endereço `https://`, jogo relacionado, jogadores citados e cards de destaque.

@@ -2421,7 +2421,15 @@
       '<div class="button-row"><button type="button" class="button button-primary" data-news-share="' + escapeHtml(post.id) + '">Compartilhar</button></div>' +
       "</article>";
   }
+  // Botão do News na Tela principal: mostra a manchete mais recente publicada.
+  function renderNewsHero() {
+    const line = $("heroNewsHeadline");
+    if (!line) return;
+    const latest = newsPosts.filter(newsIsPublic).sort((a, b) => newsSortTime(b) - newsSortTime(a))[0];
+    line.textContent = latest ? "Última: " + latest.title : "Resultados, destaques e recados da liga";
+  }
   function renderNews() {
+    renderNewsHero();
     const box = $("newsPublic"), editor = $("newsEditor");
     if (!box || !editor) return;
     const locked = isEditLocked();
@@ -4323,8 +4331,8 @@
     }
     renderAll();
     setView(localStorage.getItem("liga-skalama-view") || "home");
-    // Link direto de notícia (#noticia-slug) abre o SKALAMA News.
-    openNewsFromHash();
+    // Link direto de notícia (#noticia-slug) abre o SKALAMA News; senão, carrega a manchete da Tela principal.
+    if (!openNewsFromHash()) loadNews();
     setTheme(localStorage.getItem("liga-skalama-theme-v2") || "light");
     setInterval(() => {
       renderTimer();
