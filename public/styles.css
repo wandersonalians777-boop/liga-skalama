@@ -612,3 +612,7 @@ body.light-theme .news-highlight span{color:#8a6900}
 body.light-theme .nm-block{background:#fbfaf6}
 body.light-theme .nm-lineup{background:#fff}
 @media(max-width:720px){.nm-grid,.nm-lineups{grid-template-columns:1fr}.nm-crest-lg{width:76px;height:76px}.nm-board{padding:18px 10px;gap:8px}.nm-champion{gap:12px;padding:14px}}
+/* Escudo sempre inteiro dentro do quadro (sem corte em nenhum navegador) */
+.nm-crest{position:relative;display:block}
+.nm-crest img{position:absolute;top:8%;left:8%;width:84%;height:84%;max-width:none;padding:0;object-fit:contain;object-position:center}
+.nm-crest-empty{display:grid}
