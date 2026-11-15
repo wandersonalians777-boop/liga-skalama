@@ -480,14 +480,18 @@
   function modeTeams() {
     if (!isSuperMode()) return state.teams || [];
     const sl = state.superLiga;
-    return sl && sl.status === "running" ? sl.teams.map((team) => ({ name: team.key, players: team.players })) : [];
+    return sl && (sl.status === "running" || superOpenFriendly(sl)) ? sl.teams.map((team) => ({ name: team.key, players: team.players })) : [];
   }
   function superFixture(id) {
     return (id && state.superLiga?.fixtures?.find((fixture) => fixture.id === id)) || null;
   }
+  // Amistoso ainda não disputado de uma Super Liga encerrada.
+  function superOpenFriendly(sl = state.superLiga) {
+    return (sl?.status === "finished" && (sl.fixtures || []).find((fixture) => fixture.stage === "amistoso" && !fixture.gameId)) || null;
+  }
   function superNextFixture() {
     const sl = state.superLiga;
-    if (!sl || sl.status !== "running") return null;
+    if (!sl || (sl.status !== "running" && !superOpenFriendly(sl))) return null;
     const chosen = superFixture(sl.pending?.fixtureId);
     if (chosen && !chosen.gameId) return chosen;
     return (sl.fixtures || []).find((fixture) => !fixture.gameId) || null;
@@ -998,7 +1002,7 @@
     const fixture = superMode ? superFixture(pending?.fixtureId) : null;
     $("nextMatchPreview").textContent = superMode
       ? fixture
-        ? (fixture.stage === "final" ? (state.superLiga.teams.length === 2 ? "Super Liga · Jogo único: " : "Final da Super Liga: ") : "Super Liga · Rodada " + fixture.round + ": ") + teamLabel(fixture.home) + " × " + teamLabel(fixture.away)
+        ? (fixture.stage === "final" ? (state.superLiga.teams.length === 2 ? "Super Liga · Jogo único: " : "Final da Super Liga: ") : fixture.stage === "amistoso" ? "Super Liga · Amistoso (conta para o ranking): " : "Super Liga · Rodada " + fixture.round + ": ") + teamLabel(fixture.home) + " × " + teamLabel(fixture.away)
         : "Monte a Super Liga e sorteie a ordem dos jogos no painel abaixo."
       : home && away && home !== away ? "Confronto escolhido: " + teamLabel(home) + " × " + teamLabel(away) : pending ? "Escolha dois times diferentes para preparar a partida." : "Sorteie os times para preparar a partida.";
     renderLoanControls();
@@ -1867,7 +1871,9 @@
     let fixtures = sl.fixtures.map((fixture) => (fixture.id === game.fixtureId ? { ...fixture, gameId: entry.id } : fixture)),
       status = sl.status,
       champion = sl.champion || null;
-    if (game.stage === "final") {
+    if (game.stage === "amistoso") {
+      // Amistoso: só entra nos rankings; campeão e situação da Super Liga continuam iguais.
+    } else if (game.stage === "final") {
       status = "finished";
       champion = entry.winner;
     } else if (!fixtures.some((fixture) => fixture.stage === "group" && !fixture.gameId) && !fixtures.some((fixture) => fixture.stage === "final")) {
@@ -2029,8 +2035,15 @@
   // Troca o confronto pelos seletores de Preparar partida: vale qualquer jogo da tabela que ainda não foi disputado.
   async function superChooseTeams(changedSide) {
     const sl = state.superLiga;
-    if (!sl || sl.status !== "running" || state.currentGame) { renderQueueControls(); return; }
     let home = $("matchHome").value, away = $("matchAway").value;
+    // Amistoso: vale qualquer par de times.
+    const friendly = superOpenFriendly(sl);
+    if (friendly && !state.currentGame) {
+      if (!home || !away || home === away) { notify("Escolha dois times diferentes para o amistoso.", true); renderQueueControls(); return; }
+      await saveState({ superLiga: { ...sl, fixtures: sl.fixtures.map((item) => (item.id === friendly.id ? { ...item, home, away } : item)), pending: { fixtureId: friendly.id, prepared: false } } }, "Amistoso: " + teamLabel(home) + " × " + teamLabel(away) + ".");
+      return;
+    }
+    if (!sl || sl.status !== "running" || state.currentGame) { renderQueueControls(); return; }
     const open = (sl.fixtures || []).filter((fixture) => !fixture.gameId),
       finalOpen = open.find((fixture) => fixture.stage === "final"),
       pool = finalOpen ? [finalOpen] : open,
@@ -2065,6 +2078,20 @@
       { superLiga: { ...sl, fixtures, pending: { fixtureId: fixture.id, prepared: false } } },
       "Próximo jogo: " + teamLabel(home) + " × " + teamLabel(away) + (fixture.stage === "group" ? " (rodada " + fixture.round + ")." : "."),
     );
+  }
+  // Novo jogo numa Super Liga que já teve final: amistoso (conta para o ranking, não muda o campeão).
+  async function superFriendly() {
+    const sl = state.superLiga;
+    if (!sl || sl.status !== "finished" || state.currentGame || superOpenFriendly(sl)) return;
+    const final = superFinalGame(sl), [home, away] = final ? [final.home, final.away] : sl.teams.map((team) => team.key);
+    const fixture = { id: crypto.randomUUID(), stage: "amistoso", round: null, home, away, gameId: null };
+    const saved = await saveState({ superLiga: { ...sl, fixtures: [...(sl.fixtures || []), fixture], pending: { fixtureId: fixture.id, prepared: false } }, timerMode: "coca" }, "Amistoso: " + teamLabel(home) + " × " + teamLabel(away) + ". Conta para o ranking e não muda o campeão. Prepare a partida acima.");
+    if (saved) $("jogo").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  async function superFriendlyCancel() {
+    const sl = state.superLiga, open = superOpenFriendly(sl);
+    if (!open || state.currentGame) return;
+    await saveState({ superLiga: { ...sl, fixtures: sl.fixtures.filter((item) => item.id !== open.id), pending: null } }, "Amistoso cancelado.");
   }
   async function superRestart() {
     const sl = state.superLiga;
@@ -2122,7 +2149,7 @@
   function superRankingRow(index, name, detail, value) {
     return '<div class="ranking-row' + (index < 3 ? " top-rank top-rank-" + (index + 1) : "") + '"><span class="rank">' + String(index + 1).padStart(2, "0") + "</span><span>" + escapeHtml(displayName(name)) + " <small>" + escapeHtml(detail) + "</small></span><strong>" + value + "</strong></div>";
   }
-  function superRankings(sl) {
+  function superRankingData() {
     const games = (state.gameHistory || []).filter((game) => game.superLigaId),
       plural = (n, one, many) => n + " " + (n === 1 ? one : many),
       teamOf = (key) => superTeam(key)?.name || teamLabel(key);
@@ -2151,7 +2178,11 @@
     };
     const scorerRows = [...scorers.entries()].map(([name, row]) => ({ name, ...row })).sort((a, b) => b.goals - a.goals || a.name.localeCompare(b.name, "pt-BR")).slice(0, 10),
       keeperRows = average("goleiro").sort((a, b) => b.average - a.average || a.against - b.against || a.name.localeCompare(b.name, "pt-BR")).slice(0, 10),
-      playerRows = average("linha").sort((a, b) => b.average - a.average || a.name.localeCompare(b.name, "pt-BR")).slice(0, 10),
+      playerRows = average("linha").sort((a, b) => b.average - a.average || a.name.localeCompare(b.name, "pt-BR")).slice(0, 10);
+    return { scorerRows, keeperRows, playerRows, teamOf, plural };
+  }
+  function superRankings(sl) {
+    const { scorerRows, keeperRows, playerRows, teamOf, plural } = superRankingData(),
       empty = '<p class="empty-state">Aparece depois do primeiro jogo da Super Liga.</p>',
       score = (value) => value.toFixed(1).replace(".", ",");
     return '<div class="sl-rankings-head"><h3>Rankings da Super Liga</h3><p class="help-text">Somam todas as Super Ligas já disputadas. Não zeram com "Nova Super Liga".</p></div><div class="sl-rankings">' +
@@ -2160,6 +2191,137 @@
       '<div class="sl-block"><h3>Score dos jogadores</h3>' + (playerRows.map((r, i) => superRankingRow(i, r.name, teamOf(r.team) + " · " + plural(r.games, "jogo", "jogos"), score(r.average))).join("") || empty) + "</div>" +
       "</div>";
   }
+  // ---------- Super Liga encerrada: campeão em destaque ----------
+  // O título é decidido pelo primeiro jogo com stage "final" desta Super Liga (nunca pelo último jogo disputado).
+  function superFinalGame(sl = state.superLiga) {
+    if (!sl) return null;
+    const history = state.gameHistory || [],
+      finals = history.filter((game) => game.superLigaId === sl.id && game.stage === "final").sort((a, b) => new Date(a.finishedAt || 0) - new Date(b.finishedAt || 0));
+    if (finals[0]) return finals[0];
+    const fixture = (sl.fixtures || []).find((item) => item.stage === "final" && item.gameId);
+    return (fixture && history.find((game) => game.id === fixture.gameId)) || null;
+  }
+  function slxCrest(key, size) {
+    const label = teamLabel(key), src = crestFor(key, label),
+      initials = label.replace(/^time\s+/i, "").split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+    return '<span class="slx-crest slx-crest-' + size + (src ? "" : " slx-initials") + '" aria-hidden="true">' + (src ? '<img src="' + escapeHtml(src) + '" alt="">' : escapeHtml(initials || "?")) + "</span>";
+  }
+  // Escalação no apito inicial: titulares (Start) e reservas (Bench), desfazendo as substituições.
+  function slxLineup(game, side) {
+    const team = game[side],
+      start = [...(game[side + "Start"] || game[side + "Players"] || [])],
+      subs = (game.substitutions || []).filter((item) => item.team === team).sort((a, b) => (Number(a.minute) || 0) - (Number(b.minute) || 0)),
+      entered = [...new Set(subs.map((item) => item.in).filter((name) => name && !start.includes(name)))],
+      bench = [...entered, ...(game[side + "Bench"] || []).filter((name) => !start.includes(name) && !entered.includes(name))],
+      keeperName = game[side + "KeeperStart"] || game[side + "Keeper"] || start.find(keeper) || null,
+      events = (name) => subs.flatMap((item) => [
+        ...(item.out === name ? [{ kind: "out", minute: item.minute }] : []),
+        ...(item.in === name ? [{ kind: "in", minute: item.minute }] : []),
+      ]),
+      played = [...start, ...entered];
+    return { team, start, bench, subs, keeperName, events, played };
+  }
+  function slxMinute(value) {
+    return (Number(value) || 0) + "′";
+  }
+  function slxGoalList(game, key) {
+    const goals = (game.goals || []).filter((goal) => (goal.scoringTeam || goal.team) === key).sort((a, b) => (Number(a.minute) || 0) - (Number(b.minute) || 0));
+    return goals.length
+      ? goals.map((goal) => "<li><b>" + slxMinute(goal.minute) + "</b> " + escapeHtml(displayName(goal.player || "Gol")) + (goal.ownGoal ? " <small>(contra)</small>" : "") + "</li>").join("")
+      : '<li class="slx-nogoal">Sem gols</li>';
+  }
+  function slxPlayerRow(name, role, lineup) {
+    const isKeeper = name === lineup.keeperName || keeper(name),
+      marks = lineup.events(name).map((item) => item.kind === "out"
+        ? '<span class="slx-ev slx-ev-out">↓ saiu ' + slxMinute(item.minute) + "</span>"
+        : '<span class="slx-ev slx-ev-in">↑ entrou ' + slxMinute(item.minute) + "</span>").join("");
+    return '<li><span class="slx-pname">' + escapeHtml(displayName(name)) + (isKeeper ? ' <b class="slx-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "</span>" + marks +
+      '<span class="slx-role ' + (role === "titular" ? "is-tit" : "is-res") + '">' + (role === "titular" ? "TITULAR" : "RESERVA") + "</span></li>";
+  }
+  function slxTeamCard(game, side, isChampion) {
+    const lineup = slxLineup(game, side), key = game[side],
+      subsText = lineup.subs.length
+        ? lineup.subs.length + (lineup.subs.length === 1 ? " substituição" : " substituições") + " (" + lineup.subs.map((item) => slxMinute(item.minute) + ": sai " + displayName(item.out) + ", entra " + displayName(item.in)).join("; ") + ")"
+        : "sem substituições";
+    return '<article class="slx-team' + (isChampion ? " is-champ" : "") + '"><header>' + slxCrest(key, "sm") + "<strong>" + escapeHtml(teamLabel(key)) + "</strong>" +
+      '<span class="slx-badge">' + (isChampion ? "CAMPEÃO" : "VICE") + "</span></header>" +
+      '<p class="slx-sec">TITULARES</p><ul class="slx-plist">' + lineup.start.map((name) => slxPlayerRow(name, "titular", lineup)).join("") + "</ul>" +
+      (lineup.bench.length ? '<p class="slx-sec">RESERVAS</p><ul class="slx-plist">' + lineup.bench.map((name) => slxPlayerRow(name, "reserva", lineup)).join("") + "</ul>" : "") +
+      '<footer>' + lineup.start.length + (lineup.start.length === 1 ? " titular" : " titulares") + " · " + lineup.bench.length + (lineup.bench.length === 1 ? " reserva" : " reservas") + " · " + escapeHtml(subsText) + "</footer></article>";
+  }
+  function slxRankCard(title, rows, detail, value) {
+    if (!rows.length) return '<article class="slx-rank-card"><h4>' + title + '</h4><p class="empty-state">Aparece depois do primeiro jogo da Super Liga.</p></article>';
+    return '<article class="slx-rank-card"><h4>' + title + '</h4><ol class="slx-rank-list">' + rows.map((row, index) =>
+      '<li class="slx-rank-' + (index < 3 ? index + 1 : "n") + '"><span class="slx-pos">' + (index + 1) + '</span><span class="slx-who"><strong>' + escapeHtml(displayName(row.name)) + "</strong><small>" + escapeHtml(detail(row)) + '</small></span><b class="slx-val">' + value(row) + "</b></li>").join("") + "</ol></article>";
+  }
+  function slxDateText(game) {
+    const date = game.matchDate ? new Date(game.matchDate + "T12:00:00") : new Date(game.finishedAt || 0);
+    return Number.isFinite(date.getTime()) ? date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "";
+  }
+  function renderSuperFinished(sl, locked, note = "") {
+    const final = superFinalGame(sl),
+      champion = final ? (final.winner === final.home || final.winner === final.away ? final.winner : sl.champion) : sl.champion,
+      single = sl.teams.length === 2;
+    let html = '<div class="slx-top"><div><p class="eyebrow">MODO SUPER LIGA</p><h2 id="slTitle" class="slx-title">SUPER LIGA SKALAMA</h2></div><span class="slx-status"><i aria-hidden="true"></i>Encerrada</span></div>' + note;
+    if (champion) {
+      const champSide = final ? (final.home === champion ? "home" : "away") : null,
+        oppSide = champSide === "home" ? "away" : "home",
+        shoot = final?.shootout && Number.isFinite(final.shootout.homeScore) ? final.shootout : null,
+        cs = final ? Number(final[champSide + "Score"]) || 0 : 0, os = final ? Number(final[oppSide + "Score"]) || 0 : 0,
+        place = String(final?.venue || state.venue || "").trim(),
+        how = final ? (shoot ? "Venceu a final nos pênaltis (" + shoot[champSide + "Score"] + " a " + shoot[oppSide + "Score"] + ") após " + cs + " a " + os : "Venceu a final por " + cs + " a " + os) : "",
+        sub = [how, final ? slxDateText(final) : "", place].filter(Boolean).join(" · ");
+      html += '<section class="slx-champ" aria-labelledby="slxChampName"><div class="slx-champ-row"><div class="slx-champ-main">' +
+        '<div class="slx-champ-crest">' + slxCrest(champion, "xl") + '<span class="slx-trophy" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24" focusable="false"><path fill="currentColor" d="M7 3h10v2h3v3a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 14.9V17h3v3H8v-3h3v-2.1A5 5 0 0 1 8.3 12H8a4 4 0 0 1-4-4V5h3V3Zm0 4H6v1a2 2 0 0 0 1 1.7V7Zm10 0v2.7A2 2 0 0 0 18 8V7h-1Z"/></svg></span></div>' +
+        '<div class="slx-champ-text"><p class="slx-kicker">CAMPEÃO DA SUPER LIGA</p><h3 id="slxChampName" class="slx-champ-name">' + escapeHtml(teamLabel(champion)) + "</h3>" + (sub ? '<p class="slx-champ-sub">' + escapeHtml(sub) + "</p>" : "") + "</div></div>";
+      if (final) {
+        html += '<div class="slx-final"><p class="slx-final-tag">' + (single ? "FINAL · JOGO ÚNICO" : "FINAL") + "</p>" +
+          '<div class="slx-board" role="img" aria-label="' + escapeHtml("Final: " + teamLabel(final[champSide]) + " " + cs + " a " + os + " " + teamLabel(final[oppSide])) + '">' +
+          '<div class="slx-bteam">' + slxCrest(final[champSide], "md") + "<span>" + escapeHtml(teamLabel(final[champSide])) + "</span></div>" +
+          '<div class="slx-bscore"><b class="is-win">' + cs + '</b><i aria-hidden="true">×</i><b class="is-lose">' + os + "</b>" + (shoot ? "<small>Pênaltis " + shoot[champSide + "Score"] + " × " + shoot[oppSide + "Score"] + "</small>" : "") + "</div>" +
+          '<div class="slx-bteam">' + slxCrest(final[oppSide], "md") + "<span>" + escapeHtml(teamLabel(final[oppSide])) + "</span></div></div>" +
+          '<div class="slx-fgoals"><ul aria-label="' + escapeHtml("Gols do " + teamLabel(final[champSide])) + '">' + slxGoalList(final, final[champSide]) + '</ul><ul aria-label="' + escapeHtml("Gols do " + teamLabel(final[oppSide])) + '">' + slxGoalList(final, final[oppSide]) + "</ul></div></div>";
+      }
+      html += "</div>";
+      if (final) {
+        const lineup = slxLineup(final, champSide);
+        html += '<div class="slx-squad"><p class="slx-squad-title">QUEM JOGOU A FINAL</p><ul class="slx-chips">' + lineup.played.map((name) => "<li>" + escapeHtml(displayName(name)) + (name === lineup.keeperName || keeper(name) ? ' <b class="slx-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "</li>").join("") + "</ul></div>";
+      }
+      html += "</section>";
+    }
+    // Rankings: somam todas as Super Ligas, inclusive amistosos.
+    const { scorerRows, keeperRows, playerRows, teamOf, plural } = superRankingData(), score = (value) => value.toFixed(1).replace(".", ",");
+    html += '<section class="slx-ranks" aria-labelledby="slxRanksTitle"><div class="slx-sec-head"><h3 id="slxRanksTitle">RANKINGS DA SUPER LIGA</h3><p>Somam todas as Super Ligas, inclusive os amistosos.</p></div><div class="slx-rank-grid">' +
+      slxRankCard("Artilheiros", scorerRows, (row) => teamOf(row.team), (row) => row.goals + '<small>' + (row.goals === 1 ? "gol" : "gols") + "</small>") +
+      slxRankCard("Melhores goleiros", keeperRows, (row) => teamOf(row.team) + " · " + plural(row.games, "jogo", "jogos") + " · " + plural(row.against, "gol sofrido", "gols sofridos"), (row) => score(row.average)) +
+      slxRankCard("Score dos jogadores", playerRows, (row) => teamOf(row.team) + " · " + plural(row.games, "jogo", "jogos"), (row) => score(row.average)) +
+      "</div></section>";
+    if (final && champion) {
+      const champSide = final.home === champion ? "home" : "away";
+      html += '<section class="slx-lineups" aria-labelledby="slxLineupTitle"><div class="slx-sec-head"><h3 id="slxLineupTitle">ESCALAÇÃO DA FINAL</h3></div><div class="slx-lineup-grid">' +
+        slxTeamCard(final, champSide, true) + slxTeamCard(final, champSide === "home" ? "away" : "home", false) + "</div></section>";
+    }
+    // Outros jogos desta Super Liga (fora a final).
+    const others = (state.gameHistory || []).filter((game) => game.superLigaId === sl.id && game.id !== final?.id).sort((a, b) => new Date(a.finishedAt || 0) - new Date(b.finishedAt || 0));
+    if (others.length)
+      html += '<section class="slx-others" aria-labelledby="slxOthersTitle"><div class="slx-sec-head"><h3 id="slxOthersTitle">OUTROS JOGOS DA SUPER LIGA</h3></div><ul class="slx-other-list">' + others.map((game) => {
+        const tag = game.stage === "amistoso" ? "AMISTOSO · conta para o ranking" : game.stage === "group" ? "FASE DE GRUPOS · Rodada " + (game.round || "") : "JOGO",
+          open = superOpenSumulas.has(game.id),
+          shoot = game.shootout && Number.isFinite(game.shootout.homeScore) ? '<small class="slx-open">Pênaltis ' + game.shootout.homeScore + " × " + game.shootout.awayScore + "</small>" : "";
+        return '<li class="slx-other"><div class="slx-other-row"><span class="slx-tag">' + escapeHtml(tag) + "</span>" +
+          '<div class="slx-other-game"><span class="slx-oteam">' + slxCrest(game.home, "xs") + escapeHtml(gameTeamLabel(game, "home")) + '</span><b class="slx-oscore">' + (Number(game.homeScore) || 0) + " × " + (Number(game.awayScore) || 0) + '</b><span class="slx-oteam is-away">' + escapeHtml(gameTeamLabel(game, "away")) + slxCrest(game.away, "xs") + "</span>" + shoot + "</div></div>" +
+          '<details class="slx-sumula" data-sumula="' + escapeHtml(game.id) + '"' + (open ? " open" : "") + '><summary>Ver súmula <span class="sr-only">de ' + escapeHtml(gameTeamLabel(game, "home") + " × " + gameTeamLabel(game, "away")) + "</span></summary>" + newsMatchReport({ match_id: game.id }).details + "</details></li>";
+      }).join("") + "</ul></section>";
+    if (!locked) {
+      const friendly = superOpenFriendly(sl), liveFriendly = state.currentGame?.stage === "amistoso";
+      html += '<div class="slx-org"><p class="help-text">' + (friendly ? "Amistoso preparado: " + escapeHtml(teamLabel(friendly.home) + " × " + teamLabel(friendly.away)) + ". Prepare e comece a partida no card acima. Ele conta para o ranking e não muda o campeão." : liveFriendly ? "Amistoso em andamento: conta para o ranking e não muda o campeão." : "Quer jogar de novo? Um novo jogo nesta Super Liga entra como amistoso: conta para o ranking e não muda o campeão.") + "</p>" +
+        '<div class="button-row sl-actions">' +
+        (friendly ? '<button type="button" class="button button-outline" data-sl-action="friendly-cancel">Cancelar amistoso</button>' : '<button type="button" class="button button-primary" data-sl-action="friendly"' + (state.currentGame ? " disabled" : "") + ">Amistoso (conta para o ranking)</button>") +
+        '<button type="button" class="button button-outline" data-sl-action="restart"' + (state.currentGame?.superLigaId ? " disabled" : "") + ">Nova Super Liga</button></div></div>";
+    }
+    return html;
+  }
+  const superOpenSumulas = new Set();
   let superMarkup = "",
     superTeamsOpen = false;
   function renderSuperLiga() {
@@ -2171,13 +2333,14 @@
     box.hidden = !show;
     // O cartão da partida mostra o modo ativo; quem está olhando a outra aba não o vê.
     // Sem tabela sorteada não há jogo para preparar: o painel da Super Liga vem primeiro.
-    $("jogo").hidden = otherMode || (show && !state.currentGame && sl?.status !== "running");
+    $("jogo").hidden = otherMode || (show && !state.currentGame && sl?.status !== "running" && !superOpenFriendly(sl));
     renderLigaPublicTeams(otherMode);
     if (!show) return;
     const locked = isEditLocked(),
       status = sl?.status || "none",
       statusText = { none: "A MONTAR", setup: "MONTANDO TIMES", running: "EM ANDAMENTO", finished: "ENCERRADA" }[status];
-    let html = '<div class="section-heading"><div><p class="eyebrow">MODO SUPER LIGA</p><h2 id="slTitle">Super Liga SKALAMA</h2></div><span class="season-badge">' + statusText + "</span></div>";
+    box.classList.toggle("is-finished", status === "finished");
+    let html = status === "finished" ? "" : '<div class="section-heading"><div><p class="eyebrow">MODO SUPER LIGA</p><h2 id="slTitle">Super Liga SKALAMA</h2></div><span class="season-badge">' + statusText + "</span></div>";
     if (otherMode && state.currentGame) html += '<p class="notice sl-mode-note">Agora está rolando um jogo do Modo Liga. Veja o placar na aba Modo Liga.</p>';
     if (!sl) {
       html += locked
@@ -2191,12 +2354,13 @@
         groupGames = fixtures.filter((fixture) => fixture.stage === "group"),
         final = fixtures.find((fixture) => fixture.stage === "final"),
         next = superNextFixture();
-      if (status === "finished" && sl.champion) {
-        const color = colorOf(sl.champion),
-          finalGame = final && (state.gameHistory || []).find((game) => game.id === final.gameId);
-        html += '<div class="sl-champion" style="--team-color:' + color.color + ";--team-ink:" + color.ink + '"><p class="eyebrow">CAMPEÃO DA SUPER LIGA</p><strong>' + escapeHtml(teamLabel(sl.champion)) + "</strong>" +
-          (finalGame ? "<span>Final: " + escapeHtml(teamLabel(finalGame.home)) + " " + finalGame.homeScore + " × " + finalGame.awayScore + " " + escapeHtml(teamLabel(finalGame.away)) + (finalGame.shootout && Number.isFinite(finalGame.shootout.homeScore) ? " (pênaltis " + finalGame.shootout.homeScore + "×" + finalGame.shootout.awayScore + ")" : "") + "</span>" : "") + "</div>";
-      }
+      if (status === "finished") {
+        html += renderSuperFinished(sl, locked, otherMode && state.currentGame ? '<p class="notice sl-mode-note">Agora está rolando um jogo do Modo Liga. Veja o placar na aba Modo Liga.</p>' : "");
+        if (!locked) {
+          const playing = new Set([state.currentGame?.home, state.currentGame?.away].filter(Boolean));
+          html += '<details class="sl-teams-details"' + (superTeamsOpen ? " open" : "") + "><summary>Times e jogadores · " + teams.length + " times · " + sl.starters + ' titulares por time</summary><div class="sl-teams">' + teams.map((team) => superTeamCard(team, sl, !playing.has(team.key))).join("") + "</div></details>";
+        }
+      } else {
       if (status === "setup") {
         html += locked
           ? '<p class="help-text">O organizador está montando os times da Super Liga.</p>'
@@ -2239,6 +2403,7 @@
             : "");
       // Os rankings acumulam todas as Super Ligas, então aparecem também enquanto os times são montados.
       if (status === "setup" && (state.gameHistory || []).some((game) => game.superLigaId)) html += superRankings(sl);
+      }
     }
     if (html === superMarkup) return;
     const focusKey = box.contains(document.activeElement) ? document.activeElement?.dataset?.focusKey : "";
@@ -2272,6 +2437,8 @@
       if (action === "create") superCreate();
       else if (action === "draw") superDraw();
       else if (action === "restart") superRestart();
+      else if (action === "friendly") superFriendly();
+      else if (action === "friendly-cancel") superFriendlyCancel();
       else if (target.dataset.slRole) superToggleRole(target.dataset.slRole, Number(target.dataset.slIndex));
       else if (target.dataset.slRemove) superRemovePlayer(target.dataset.slRemove, Number(target.dataset.slIndex));
       else if (target.dataset.slPlay) superPlay(target.dataset.slPlay);
@@ -2294,6 +2461,8 @@
     // "toggle" não sobe pela página; escuta na captura para lembrar se a lista de times está aberta.
     box.addEventListener("toggle", (event) => {
       if (event.target.classList?.contains("sl-teams-details")) { superTeamsOpen = event.target.open; superMarkup = ""; }
+      const sumula = event.target.dataset?.sumula;
+      if (sumula) { if (event.target.open) superOpenSumulas.add(sumula); else superOpenSumulas.delete(sumula); superMarkup = ""; }
     }, true);
   }
   // ---------- SKALAMA News: portal de notícias da liga ----------
@@ -2480,7 +2649,7 @@
       };
     // Ficha do jogo
     const facts = [
-      isSuper ? (isFinal ? (single ? "Super Liga · Jogo único" : "Super Liga · Final") : "Super Liga · Rodada " + (game.round || "")) : "Modo Liga",
+      isSuper ? (isFinal ? (single ? "Super Liga · Jogo único" : "Super Liga · Final") : game.stage === "amistoso" ? "Super Liga · Amistoso" : "Super Liga · Rodada " + (game.round || "")) : "Modo Liga",
       "Jogo " + game.number,
       Number.isFinite(finished.getTime()) ? finished.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }) + " · " + finished.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "",
       game.durationSeconds ? Math.round(game.durationSeconds / 60) + " min de bola rolando" : "",
@@ -2885,7 +3054,7 @@
       shoot = game.shootout && Number.isFinite(game.shootout.homeScore) ? game.shootout : null,
       winnerSide = game.winner === game.home ? "home" : game.winner === game.away ? "away" : null,
       winner = winnerSide ? gameTeamLabel(game, winnerSide) : "", loser = winnerSide === "home" ? away : winnerSide === "away" ? home : "",
-      where = state.venue || "na quadra", mode = game.superLigaId ? (game.stage === "final" ? "na final da Super Liga" : "pela Super Liga") : "na Liga",
+      where = state.venue || "na quadra", mode = game.superLigaId ? (game.stage === "final" ? "na final da Super Liga" : game.stage === "amistoso" ? "no amistoso da Super Liga" : "pela Super Liga") : "na Liga",
       goalsList = (game.goals || []).filter((goal) => goal.player && !goal.ownGoal),
       byPlayer = new Map();
     for (const goal of goalsList) byPlayer.set(goal.player, (byPlayer.get(goal.player) || 0) + 1);
@@ -4531,7 +4700,9 @@
           finalCreated = sameLeague && final && !sl.fixtures.some((fixture) => fixture.stage === "final"),
           upcoming = sameLeague && nextSl.status === "running" ? (nextSl.fixtures || []).find((fixture) => !fixture.gameId) : null;
         const ending =
-          sameLeague && nextSl.status === "finished"
+          current.stage === "amistoso"
+            ? " Amistoso: conta para os rankings e não muda o campeão."
+            : sameLeague && nextSl.status === "finished"
             ? " Campeão da Super Liga: " + teamLabel(nextSl.champion) + "!"
             : finalCreated
               ? " Todos já se enfrentaram. Final: " + teamLabel(final.home) + " × " + teamLabel(final.away) + "."

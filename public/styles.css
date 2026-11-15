@@ -852,3 +852,146 @@ body.light-theme .site-footer{border-color:#deded8;background:#fff;color:#5f5f59
   body:not(.visitor-header) .site-header .brand-lockup h1{white-space:nowrap;font-size:20px}
   body:not(.visitor-header) .site-header .brand-lockup .eyebrow{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 }
+/* ===== Super Liga encerrada: campeão em destaque ===== */
+body .super-liga.is-finished{display:grid;gap:30px;padding:0;border:0;background:transparent;box-shadow:none}
+.slx-top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.slx-top .eyebrow{margin:0 0 6px}
+.slx-title{margin:0;font:900 clamp(34px,5vw,56px)/.92 'Barlow Condensed',sans-serif;letter-spacing:.4px}
+.slx-status{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 14px;border:1px solid #3a3a3a;border-radius:999px;background:#1a1a1a;color:#f2f2ec;font-size:13px;font-weight:800}
+.slx-status i{width:9px;height:9px;border-radius:50%;background:#9a9a92}
+body.light-theme .slx-status{border-color:#d6d5ce;background:#fff;color:#1b1b1b}
+body.light-theme .slx-status i{background:#6b6b65}
+/* Bloco do campeão */
+.slx-champ{display:grid;gap:22px;padding:28px;border:1px solid #262626;border-top:6px solid #ffc400;border-radius:24px;background:radial-gradient(ellipse at 0 0,#3a2f06 0,transparent 55%),#0d0d0d;color:#fff;box-shadow:0 18px 40px #00000040}
+.slx-champ-row{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:24px;align-items:center}
+.slx-champ-main{display:flex;align-items:center;gap:24px;min-width:0}
+.slx-champ-crest{position:relative;flex:0 0 auto}
+.slx-trophy{position:absolute;right:-4px;bottom:-4px;display:grid;place-items:center;width:46px;height:46px;border:3px solid #0d0d0d;border-radius:50%;background:#ffc400;color:#0d0d0d}
+.slx-champ-text{min-width:0}
+.slx-kicker{margin:0 0 6px;color:#ffc400;font-size:13px;font-weight:900;letter-spacing:1.6px}
+.slx-champ-name{margin:0;color:#fff;font:900 clamp(56px,7.4vw,92px)/.86 'Barlow Condensed',sans-serif;letter-spacing:.5px;text-transform:uppercase;overflow-wrap:anywhere}
+.slx-champ-sub{margin:12px 0 0;color:#d6d6cd;font-size:15px;font-weight:600;line-height:1.45}
+.slx-crest{position:relative;display:grid;place-items:center;flex:0 0 auto;overflow:hidden}
+.slx-crest img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.slx-crest-xl{width:150px;height:150px}
+.slx-crest-md{width:58px;height:58px}
+.slx-crest-sm{width:40px;height:40px}
+.slx-crest-xs{width:26px;height:26px}
+.slx-initials{border:2px solid #4a4a4a;border-radius:50%;background:#262626;color:#fff;font:900 18px/1 'Barlow Condensed',sans-serif}
+.slx-crest-xl.slx-initials{font-size:52px;border-width:4px;border-color:#ffc400}
+.slx-crest-xs.slx-initials{font-size:11px;border-width:1px}
+/* Placar da final */
+.slx-final{display:grid;gap:12px;padding:18px;border:1px solid #333;border-radius:18px;background:#1c1c1c;min-width:0}
+.slx-final-tag{margin:0;color:#d6d6cd;font-size:12px;font-weight:900;letter-spacing:1.4px;text-align:center}
+.slx-board{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:10px}
+.slx-bteam{display:grid;justify-items:center;gap:6px;min-width:0;text-align:center}
+.slx-bteam span{color:#fff;font:800 17px/1.05 'Barlow Condensed',sans-serif;text-transform:uppercase;overflow-wrap:anywhere}
+.slx-bscore{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:2px 10px}
+.slx-bscore b{font:900 clamp(48px,5vw,64px)/.9 'Barlow Condensed',sans-serif;font-variant-numeric:tabular-nums}
+.slx-bscore b.is-win{color:#ffc400}
+.slx-bscore b.is-lose{color:#9a9a92}
+.slx-bscore i{color:#9a9a92;font:700 26px/1 'Barlow Condensed',sans-serif;font-style:normal}
+.slx-bscore small{flex-basis:100%;color:#d6d6cd;font-size:11px;font-weight:700;text-align:center}
+.slx-fgoals{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-top:12px;border-top:1px solid #333}
+.slx-fgoals ul{display:grid;align-content:start;gap:6px;margin:0;padding:0;list-style:none;color:#f2f2ec;font-size:13px;font-weight:600}
+.slx-fgoals ul:last-child{text-align:right}
+.slx-fgoals b{color:#ffc400;font-variant-numeric:tabular-nums}
+.slx-fgoals .slx-nogoal{color:#b5b5ad;font-weight:500}
+/* Quem jogou a final */
+.slx-squad{padding-top:18px;border-top:1px solid #2c2c2c}
+.slx-squad-title{margin:0 0 10px;color:#d6d6cd;font-size:12px;font-weight:900;letter-spacing:1.4px}
+.slx-chips{display:flex;flex-wrap:wrap;gap:8px;margin:0;padding:0;list-style:none}
+.slx-chips li{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 14px;border:1px solid #3a3a3a;border-radius:999px;background:#1c1c1c;color:#fff;font-size:13px;font-weight:700}
+.slx-g{display:inline-grid;place-items:center;flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:#ffc400;color:#0d0d0d;font:900 12px/1 'Barlow Condensed',sans-serif}
+/* Cabeçalhos de seção */
+.slx-sec-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 14px;margin-bottom:12px}
+.slx-sec-head h3{margin:0;font:900 clamp(26px,2.8vw,32px)/1 'Barlow Condensed',sans-serif;letter-spacing:.3px}
+.slx-sec-head p{margin:0;color:var(--muted);font-size:13px;font-weight:600}
+/* Rankings */
+.slx-rank-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start}
+.slx-rank-card{min-width:0;padding:16px;border:1px solid #333;border-radius:18px;background:#171717}
+.slx-rank-card h4{margin:0 0 12px;font:900 22px/1 'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.3px}
+.slx-rank-list{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.slx-rank-list li{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:10px;min-height:48px;padding:6px 10px;border-radius:12px}
+.slx-who{display:grid;gap:2px;min-width:0}
+.slx-who strong{font-size:14px;font-weight:800;overflow-wrap:anywhere}
+.slx-who small{color:var(--muted);font-size:12px;font-weight:600;overflow-wrap:anywhere}
+.slx-pos{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;font:900 16px/1 'Barlow Condensed',sans-serif;color:var(--muted)}
+.slx-val{font:900 22px/1 'Barlow Condensed',sans-serif;white-space:nowrap;font-variant-numeric:tabular-nums}
+.slx-val small{margin-left:4px;font:700 12px 'DM Sans',sans-serif}
+.slx-rank-1{min-height:64px!important;background:#0d0d0d;color:#fff;border:1px solid #2c2c2c}
+.slx-rank-1 .slx-pos{background:#ffc400;color:#0d0d0d}
+.slx-rank-1 .slx-who small{color:#c9c9c1}
+.slx-rank-1 .slx-val{color:#ffc400;font-size:36px}
+.slx-rank-1 .slx-val small{color:#ffc400}
+.slx-rank-2 .slx-pos{background:#d9d9d4;color:#1b1b1b}
+.slx-rank-3 .slx-pos{background:#e8c9a8;color:#1b1b1b}
+.slx-rank-n{border-bottom:1px solid #2a2a2a;border-radius:0!important}
+.slx-rank-n:last-child{border-bottom:0}
+body.light-theme .slx-rank-card{border-color:#deded8;background:#fff;box-shadow:0 8px 24px #2017000c}
+body.light-theme .slx-rank-n{border-color:#ecebe6}
+body.light-theme .slx-rank-list li:not(.slx-rank-1) .slx-val{color:#7a5c00}
+/* Escalação da final */
+.slx-lineup-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
+.slx-team{min-width:0;overflow:hidden;border:1px solid #333;border-radius:18px;background:#171717}
+.slx-team.is-champ{border:2px solid #ffc400}
+.slx-team header{display:flex;align-items:center;gap:12px;padding:14px 16px;background:#2a2a2a}
+.slx-team.is-champ header{background:#0d0d0d}
+.slx-team header strong{flex:1;min-width:0;color:#fff;font:900 24px/1 'Barlow Condensed',sans-serif;text-transform:uppercase;overflow-wrap:anywhere}
+.slx-badge{flex:0 0 auto;padding:6px 10px;border:2px solid #d6d6cd;border-radius:999px;color:#fff;font-size:11px;font-weight:900;letter-spacing:1px}
+.slx-team.is-champ .slx-badge{border-color:#ffc400;background:#ffc400;color:#0d0d0d}
+.slx-sec{margin:14px 16px 4px;color:var(--muted);font-size:11px;font-weight:900;letter-spacing:1.4px}
+.slx-plist{margin:0;padding:0 16px;list-style:none}
+.slx-plist li{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-height:44px;padding:6px 0;border-bottom:1px solid #2a2a2a}
+.slx-plist li:last-child{border-bottom:0}
+.slx-pname{display:inline-flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;font-size:14px;font-weight:700;overflow-wrap:anywhere}
+.slx-role{flex:0 0 auto;padding:4px 8px;border-radius:6px;font-size:10px;font-weight:900;letter-spacing:.8px}
+.slx-role.is-tit{background:#f2f2ec;color:#0d0d0d;border:1px solid #f2f2ec}
+.slx-role.is-res{border:1px dashed #b5b5ad;color:#d6d6cd}
+.slx-ev{flex:0 0 auto;font-size:12px;font-weight:800}
+.slx-ev-out{color:#ff8a80}
+.slx-ev-in{color:#7ddc9b}
+.slx-team footer{margin-top:8px;padding:12px 16px;border-top:1px solid #2a2a2a;color:var(--muted);font-size:12px;font-weight:600;line-height:1.5}
+body.light-theme .slx-team{border-color:#deded8;background:#fff;box-shadow:0 8px 24px #2017000c}
+body.light-theme .slx-team.is-champ{border-color:#ffc400}
+body.light-theme .slx-team header{background:#2a2a2a}
+body.light-theme .slx-team.is-champ header{background:#0d0d0d}
+body.light-theme .slx-plist li{border-color:#ecebe6}
+body.light-theme .slx-role.is-tit{background:#1b1b1b;color:#fff;border-color:#1b1b1b}
+body.light-theme .slx-role.is-res{border-color:#6b6b65;color:#4a4a45}
+body.light-theme .slx-ev-out{color:#a3261c}
+body.light-theme .slx-ev-in{color:#1b6e36}
+body.light-theme .slx-team footer{border-color:#ecebe6}
+/* Outros jogos */
+.slx-other-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.slx-other{padding:14px 16px;border:1px solid #333;border-radius:16px;background:#171717}
+.slx-other-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px}
+.slx-tag{padding:6px 10px;border:1px solid #6b5a14;border-radius:999px;background:#ffc40014;color:#ffc400;font-size:11px;font-weight:900;letter-spacing:.6px}
+.slx-other-game{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px 12px;font-weight:800}
+.slx-oteam{display:inline-flex;align-items:center;gap:8px;font-size:14px}
+.slx-oscore{font:900 26px/1 'Barlow Condensed',sans-serif;font-variant-numeric:tabular-nums}
+.slx-sumula{margin-top:10px}
+.slx-sumula>summary{display:inline-flex;align-items:center;min-height:44px;padding:0 16px;border:1px solid #545454;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer;list-style:none}
+.slx-sumula>summary::-webkit-details-marker{display:none}
+.slx-sumula>summary::after{content:"▾";margin-left:8px}
+.slx-sumula[open]>summary::after{content:"▴"}
+.slx-sumula>summary:focus-visible{outline:3px solid #6f8fe8;outline-offset:2px}
+.slx-sumula .nm-report{margin-top:12px}
+body.light-theme .slx-other{border-color:#deded8;background:#fff;box-shadow:0 8px 24px #2017000c}
+body.light-theme .slx-tag{border-color:#c9a634;background:#fff8dc;color:#7a5c00}
+body.light-theme .slx-sumula>summary{border-color:#bdbdb5;background:#fff;color:#202020}
+.slx-org{display:grid;gap:4px}
+.slx-org .help-text{margin:0}
+.slx-org .button{min-height:44px}
+@media(max-width:900px){.slx-champ-row{grid-template-columns:minmax(0,1fr)}.slx-rank-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:620px){
+  .slx-top{align-items:center}
+  .slx-champ{padding:22px 16px;border-radius:20px;text-align:center}
+  .slx-champ-main{flex-direction:column;gap:14px}
+  .slx-crest-xl{width:120px;height:120px}
+  .slx-champ-name{font-size:clamp(48px,15vw,64px)}
+  .slx-chips{justify-content:center}
+  .slx-fgoals{text-align:left}
+  .slx-lineup-grid{grid-template-columns:minmax(0,1fr)}
+  .slx-other-row,.slx-other-game{justify-content:center}
+}
