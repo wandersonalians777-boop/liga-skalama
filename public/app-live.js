@@ -201,7 +201,7 @@
     const publicTeams = $("publicTeamsSection");
     if (publicTeams) publicTeams.hidden = !locked || !(state?.teams || []).length;
     document.querySelectorAll("button,input,select,textarea").forEach((element) => {
-      if (element.id === "themeToggle" || element.id === "adminAccessButton" || element.closest("#adminLogin") || element.closest("#artStudio") || element.closest("#newsPublic") || element.hasAttribute("data-view-button")) return;
+      if (element.id === "themeToggle" || element.id === "adminAccessButton" || element.closest("#adminLogin") || element.closest("#artStudio") || element.closest("#newsPublic") || element.closest("#newsPush") || element.hasAttribute("data-view-button")) return;
       if (locked) {
         if (!element.hasAttribute("data-access-locked")) { element.dataset.accessWasDisabled = String(element.disabled); element.setAttribute("data-access-locked", ""); }
         element.disabled = true;
@@ -2822,6 +2822,151 @@
     await saveNews({ deleted_at: new Date().toISOString() }, "Notícia apagada.");
     closeNewsPost();
   }
+  // ---------- Notificações push do SKALAMA News ----------
+  // A permissão só é pedida quando a pessoa toca em "Receber notícias".
+  const pushInfo = { reg: null, sub: null, busy: false, checked: false };
+  function pushIsIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  }
+  function pushStandalone() {
+    return !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+  }
+  function pushSupported() {
+    return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  }
+  function pushAvailable() {
+    return !!(shared && client && window.LIGA_CONFIG?.vapidPublicKey);
+  }
+  function pushKey() {
+    const key = window.LIGA_CONFIG.vapidPublicKey, pad = "=".repeat((4 - (key.length % 4)) % 4);
+    const raw = atob((key + pad).replace(/-/g, "+").replace(/_/g, "/"));
+    return Uint8Array.from(raw, (char) => char.charCodeAt(0));
+  }
+  async function savePushSubscription(sub) {
+    const data = sub.toJSON();
+    const { error } = await client.rpc("subscribe_push", { p_endpoint: data.endpoint, p_p256dh: data.keys.p256dh, p_auth: data.keys.auth, p_user_agent: navigator.userAgent.slice(0, 300) });
+    if (error) throw error;
+  }
+  // Toque na notificação com o site já aberto: o service worker pede para abrir a notícia.
+  function openUrlFromPush(url) {
+    try {
+      const target = new URL(url, location.href);
+      if (target.hash.startsWith("#noticia-")) {
+        if (location.hash === target.hash) openNewsFromHash();
+        else location.hash = target.hash;
+      }
+    } catch {}
+  }
+  async function initPush() {
+    if (pushAvailable() && pushSupported()) {
+      navigator.serviceWorker.addEventListener("message", (event) => { if (event.data?.type === "skalama-open-url") openUrlFromPush(event.data.url); });
+      try {
+        pushInfo.reg = await navigator.serviceWorker.register("/sw.js");
+        pushInfo.sub = await pushInfo.reg.pushManager.getSubscription();
+        // Mantém o servidor em dia (por exemplo, se a inscrição foi descartada depois de falhas).
+        if (pushInfo.sub && Notification.permission === "granted") savePushSubscription(pushInfo.sub).catch(() => {});
+      } catch (error) {
+        console.warn("Notificações indisponíveis:", error);
+      }
+    }
+    pushInfo.checked = true;
+    renderNewsPush();
+  }
+  function renderNewsPush() {
+    const box = $("newsPush");
+    if (!box) return;
+    const ios = pushIsIOS();
+    let html = "";
+    if (!pushAvailable()) html = "";
+    else if (ios && !pushStandalone())
+      html = '<p class="news-push-text">🔔 <strong>Quer receber as notícias no celular?</strong> No iPhone, toque em Compartilhar › Adicionar à Tela de Início e abra o site por lá para ativar.</p>';
+    else if (!pushSupported() || !pushInfo.checked) html = "";
+    else if (Notification.permission === "denied")
+      html = '<p class="news-push-text">🔕 <strong>As notificações estão bloqueadas neste navegador.</strong> Para liberar, toque no cadeado (ou no ícone de configurações) ao lado do endereço do site, permita <b>Notificações</b> e recarregue a página.' +
+        (ios ? " No iPhone, vá em Ajustes › Notificações › LIGA SKALAMA e ative Permitir Notificações." : " No celular Android, também dá em Configurações › Apps › Chrome › Notificações.") + "</p>";
+    else if (pushInfo.sub)
+      html = '<div class="news-push-on"><span>🔔 Notificações ativadas</span><button type="button" class="text-button" data-push-off' + (pushInfo.busy ? " disabled" : "") + ">Desativar</button>" +
+        (!isEditLocked() ? '<button type="button" class="button button-outline button-small" data-push-test' + (pushInfo.busy ? " disabled" : "") + ">Enviar notificação de teste</button>" : "") + "</div>";
+    else
+      html = '<div class="news-push-off"><button type="button" class="button button-primary news-push-btn" data-push-on' + (pushInfo.busy ? " disabled" : "") + '>🔔 Receber notícias</button><p class="news-push-text">Avisamos no seu celular ou computador quando sair notícia nova.' +
+        (!isEditLocked() ? " Depois de ativar, aparece o botão de notificação de teste." : "") + "</p></div>";
+    box.hidden = !html;
+    if (box.innerHTML !== html) box.innerHTML = html;
+  }
+  async function enablePush() {
+    if (pushInfo.busy) return;
+    pushInfo.busy = true;
+    renderNewsPush();
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        if (permission === "default") notify("Tudo bem, você pode ativar depois.");
+        return;
+      }
+      pushInfo.reg = pushInfo.reg || (await navigator.serviceWorker.register("/sw.js"));
+      await navigator.serviceWorker.ready;
+      const sub = (await pushInfo.reg.pushManager.getSubscription()) || (await pushInfo.reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: pushKey() }));
+      try {
+        await savePushSubscription(sub);
+      } catch (error) {
+        await sub.unsubscribe().catch(() => {});
+        throw error;
+      }
+      pushInfo.sub = sub;
+      notify("Pronto! Você vai receber as notícias da liga neste aparelho.");
+    } catch (error) {
+      notify("Não deu para ativar as notificações: " + (error.message || error), true);
+    } finally {
+      pushInfo.busy = false;
+      renderNewsPush();
+    }
+  }
+  async function disablePush() {
+    if (pushInfo.busy || !pushInfo.sub) return;
+    pushInfo.busy = true;
+    renderNewsPush();
+    try {
+      await client.rpc("unsubscribe_push", { p_endpoint: pushInfo.sub.endpoint });
+      await pushInfo.sub.unsubscribe();
+      pushInfo.sub = null;
+      notify("Notificações desativadas neste aparelho.");
+    } catch (error) {
+      notify("Não deu para desativar: " + (error.message || error), true);
+    } finally {
+      pushInfo.busy = false;
+      renderNewsPush();
+    }
+  }
+  // Organizador: manda um aviso só para este aparelho.
+  async function sendTestPush() {
+    if (pushInfo.busy || !pushInfo.sub || isEditLocked()) return;
+    pushInfo.busy = true;
+    renderNewsPush();
+    try {
+      const { data, error } = await client.functions.invoke("notify-news", { body: { test: true, endpoint: pushInfo.sub.endpoint } });
+      if (error) {
+        let message = error.message;
+        try { message = (await error.context.json()).error || message; } catch {}
+        throw new Error(message);
+      }
+      if (data?.ok) notify("Teste enviado. A notificação deve chegar em alguns segundos.");
+      else notify("O serviço de notificação não aceitou este aparelho. Desative e ative de novo.", true);
+    } catch (error) {
+      notify("Não deu para enviar o teste: " + (error.message || error), true);
+    } finally {
+      pushInfo.busy = false;
+      renderNewsPush();
+    }
+  }
+  function bindNewsPush() {
+    $("newsPush")?.addEventListener("click", (event) => {
+      const target = event.target.closest("[data-push-on],[data-push-off],[data-push-test]");
+      if (!target || target.disabled) return;
+      if ("pushOn" in target.dataset) enablePush();
+      else if ("pushOff" in target.dataset) disablePush();
+      else if ("pushTest" in target.dataset) sendTestPush();
+    });
+  }
   function bindNews() {
     const section = $("news");
     if (!section) return;
@@ -2887,6 +3032,7 @@
     renderArt();
     renderSuperLiga();
     if (!newsDraft) renderNews();
+    renderNewsPush();
     markActiveTab();
     applyEditLock();
   }
@@ -4282,6 +4428,7 @@
     });
     bindSuperLiga();
     bindNews();
+    bindNewsPush();
     $("artDownload").addEventListener("click", downloadArt);
     $("artShare").addEventListener("click", shareArt);
     bindSwapGrid();
@@ -4458,6 +4605,7 @@
     setView(localStorage.getItem("liga-skalama-view") || "home");
     // Link direto de notícia (#noticia-slug) abre o SKALAMA News; senão, carrega a manchete da Tela principal.
     if (!openNewsFromHash()) loadNews();
+    initPush();
     setTheme(localStorage.getItem("liga-skalama-theme-v2") || "light");
     setInterval(() => {
       renderTimer();

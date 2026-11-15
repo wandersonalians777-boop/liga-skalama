@@ -616,3 +616,11 @@ body.light-theme .nm-lineup{background:#fff}
 .nm-crest{position:relative;display:block}
 .nm-crest img{position:absolute;top:8%;left:8%;width:84%;height:84%;max-width:none;padding:0;object-fit:contain;object-position:center}
 .nm-crest-empty{display:grid}
+/* SKALAMA News: botão de notificações */
+.news-push{display:grid;gap:6px;padding:12px 14px;border:1px dashed var(--yellow);border-radius:12px;background:var(--panel2)}
+.news-push-off{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.news-push-text{margin:0;font-size:12px;line-height:1.5;color:var(--ink)}
+.news-push-off .news-push-text{color:var(--muted);flex:1;min-width:200px}
+.news-push-on{display:flex;flex-wrap:wrap;align-items:center;gap:12px;font-weight:800;font-size:13px}
+.news-push-on>span{color:#16803c}
+body:not(.light-theme) .news-push-on>span{color:#73cf8d}

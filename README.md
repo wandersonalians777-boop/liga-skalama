@@ -76,6 +76,16 @@ O **SKALAMA News** é o portal de notícias da liga. Ele abre pelo botão em des
 - **Gerar texto do jogo**: escolha uma partida do histórico e o site monta um rascunho com placar, gols, craque e goleiro do jogo, para revisar antes de publicar.
 - Os dados ficam nas tabelas `news_posts`, `news_post_players`, `news_media` e `news_highlights`. Para ativar num banco existente, execute `supabase/migrations/20261115_skalama_news.sql`. Sem Supabase, as notícias ficam só no navegador.
 
+## Notificações do SKALAMA News (Web Push)
+
+Quem toca em **🔔 Receber notícias** no SKALAMA News recebe uma notificação no celular ou computador sempre que uma notícia é publicada; tocar na notificação abre a notícia (`https://skalama.com.br/#noticia-...`). A permissão só é pedida quando a pessoa toca no botão.
+
+- **iPhone**: só funciona com o site adicionado à Tela de Início (Compartilhar › Adicionar à Tela de Início) e aberto por lá (iOS 16.4 ou mais novo). O botão mostra essa instrução.
+- **Organizador**: com as notificações ativadas, aparece **Enviar notificação de teste**, que manda um aviso só para o próprio aparelho.
+- **Como funciona**: o gatilho `news_push_publish` em `news_posts` chama a Edge Function `notify-news` (via `pg_net`) quando a notícia vira "published"; a função envia para todas as inscrições (`push_subscriptions`), apaga as que não existem mais (404/410) e registra em `news_push_log` (cada notícia é notificada uma vez só). O job `news-publish-scheduled` (pg_cron, a cada 5 minutos) publica as notícias agendadas que já passaram do horário, o que também dispara a notificação.
+- **Segredos**: as chaves VAPID e o segredo do gatilho (`notify_secret`) ficam só no Vault do Supabase (gerados lá dentro); a chave VAPID pública está em `src/app/layout.jsx`. Nada secreto fica no repositório.
+- Arquivos: `public/sw.js`, `public/manifest.webmanifest`, `public/icons/`, `supabase/functions/notify-news/`, migrações `20261115_news_web_push*.sql`.
+
 ## Destaques da rodada
 
 A tela principal apresenta Jogador da noite e Goleiro da noite a partir da média de score das partidas concluídas desde o último sorteio. Um novo sorteio inicia uma nova rodada para esses destaques, sem apagar o histórico ou os rankings acumulados.
