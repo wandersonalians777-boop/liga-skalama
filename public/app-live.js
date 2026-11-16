@@ -1115,6 +1115,7 @@
         "</option>";
     if (choice.innerHTML !== markup) choice.innerHTML = markup;
     if (selected === home || selected === away) choice.value = selected;
+    renderLive();
   }
   function renderGoalOptions() {
     const game = state.currentGame, teamSelect = $("goalTeam"), scorerSelect = $("goalScorer"), assistSelect = $("goalAssist");
@@ -1185,8 +1186,8 @@
       .sort((a, b) => (Number(a.sub.minute) || 0) - (Number(b.sub.minute) || 0) || a.index - b.index)
       .forEach(({ sub }) => {
         if (sub.keeper || (current && sub.out === current)) {
-          current = sub.in;
-          spells.push({ player: sub.in, minute: Number(sub.minute) || 0, at: subMoment(game, sub), out: sub.out });
+          current = sub.keeperIn || sub.in;
+          spells.push({ player: current, minute: Number(sub.minute) || 0, at: subMoment(game, sub), out: sub.out });
         }
       });
     return spells;
@@ -1753,10 +1754,11 @@
         const goal = item.goal, times = item.count > 1 ? " ×" + item.count + (item.count === 3 ? " · hat-trick" : "") : "";
         return { ...item, html: '<span class="hx-ev hx-ev-goal">' + HX_BALL + '<span><span class="sr-only">Gol: </span><strong>' + escapeHtml(displayName(goal.player || "Gol")) + escapeHtml(times) + "</strong>" + (goal.ownGoal ? ' <em class="hx-own">contra</em>' : "") + (item.assists.length ? '<small>assist. ' + item.assists.map((name) => escapeHtml(displayName(name))).join(", ") + "</small>" : "") + "</span></span>" };
       }
-      const sub = item.sub, sideSpells = spells[item.side], toGoal = sub.keeper || sideSpells.some((spell) => spell.player === sub.in && spell.minute === (Number(sub.minute) || 0) && spell.out === sub.out),
-        wasKeeper = toGoal && sideSpells.some((spell) => spell.player === sub.in && spell.minute < (Number(sub.minute) || 0)),
-        inText = displayName(sub.in) + (toGoal ? (wasKeeper ? " volta pro gol" : " vai pro gol") : "");
-      return { ...item, html: '<span class="hx-ev hx-ev-sub">' + HX_SWAP + '<span><span class="sr-only">Substituição: </span><strong class="hx-in"><span aria-hidden="true">↑ </span><span class="sr-only">entra </span>' + escapeHtml(inText) + '</strong><strong class="hx-out"><span aria-hidden="true">↓ </span><span class="sr-only">sai </span>' + escapeHtml(displayName(sub.out)) + "</strong></span></span>" };
+      const sub = item.sub, sideSpells = spells[item.side], goalie = sub.keeperIn || sub.in, toGoal = sub.keeper || sideSpells.some((spell) => spell.player === goalie && spell.minute === (Number(sub.minute) || 0) && spell.out === sub.out),
+        wasKeeper = toGoal && sideSpells.some((spell) => spell.player === goalie && spell.minute < (Number(sub.minute) || 0)),
+        goalText = toGoal ? (wasKeeper ? " volta pro gol" : " vai pro gol") : "",
+        inText = displayName(sub.in) + (goalie === sub.in ? goalText : "");
+      return { ...item, html: '<span class="hx-ev hx-ev-sub">' + HX_SWAP + '<span><span class="sr-only">Substituição: </span><strong class="hx-in"><span aria-hidden="true">↑ </span><span class="sr-only">entra </span>' + escapeHtml(inText) + '</strong><strong class="hx-out"><span aria-hidden="true">↓ </span><span class="sr-only">sai </span>' + escapeHtml(displayName(sub.out)) + "</strong>" + (goalie !== sub.in && toGoal ? "<small>🧤 " + escapeHtml(displayName(goalie)) + goalText + "</small>" : "") + "</span></span>" };
     });
   }
   function hxPanel(game, key, title, html) {
@@ -4507,9 +4509,10 @@
         ? "Super Liga SKALAMA: quem entra vem do banco do mesmo time. Quem sai vai para o banco e pode voltar."
         : "Modo Liga: entra alguém dos outros times ou volta quem já saiu. Quem sai pode voltar depois.";
   }
-  async function substitutePlayer() {
+  async function substitutePlayer(args) {
     if (substituting) return;
-    const game = state.currentGame, team = $("subTeam").value, out = $("subOut").value, inn = $("subIn").value;
+    const opts = args && args.team ? args : {};
+    const game = state.currentGame, team = opts.team || $("subTeam").value, out = opts.out || $("subOut").value, inn = opts.inn || $("subIn").value;
     if (!game || ![game.home, game.away].includes(team)) { notify("Comece um jogo para fazer substituições.", true); return; }
     const side = team === game.home ? "home" : "away", playersKey = side + "Players", benchKey = side + "Bench", keeperKey = side + "Keeper";
     const players = [...(game[playersKey] || [])], bench = [...(game[benchKey] || [])], coca = game.timerMode === "coca";
@@ -4524,11 +4527,13 @@
     }
     players[players.indexOf(out)] = inn;
     const keeperOut = out === game[keeperKey], minute = Math.max(1, Math.ceil(timerElapsed() / 60)), id = crypto.randomUUID();
-    const nextGame = { ...game, [playersKey]: players, substitutions: [...(game.substitutions || []), { id, team, out, in: inn, minute, keeper: keeperOut }] };
+    // Saiu o goleiro: vai pro gol quem entra ou alguém que já está em campo (keeperIn).
+    const keeperTo = keeperOut && opts.keeperTo && players.includes(opts.keeperTo) ? opts.keeperTo : inn;
+    const nextGame = { ...game, [playersKey]: players, substitutions: [...(game.substitutions || []), { id, team, out, in: inn, minute, keeper: keeperOut, ...(keeperOut && keeperTo !== inn ? { keeperIn: keeperTo } : {}) }] };
     nextGame[benchKey] = [...bench.filter((player) => player !== inn), out];
     if (!coca && !fromBench) nextGame.loans = [...(game.loans || []), { player: inn, fromTeam: source.name, toTeam: team, substitution: true }];
-    if (keeperOut) nextGame[keeperKey] = inn;
-    const item = { id, gameId: game.id, minute, type: "sub", player: inn, outPlayer: out, team, note: "Sai " + displayName(out) + " · Entra " + displayName(inn) + (keeperOut ? " (assume o gol)" : ""), createdAt: new Date().toISOString(), expiresAt: null };
+    if (keeperOut) nextGame[keeperKey] = keeperTo;
+    const item = { id, gameId: game.id, minute, type: "sub", player: inn, outPlayer: out, team, note: "Sai " + displayName(out) + " · Entra " + displayName(inn) + (keeperOut ? " (" + displayName(keeperTo) + " assume o gol)" : ""), createdAt: new Date().toISOString(), expiresAt: null };
     substituting = true; renderSubstitutions();
     try {
       await saveState({ currentGame: nextGame, incidents: [...(state.incidents || []), item] }, "Substituição: sai " + displayName(out) + ", entra " + displayName(inn) + ".");
@@ -4687,10 +4692,12 @@
     const timer = state.timer || freshTimer(state.currentGame.timerMode),
       now = Date.now(),
       limit = pauseLimitMs(timer);
+    const pauseLog = (kind) => ({ ...state.currentGame, pauseLog: [...(state.currentGame.pauseLog || []), { kind, minute: Math.max(1, Math.ceil(timerElapsed(timer) / 60)), at: now }] });
     if (isPauseActive(timer)) {
       const used = pauseBudgetUsed(timer);
       await saveState(
         {
+          currentGame: pauseLog("resume"),
           timer: {
             ...timer,
             endsAt: now + timerRemaining(timer) * 1000,
@@ -4708,6 +4715,7 @@
     if (!timer.endsAt || timerRemaining() === 0) return;
     await saveState(
       {
+        currentGame: pauseLog("pause"),
         timer: {
           ...timer,
           endsAt: null,
@@ -4918,6 +4926,588 @@
     moon: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M20.7 14.6A8.6 8.6 0 0 1 9.4 3.3a.8.8 0 0 0-1-1A10 10 0 1 0 21.7 15.6a.8.8 0 0 0-1-1Z"/></svg>',
     sun: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4.6" fill="currentColor"/><path d="M12 1.8v2.6M12 19.6v2.6M4.8 4.8l1.8 1.8M17.4 17.4l1.8 1.8M1.8 12h2.6M19.6 12h2.6M4.8 19.2l1.8-1.8M17.4 6.6l1.8-1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
   };
+  // ---------- Jogo ao vivo: placar do espectador e painel do organizador ----------
+  // Os controles antigos (#liveEngine, escondidos) continuam sendo o "motor": a tela nova só preenche e aciona esses controles,
+  // então as regras (duração, pausa, pênaltis, ajustes, substituições, histórico) não mudam.
+  const lvUI = { sheet: null, prepOpen: false, endAutoFor: null, marks: {} };
+  function lvCrest(key, size) {
+    const label = teamLabel(key), src = crestFor(key, label),
+      initials = String(label || "").replace(/^time\s+/i, "").split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+    return '<span class="lv-crest lv-crest-' + size + (src ? "" : " lv-initials") + '" aria-hidden="true">' + (src ? '<img src="' + escapeHtml(src) + '" alt="">' : escapeHtml(initials || "?")) + "</span>";
+  }
+  function lvSet(id, html) {
+    const el = $(id);
+    if (el && lvUI.marks[id] !== html) { lvUI.marks[id] = html; el.innerHTML = html; }
+    return el;
+  }
+  function lvMinute() {
+    return Math.max(1, Math.ceil(Math.max(0, Math.floor(timerElapsed())) / 60));
+  }
+  function lvModeName(mode) {
+    return mode === "coca" ? "Modo Super Liga" : "Modo Liga";
+  }
+  function lvGameOfNight(game) {
+    const same = (state.gameHistory || []).filter((item) => game.roundId ? item.roundId === game.roundId : !item.superLigaId).length;
+    return same + 1;
+  }
+  function lvDurationMin(game) {
+    const timer = state.timer || {};
+    return game ? Math.round((timer.duration || (game.durationMinutes || 8) * 60) / 60) : Math.min(180, Math.max(1, Number(state.durationMinutes) || 8));
+  }
+  function lvKeeperOf(game, side) {
+    return game ? game[side + "Keeper"] : $(side === "home" ? "keeperHome" : "keeperAway")?.value;
+  }
+  function lvChips(players, keeperName, game) {
+    return players.length
+      ? players.map((name) => {
+          const suspension = game && (state.incidents || []).find((item) => item.type === "hand" && item.gameId === game.id && item.player === name && Number(item.expiresAt) > Date.now());
+          return '<li class="lv-chip' + (suspension ? " is-out" : "") + '">' + escapeHtml(displayName(name)) + (name === keeperName ? ' <b class="lv-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + (suspension ? ' <small>fora</small>' : "") + "</li>";
+        }).join("")
+      : '<li class="lv-muted">Sem jogadores</li>';
+  }
+  function lvScorers(game, team) {
+    const list = goals.filter((goal) => goal.game_id === game.id && scoreTeam(goal, game) === team).sort((a, b) => (Number(a.minute) || 0) - (Number(b.minute) || 0));
+    return list.length
+      ? list.map((goal) => "<li>⚽ " + escapeHtml(displayName(goal.player_name || "Gol")) + " " + (Number(goal.minute) || 0) + "′" + (goal.own_goal ? " <small>(contra)</small>" : "") + "</li>").join("")
+      : '<li class="lv-muted">Sem gols</li>';
+  }
+  // Times na espera: na Liga, a fila de desafiantes; na Super Liga, os outros times.
+  function lvWaiting(game) {
+    const playing = new Set([game?.home, game?.away].filter(Boolean));
+    if ((game?.timerMode || activeLiveMode()) === "coca") return (state.superLiga?.teams || []).map((team) => team.key).filter((key) => !playing.has(key));
+    const order = [...(state.challengeQueue || []), ...(state.teams || []).map((team) => team.name)];
+    return order.filter((name, index) => name && !playing.has(name) && order.indexOf(name) === index && (state.teams || []).some((team) => team.name === name));
+  }
+  // Último jogo encerrado do modo que está valendo agora (para o card ENCERRADO).
+  function lvLastGame() {
+    const mode = activeLiveMode(), history = state.gameHistory || [];
+    const list = mode === "coca"
+      ? history.filter((game) => game.superLigaId && game.superLigaId === state.superLiga?.id)
+      : history.filter((game) => !game.superLigaId && (!state.roundId || game.roundId === state.roundId));
+    return list[list.length - 1] || null;
+  }
+  function lvResultText(game) {
+    const winSide = game.winner === game.home ? "home" : game.winner === game.away ? "away" : null,
+      shoot = game.shootout && Number.isFinite(game.shootout.homeScore) ? game.shootout : null;
+    if (!winSide) return "Empate";
+    const name = gameTeamLabel(game, winSide);
+    if (Number(game.homeScore) === Number(game.awayScore) && shoot) return name + " venceu nos pênaltis (" + shoot[winSide + "Score"] + " × " + shoot[(winSide === "home" ? "away" : "home") + "Score"] + ")";
+    return "Vencedor: " + name;
+  }
+  function lvEndedCard(game) {
+    const winSide = game.winner === game.home ? "home" : game.winner === game.away ? "away" : null,
+      pending = currentPending(),
+      nextTeams = pending ? [pending.home, pending.away].filter((team) => team && team !== game.home && team !== game.away) : [],
+      nextLine = pending && pending.home && pending.away
+        ? activeLiveMode() === "coca" ? "Próximo: " + teamLabel(pending.home) + " × " + teamLabel(pending.away)
+          : nextTeams.length ? "Próximo: " + nextTeams.map(teamLabel).join(" e ") + (nextTeams.length > 1 ? " entram" : " entra") + " em quadra" : ""
+        : "",
+      col = (side) => '<div class="lv-fcol' + (winSide && winSide !== side ? " is-lose" : "") + '">' + lvCrest(game[side], "l") + "<strong>" + escapeHtml(gameTeamLabel(game, side)) + "</strong></div>";
+    return '<section class="lv-card is-ended" aria-label="Jogo encerrado"><div class="lv-strip"><span class="lv-tag">ENCERRADO</span><span>' + lvModeName(game.timerMode) + " · Jogo " + game.number + "</span></div>" +
+      '<div class="lv-final">' + col("home") + '<div class="lv-fscore"><b class="' + (winSide === "away" ? "is-lose" : "") + '">' + (Number(game.homeScore) || 0) + '</b><i aria-hidden="true">×</i><b class="' + (winSide === "home" ? "is-lose" : "") + '">' + (Number(game.awayScore) || 0) + "</b></div>" + col("away") + "</div>" +
+      '<p class="lv-pill">' + escapeHtml(lvResultText(game)) + "</p>" + (nextLine ? '<p class="lv-nextline">' + escapeHtml(nextLine) + "</p>" : "") + "</section>";
+  }
+  function lvNextCard(home, away) {
+    const minutes = lvDurationMin(null);
+    return '<section class="lv-card is-next" aria-label="Próxima partida"><div class="lv-strip"><span class="lv-tag">PRÓXIMA PARTIDA</span><span>' + lvModeName(activeLiveMode()) + "</span>" + (state.venue ? '<span class="lv-strip-right">' + escapeHtml(state.venue) + "</span>" : "") + "</div>" +
+      '<div class="lv-score"><div class="lv-side">' + lvCrest(home, "xl") + "<strong>" + escapeHtml(teamLabel(home)) + '</strong></div><div class="lv-mid"><div class="lv-vs" aria-hidden="true">×</div><div class="lv-idle-clock">' + clockText(minutes * 60) + '</div><small>Aguardando o início</small></div><div class="lv-side">' + lvCrest(away, "xl") + "<strong>" + escapeHtml(teamLabel(away)) + "</strong></div></div>" +
+      '<p class="lv-vsline">' + escapeHtml(teamLabel(home) + " × " + teamLabel(away)) + "</p></section>";
+  }
+  function lvLiveCard(game) {
+    const homeScore = currentScore(game.home), awayScore = currentScore(game.away), shoot = shootoutOf(game),
+      shootLine = shoot ? (() => { const sc = shootoutScores(shoot, game); return '<p class="lv-shoot">Pênaltis ' + sc.home + " × " + sc.away + "</p>"; })() : "",
+      waiting = lvWaiting(game),
+      side = (key, cls) => '<div class="lv-side ' + cls + '">' + lvCrest(key, "xl") + "<strong>" + escapeHtml(teamLabel(key)) + "</strong></div>";
+    return '<section class="lv-card is-live" aria-label="Jogo ao vivo"><div class="lv-strip"><span class="lv-live"><i aria-hidden="true"></i>AO VIVO</span><span>' + lvModeName(game.timerMode) + " · Jogo " + lvGameOfNight(game) + " da noite</span>" +
+      '<span class="lv-strip-right">' + escapeHtml([state.venue, lvDurationMin(game) + " min"].filter(Boolean).join(" · ")) + "</span></div>" +
+      '<div class="lv-score">' + side(game.home, "lv-home") +
+      '<div class="lv-mid"><div class="lv-nums" aria-label="' + escapeHtml(teamLabel(game.home) + " " + homeScore + " a " + awayScore + " " + teamLabel(game.away)) + '"><b>' + homeScore + '</b><i aria-hidden="true">×</i><b>' + awayScore + "</b></div>" +
+      '<div class="lv-clock-value" data-lv-clock>' + clockText(timerRemaining()) + '</div><div class="lv-bar" aria-hidden="true"><i data-lv-bar></i></div><small data-lv-clock-label>tempo restante</small>' + shootLine + "</div>" +
+      side(game.away, "lv-away") + "</div>" +
+      '<div class="lv-scorers"><ul aria-label="' + escapeHtml("Gols do " + teamLabel(game.home)) + '">' + lvScorers(game, game.home) + '</ul><ul aria-label="' + escapeHtml("Gols do " + teamLabel(game.away)) + '">' + lvScorers(game, game.away) + "</ul></div>" +
+      '<div class="lv-field"><p class="lv-field-title">EM CAMPO</p><div class="lv-field-grid">' +
+      ["home", "away"].map((s) => '<div><small>' + escapeHtml(teamLabel(game[s])) + '</small><ul class="lv-chips">' + lvChips(lineupForTeam(game[s], game), game[s + "Keeper"], game) + "</ul></div>").join("") + "</div></div></section>" +
+      (waiting.length ? '<section class="lv-wait" aria-label="Na espera"><p class="lv-field-title">NA ESPERA</p><ul>' + waiting.map((key) => "<li>" + lvCrest(key, "s") + "<span>" + escapeHtml(teamLabel(key)) + "</span></li>").join("") + "</ul></section>" : "");
+  }
+  // Atualiza o relógio, a barra e o estado sem redesenhar o card inteiro.
+  function lvTick(root, game) {
+    if (!root || !game) return;
+    const timer = state.timer || {}, remaining = timerRemaining(timer), duration = timer.duration || 480;
+    const clock = root.querySelector("[data-lv-clock]"), bar = root.querySelector("[data-lv-bar]"), label = root.querySelector("[data-lv-clock-label]");
+    if (clock) clock.textContent = clockText(remaining);
+    if (bar) bar.style.width = Math.max(0, Math.min(100, (remaining / duration) * 100)) + "%";
+    if (label) label.textContent = remaining === 0 ? "fim do tempo" : isPauseActive(timer) ? "⏸ pausado" : "tempo restante";
+  }
+  function renderSpectator() {
+    const box = $("lvSpectator");
+    if (!box) return;
+    const locked = isEditLocked();
+    box.hidden = !locked;
+    if (!locked) return;
+    const game = state.currentGame, pending = currentPending(), last = lvLastGame();
+    let html;
+    if (game) html = lvLiveCard(game);
+    else if (pending?.home && pending?.away && (pending.prepared || !last)) html = lvNextCard(pending.home, pending.away);
+    else if (last) html = lvEndedCard(last);
+    else html = '<section class="lv-card is-next"><div class="lv-strip"><span class="lv-tag">PRÓXIMA PARTIDA</span><span>' + lvModeName(activeLiveMode()) + '</span></div><p class="lv-empty">Os jogos aparecem aqui quando o organizador preparar a partida.</p></section>';
+    lvSet("lvSpectator", html);
+    lvTick(box, game);
+  }
+  // ---------- Painel do organizador ----------
+  function lvMatchTeams() {
+    const game = state.currentGame, pending = currentPending();
+    return { home: game?.home || $("matchHome").value || pending?.home || "", away: game?.away || $("matchAway").value || pending?.away || "" };
+  }
+  function lvConvocados(team, side) {
+    return team ? convocadosFor(team, side) : [];
+  }
+  function lvMissingText() {
+    const { home, away } = lvMatchTeams(), pending = currentPending(), superMode = isSuperMode();
+    if (!pending) return superMode ? "Monte a Super Liga e sorteie a ordem dos jogos no painel abaixo." : "Sorteie os times em Elenco e sorteio para preparar a partida.";
+    if (!home || !away) return "Escolha os dois times.";
+    if (home === away) return "Escolha dois times diferentes.";
+    for (const [team, side] of [[home, "home"], [away, "away"]]) {
+      const count = lvConvocados(team, side).length;
+      if (count < 4) return teamLabel(team) + " tem só " + count + (count === 1 ? " jogador" : " jogadores") + ": toque em Ajustar jogadores.";
+    }
+    if (!$("keeperHome").value || !$("keeperAway").value) return "Escolha o goleiro de cada time em GOLEIROS.";
+    if (!pending.prepared) return "Tudo certo: toque em ✓ Partida preparada.";
+    return "";
+  }
+  function lvStep() {
+    const game = state.currentGame;
+    if (!game) return "prep";
+    return timerRemaining() === 0 || shootoutOf(game) ? "end" : "play";
+  }
+  function lvLogItems(game) {
+    const items = [{ minute: 0, at: game.startedAt, html: "▶ Início do jogo", kind: "start" }];
+    for (const entry of game.pauseLog || []) items.push({ minute: entry.minute, at: entry.at, html: entry.kind === "pause" ? "⏸ Pausa" : "▶ Jogo retomado", kind: "pause" });
+    for (const goal of goals.filter((item) => item.game_id === game.id))
+      items.push({ minute: Number(goal.minute) || 0, at: goal.created_at, kind: "goal", id: goal.id,
+        html: "⚽ <strong>" + (goal.own_goal ? "Gol contra de " : "Gol de ") + escapeHtml(displayName(goal.player_name)) + "</strong> · " + escapeHtml(teamLabel(scoreTeam(goal, game))) + (goal.assisted_by ? " <small>assist. " + escapeHtml(displayName(goal.assisted_by)) + "</small>" : "") });
+    for (const sub of game.substitutions || [])
+      items.push({ minute: Number(sub.minute) || 0, at: subMoment(game, sub), kind: "sub", id: sub.id,
+        html: "⇄ " + escapeHtml(teamLabel(sub.team)) + ': <b class="lv-in">↑ ' + escapeHtml(displayName(sub.in)) + '</b> <b class="lv-out">↓ ' + escapeHtml(displayName(sub.out)) + "</b>" + (sub.keeper ? " <small>🧤 " + escapeHtml(displayName(sub.keeperIn || sub.in)) + " vai pro gol</small>" : "") });
+    for (const item of (state.incidents || []).filter((entry) => entry.gameId === game.id && entry.type !== "sub"))
+      items.push({ minute: Number(item.minute) || 0, at: item.createdAt, kind: "incident", id: item.id,
+        html: "⚠ <strong>" + escapeHtml(item.type === "warning" ? item.warningType || "Advertência" : incidentLabels[item.type] || item.type) + "</strong> · " + escapeHtml(displayName(item.player || "")) + (item.note ? " <small>" + escapeHtml(item.note) + "</small>" : "") });
+    const time = (value) => { const date = typeof value === "number" ? new Date(value) : new Date(value || 0); return date.getTime() || 0; };
+    items.forEach((item, index) => { item.seq = index; });
+    // Mais recente primeiro; no mesmo minuto e horário, o último registrado fica em cima.
+    return items.sort((a, b) => b.minute - a.minute || time(b.at) - time(a.at) || b.seq - a.seq);
+  }
+  function renderOrganizer() {
+    const org = $("lvOrg");
+    if (!org || isEditLocked()) return;
+    const game = state.currentGame, pending = currentPending(), { home, away } = lvMatchTeams(), step = lvStep(), last = lvLastGame(),
+      steps = ["prep", "play", "end"], stepIndex = steps.indexOf(step);
+    org.querySelectorAll("#lvSteps li").forEach((li, index) => {
+      li.classList.toggle("is-current", index === stepIndex);
+      li.classList.toggle("is-done", index < stepIndex || (!game && index === 0 && !!pending?.prepared && false));
+      if (index === stepIndex) li.setAttribute("aria-current", "step"); else li.removeAttribute("aria-current");
+    });
+    // Card ENCERRADO também para o organizador, até a próxima partida ser preparada.
+    lvSet("lvOrgResult", !game && last && !pending?.prepared ? lvEndedCard(last) : "");
+    const prepVisible = !game || lvUI.prepOpen;
+    $("lvPrepare").hidden = !prepVisible;
+    $("lvBeginWrap").hidden = !!game;
+    $("lvPlay").hidden = !game;
+    // Quem vai jogar
+    const teamsDisabled = !!game || $("matchHome").disabled;
+    lvSet("lvTeams", [["home", home, "Casa"], ["away", away, "Visitante"]].map(([side, team, word]) =>
+      '<button type="button" class="lv-team-btn" data-lv-pick="' + side + '"' + (teamsDisabled ? " disabled" : "") + ">" + (team ? lvCrest(team, "m") : '<span class="lv-crest lv-crest-m lv-initials" aria-hidden="true">?</span>') +
+      "<span><strong>" + escapeHtml(team ? teamLabel(team) : "Escolher time") + "</strong><small>" + word + (teamsDisabled ? "" : " · trocar") + "</small></span></button>").join('<span class="lv-x" aria-hidden="true">×</span>'));
+    // Ajustar jogadores · contagem real
+    const superMode = isSuperMode(), adjust = $("lvAdjustBtn");
+    if (home && away) {
+      const count = (team, side) => superMode ? starterSelection(team, side).length + "/" + effectiveOnCourt() : lvConvocados(team, side).length + "/5";
+      adjust.textContent = "👥 Ajustar jogadores · " + count(home, "home") + " e " + count(away, "away");
+    } else adjust.textContent = "👥 Ajustar jogadores";
+    adjust.disabled = !!game || !(superMode ? home && away : (state.teams || []).length);
+    // Duração
+    const minutes = Math.min(180, Math.max(1, Number(state.durationMinutes) || 8)), custom = ![6, 8, 10].includes(minutes) || lvUI.customDuration;
+    lvSet("lvDurations", [6, 8, 10].map((value) => '<button type="button" class="lv-seg' + (!custom && minutes === value ? " is-on" : "") + '" data-lv-duration="' + value + '" aria-pressed="' + (!custom && minutes === value) + '"' + (game ? " disabled" : "") + ">" + value + " min</button>").join("") +
+      '<button type="button" class="lv-seg' + (custom ? " is-on" : "") + '" data-lv-duration="outro" aria-pressed="' + custom + '"' + (game ? " disabled" : "") + ">Outro</button>" +
+      (custom ? '<label class="lv-other">Minutos<input type="number" inputmode="numeric" min="1" max="180" step="1" id="lvDurationOther" value="' + minutes + '"' + (game ? " disabled" : "") + "></label>" : ""));
+    // Preparada
+    const prepared = !!pending?.prepared && !game, preparedBtn = $("lvPrepared");
+    preparedBtn.hidden = prepared;
+    preparedBtn.disabled = $("preparedBtn").disabled;
+    lvSet("lvPrepState", prepared ? '<div class="lv-ready"><strong>✓ Partida preparada</strong><span>' + escapeHtml(teamLabel(home) + " × " + teamLabel(away)) + '</span><button type="button" class="lv-link" data-lv-unprepare>Desfazer</button></div>' : "");
+    const missing = game ? "" : lvMissingText();
+    const missingEl = $("lvMissing");
+    if (missingEl.textContent !== missing) missingEl.textContent = missing;
+    $("lvBegin").disabled = $("beginGame").disabled;
+    // Resumo depois de começar
+    const summary = $("lvSummary");
+    summary.hidden = !game;
+    lvSet("lvSummary", game ? '<span>✓ ' + escapeHtml(teamLabel(game.home) + " × " + teamLabel(game.away) + " · " + lvDurationMin(game) + " min") + '</span><button type="button" class="lv-link" data-lv-alter>' + (lvUI.prepOpen ? "Fechar" : "Alterar") + "</button>" : "");
+    // Placar
+    const hs = game ? currentScore(game.home) : 0, as = game ? currentScore(game.away) : 0;
+    lvSet("lvBoard", home && away
+      ? '<div class="lv-oboard"><div class="lv-oteam">' + lvCrest(home, "m") + "<strong>" + escapeHtml(teamLabel(home)) + '</strong></div><div class="lv-onums"><b>' + hs + '</b><i aria-hidden="true">×</i><b>' + as + '</b></div><div class="lv-oteam is-away">' + lvCrest(away, "m") + "<strong>" + escapeHtml(teamLabel(away)) + "</strong></div></div>" +
+        (game ? '<div class="lv-ofield">' + ["home", "away"].map((s) => '<div><small>' + escapeHtml(teamLabel(game[s])) + ' · em campo</small><ul class="lv-chips">' + lvChips(lineupForTeam(game[s], game), game[s + "Keeper"], game) + "</ul></div>").join("") + "</div>" : "")
+      : '<p class="lv-muted lv-center">Escolha os times para ver o placar.</p>');
+    // Cronômetro e estado
+    const timer = state.timer || {}, remaining = game ? timerRemaining(timer) : minutes * 60, paused = !!game && isPauseActive(timer),
+      used = pauseBudgetUsed({ ...timer, mode: game ? timer.mode || "liga" : state.timerMode || "liga" }), limitText = (game ? timer.mode : state.timerMode) === "coca" ? "02:00" : "01:00";
+    const timerEl = $("lvTimer");
+    if (timerEl.textContent !== clockText(remaining)) timerEl.textContent = clockText(remaining);
+    timerEl.classList.toggle("is-paused", paused);
+    const stateText = !game ? "AGUARDANDO INÍCIO" : shootoutOf(game) && !shootoutOf(game).finished ? "🥅 PÊNALTIS" : remaining === 0 ? "⏹ FIM DO TEMPO" : (paused ? "⏸ PAUSADO" : "● RODANDO") + " · PAUSA USADA " + clockText(Math.ceil(used / 1000)) + " / " + limitText;
+    const stateEl = $("lvState");
+    if (stateEl.textContent !== stateText) stateEl.textContent = stateText;
+    stateEl.className = "lv-state" + (paused ? " is-paused" : game && remaining > 0 ? " is-running" : "");
+    if (game) {
+      $("lvGoal").disabled = $("openGoalDialog").disabled;
+      const pauseBtn = $("lvPause");
+      pauseBtn.disabled = $("pauseTimer").disabled;
+      const pauseHtml = paused ? "<span>▶ Continuar</span><small>volta a contar</small>" : "<span>⏸ Pausar</span><small>congela o tempo</small>";
+      if (lvUI.marks.pause !== pauseHtml) { lvUI.marks.pause = pauseHtml; pauseBtn.innerHTML = pauseHtml; }
+      $("lvSub").disabled = !game;
+      $("lvWarn").disabled = !game;
+      $("lvFinish").disabled = $("finishGame").disabled;
+      lvSet("lvLog", lvLogItems(game).map((item) => '<li class="lv-log-item lv-log-' + item.kind + '"><span class="lv-min">' + item.minute + "′</span><span class=\"lv-log-text\">" + item.html + "</span>" +
+        (item.id ? '<button type="button" class="lv-undo" data-lv-undo="' + item.kind + '" data-id="' + escapeHtml(item.id) + '">Desfazer</button>' : "") + "</li>").join(""));
+      // Fim do tempo: abre a decisão sozinho uma vez por jogo.
+      if (remaining === 0 && lvUI.endAutoFor !== game.id && !shootoutOf(game) && !$("lvSheet").open && !$("shootoutDialog").open) { lvUI.endAutoFor = game.id; lvOpenSheet({ kind: "end", auto: true }); }
+    }
+    if (lvUI.sheet && $("lvSheet").open) lvRenderSheet();
+  }
+  function renderLive() {
+    renderSpectator();
+    renderOrganizer();
+  }
+  // ---------- Painéis (sobem de baixo) ----------
+  function lvOpenSheet(sheet) {
+    const dialog = $("lvSheet");
+    lvUI.sheet = sheet;
+    lvUI.marks.sheet = "";
+    lvRenderSheet();
+    if (!dialog.open) dialog.showModal();
+    dialog.querySelector("[data-lv-first]")?.focus();
+  }
+  function lvCloseSheet() {
+    const dialog = $("lvSheet");
+    lvUI.sheet = null;
+    if (dialog.open) dialog.close();
+  }
+  function lvSheetHead(title, sub = "") {
+    return '<header class="lv-sheet-head"><h2 id="lvSheetTitle">' + title + "</h2>" + (sub ? "<p>" + sub + "</p>" : "") + '<button type="button" class="lv-close" data-lv-close aria-label="Fechar">✕</button></header>';
+  }
+  function lvTeamToggle(game, chosen, attr) {
+    return '<div class="lv-pick2">' + [game.home, game.away].map((team) => '<button type="button" class="lv-choice' + (chosen === team ? " is-on" : "") + '" aria-pressed="' + (chosen === team) + '" ' + attr + '="' + escapeHtml(team) + '">' + lvCrest(team, "s") + "<span>" + escapeHtml(teamLabel(team)) + "</span></button>").join("") + "</div>";
+  }
+  function lvRenderSheet() {
+    const sheet = lvUI.sheet, dialog = $("lvSheet");
+    if (!sheet) return;
+    const game = state.currentGame;
+    let html = "";
+    if (sheet.kind === "goal" && game) {
+      const scoring = sheet.team || game.home, author = sheet.own ? (scoring === game.home ? game.away : game.home) : scoring,
+        players = lineupForTeam(author, game).filter((name) => !isPlayerSuspended(name, game)),
+        scorer = players.includes(sheet.scorer) ? sheet.scorer : "",
+        mates = !sheet.own && scorer ? lineupForTeam(scoring, game).filter((name) => name !== scorer && !isPlayerSuspended(name, game)) : [],
+        assist = mates.includes(sheet.assist) ? sheet.assist : "";
+      html = lvSheetHead("REGISTRAR GOL · " + String(lvMinute()).padStart(2, "0") + "′", "O minuto é marcado sozinho pelo cronômetro.") +
+        '<div class="lv-sheet-body"><p class="lv-step-title">1. DE QUAL TIME? <small>(time que ganha o gol)</small></p>' + lvTeamToggle(game, scoring, "data-lv-goal-team") +
+        '<p class="lv-step-title">2. QUEM FEZ?</p><div class="lv-grid2">' + players.map((name) => '<button type="button" class="lv-choice' + (scorer === name ? " is-on" : "") + '" aria-pressed="' + (scorer === name) + '" data-lv-scorer="' + escapeHtml(name) + '">' + escapeHtml(displayName(name)) + (name === game[(author === game.home ? "home" : "away") + "Keeper"] ? ' <b class="lv-g">G</b>' : "") + "</button>").join("") +
+        '<button type="button" class="lv-choice lv-dashed' + (sheet.own ? " is-on" : "") + '" aria-pressed="' + !!sheet.own + '" data-lv-own>' + (sheet.own ? "✓ Gol contra (de um jogador do " + escapeHtml(teamLabel(author)) + ")" : "Gol contra") + "</button></div>" +
+        (!sheet.own ? '<p class="lv-step-title">3. ASSISTÊNCIA <small>(opcional)</small></p><div class="lv-chips-pick"><button type="button" class="lv-chipbtn' + (!assist ? " is-on" : "") + '" aria-pressed="' + !assist + '" data-lv-assist="">Sem assistência</button>' + mates.map((name) => '<button type="button" class="lv-chipbtn' + (assist === name ? " is-on" : "") + '" aria-pressed="' + (assist === name) + '" data-lv-assist="' + escapeHtml(name) + '">' + escapeHtml(displayName(name)) + "</button>").join("") + (!scorer ? '<span class="lv-muted">Escolha primeiro quem fez o gol.</span>' : "") + "</div>" : "") +
+        '</div><footer class="lv-sheet-foot"><button type="button" class="lv-btn lv-green lv-big" data-lv-confirm-goal' + (scorer && !goalSubmitting ? "" : " disabled") + ">" + (scorer ? "✓ Confirmar " + (sheet.own ? "gol contra de " : "gol de ") + escapeHtml(displayName(scorer)) : "✓ Confirmar gol") + '</button><button type="button" class="lv-btn lv-white" data-lv-close>Cancelar</button></footer>';
+    } else if (sheet.kind === "sub" && game) {
+      const team = sheet.team || game.home, side = team === game.home ? "home" : "away", onField = lineupForTeam(team, game),
+        out = onField.includes(sheet.out) ? sheet.out : "", bench = game[side + "Bench"] || [], subs = game.substitutions || [],
+        leftEarlier = bench.filter((name) => subs.some((item) => item.team === team && item.out === name)),
+        groups = [];
+      if (leftEarlier.length) groups.push({ label: "JÁ SAIU E PODE VOLTAR", back: true, players: leftEarlier });
+      if (game.timerMode === "coca") { const rest = bench.filter((name) => !leftEarlier.includes(name)); if (rest.length) groups.push({ label: "RESERVAS DO " + teamLabel(team).toUpperCase(), players: rest }); }
+      else { const rest = bench.filter((name) => !leftEarlier.includes(name)); if (rest.length) groups.push({ label: "BANCO", players: rest }); groups.push(...substitutionPool(game, bench).map((group) => ({ label: teamLabel(group.team).toUpperCase() + " (NA ESPERA)", players: group.players }))); }
+      const all = groups.flatMap((group) => group.players), inn = all.includes(sheet.in) ? sheet.in : "",
+        keeperOut = out && out === game[side + "Keeper"], keeperOptions = keeperOut && inn ? [inn, ...onField.filter((name) => name !== out)] : [],
+        keeperTo = keeperOptions.includes(sheet.keeperTo) ? sheet.keeperTo : inn,
+        leftMinute = (name) => { const item = [...subs].reverse().find((entry) => entry.team === team && entry.out === name); return item ? item.minute : null; };
+      html = lvSheetHead("TROCAR JOGADOR · " + String(lvMinute()).padStart(2, "0") + "′", "Quem sai pode voltar depois.") +
+        '<div class="lv-sheet-body"><p class="lv-step-title">1. DE QUAL TIME?</p>' + lvTeamToggle(game, team, "data-lv-sub-team") +
+        '<p class="lv-step-title">2. QUEM SAI?</p><div class="lv-grid2">' + onField.map((name) => '<button type="button" class="lv-choice' + (out === name ? " is-out" : "") + '" aria-pressed="' + (out === name) + '" data-lv-sub-out="' + escapeHtml(name) + '">' + (out === name ? "↓ " : "") + escapeHtml(displayName(name)) + (name === game[side + "Keeper"] ? ' <b class="lv-g">G</b>' : "") + "</button>").join("") + "</div>" +
+        '<p class="lv-step-title">3. QUEM ENTRA?</p>' + (groups.length ? groups.map((group) => '<div class="lv-group' + (group.back ? " is-back" : "") + '"><p>' + escapeHtml(group.label) + '</p><div class="lv-grid2">' + group.players.map((name) => '<button type="button" class="lv-choice' + (inn === name ? " is-in" : "") + '" aria-pressed="' + (inn === name) + '" data-lv-sub-in="' + escapeHtml(name) + '">' + (inn === name ? "↑ " : group.back ? "↺ " : "") + escapeHtml(displayName(name)) + (group.back && leftMinute(name) ? " <small>(saiu " + leftMinute(name) + "′)</small>" : "") + "</button>").join("") + "</div></div>").join("") : '<p class="lv-muted">Sem jogadores disponíveis para entrar.</p>') +
+        (keeperOut ? '<div class="lv-group is-keeper"><p>QUEM VAI PRO GOL? <small>(o goleiro está saindo)</small></p>' + (inn ? '<div class="lv-grid2">' + keeperOptions.map((name) => '<button type="button" class="lv-choice' + (keeperTo === name ? " is-on" : "") + '" aria-pressed="' + (keeperTo === name) + '" data-lv-keeper-to="' + escapeHtml(name) + '">🧤 ' + escapeHtml(displayName(name)) + (name === inn ? " <small>(entra)</small>" : "") + "</button>").join("") + "</div>" : '<p class="lv-muted">Escolha antes quem entra.</p>') + "</div>" : "") +
+        '</div><footer class="lv-sheet-foot"><button type="button" class="lv-btn lv-black lv-big" data-lv-confirm-sub' + (out && inn && !substituting ? "" : " disabled") + ">" + (out && inn ? "⇄ Confirmar: sai " + escapeHtml(displayName(out)) + ", entra " + escapeHtml(displayName(inn)) : "⇄ Confirmar troca") + '</button><button type="button" class="lv-btn lv-white" data-lv-close>Cancelar</button></footer>';
+      sheet.keeperResolved = keeperOut ? keeperTo : null;
+    } else if (sheet.kind === "warn" && game) {
+      const types = [["warning_verbal", "Advertência verbal"], ["warning_yellow", "Cartão amarelo"], ["warning_red", "Cartão vermelho"], ["foul", "Falta"], ["penalty", "Pênalti"], ["hand", "Mão intencional · 1 min fora"], ["keeper", "Bola recuada para o goleiro"], ["other", "Outra ocorrência"]],
+        type = sheet.type || "warning_verbal", players = [...lineupForTeam(game.home, game), ...lineupForTeam(game.away, game)], player = players.includes(sheet.player) ? sheet.player : "";
+      html = lvSheetHead("ADVERTÊNCIA · " + String(lvMinute()).padStart(2, "0") + "′") +
+        '<div class="lv-sheet-body"><p class="lv-step-title">1. O QUE ACONTECEU?</p><div class="lv-grid2">' + types.map(([value, label]) => '<button type="button" class="lv-choice' + (type === value ? " is-on" : "") + '" aria-pressed="' + (type === value) + '" data-lv-warn-type="' + value + '">' + label + "</button>").join("") + "</div>" +
+        '<p class="lv-step-title">2. QUAL JOGADOR?</p>' + ["home", "away"].map((s) => '<div class="lv-group"><p>' + escapeHtml(teamLabel(game[s]).toUpperCase()) + '</p><div class="lv-grid2">' + lineupForTeam(game[s], game).map((name) => '<button type="button" class="lv-choice' + (player === name ? " is-on" : "") + '" aria-pressed="' + (player === name) + '" data-lv-warn-player="' + escapeHtml(name) + '">' + escapeHtml(displayName(name)) + "</button>").join("") + "</div></div>").join("") +
+        '<label class="lv-field-input">Observação (opcional)<input id="lvWarnNote" maxlength="160" value="' + escapeHtml(sheet.note || "") + '"></label></div>' +
+        '<footer class="lv-sheet-foot"><button type="button" class="lv-btn lv-black lv-big" data-lv-confirm-warn' + (player && !incidentSubmitting ? "" : " disabled") + ">" + (player ? "✓ Registrar para " + escapeHtml(displayName(player)) : "✓ Registrar") + '</button><button type="button" class="lv-btn lv-white" data-lv-close>Cancelar</button></footer>';
+    } else if (sheet.kind === "pick") {
+      const teams = modeTeams().map((team) => team.name), current = $(sheet.side === "home" ? "matchHome" : "matchAway").value;
+      html = lvSheetHead(sheet.side === "home" ? "TIME DA CASA" : "TIME VISITANTE", "Toque no time que vai jogar.") +
+        '<div class="lv-sheet-body"><div class="lv-grid2">' + teams.map((team) => '<button type="button" class="lv-choice lv-choice-team' + (current === team ? " is-on" : "") + '" aria-pressed="' + (current === team) + '" data-lv-pick-team="' + escapeHtml(team) + '">' + lvCrest(team, "s") + "<span>" + escapeHtml(teamLabel(team)) + "</span></button>").join("") + '</div></div><footer class="lv-sheet-foot"><button type="button" class="lv-btn lv-white" data-lv-close>Cancelar</button></footer>';
+    } else if (sheet.kind === "adjust") {
+      html = lvAdjustSheet(sheet);
+    } else if (sheet.kind === "end" && game) {
+      const hs = currentScore(game.home), as = currentScore(game.away), tied = hs === as, shoot = shootoutOf(game), over = timerRemaining() === 0,
+        board = '<div class="lv-endboard">' + lvCrest(game.home, "m") + "<b>" + hs + ' × ' + as + "</b>" + lvCrest(game.away, "m") + "</div>";
+      if (tied && !(shoot && shoot.finished)) {
+        const rounds = sheet.rounds || 5, custom = sheet.customRounds;
+        html = lvSheetHead((over ? "TERMINOU " : "ESTÁ ") + hs + " × " + as) + '<div class="lv-sheet-body">' + board + '<p class="lv-step-title lv-center">Como você quer decidir?</p>' +
+          '<div class="lv-durations">' + [3, 5].map((value) => '<button type="button" class="lv-seg' + (!custom && rounds === value ? " is-on" : "") + '" aria-pressed="' + (!custom && rounds === value) + '" data-lv-rounds="' + value + '">' + value + " cobranças</button>").join("") + '<button type="button" class="lv-seg' + (custom ? " is-on" : "") + '" aria-pressed="' + !!custom + '" data-lv-rounds="outro">Outro</button>' + (custom ? '<label class="lv-other">Cobranças<input type="number" inputmode="numeric" min="1" max="10" id="lvRoundsOther" value="' + rounds + '"></label>' : "") + "</div>" +
+          '<button type="button" class="lv-btn lv-yellow lv-big" data-lv-penalties data-lv-first>' + (shoot ? "Continuar os pênaltis" : "Ir para os pênaltis") + "</button>" +
+          (game.stage === "final" ? '<p class="lv-help">Final da Super Liga: o título precisa ser decidido nos pênaltis.</p>' : '<button type="button" class="lv-btn lv-white" data-lv-draw>Encerrar com empate</button>') +
+          '<button type="button" class="lv-link lv-center" data-lv-close>Voltar ao jogo</button></div>';
+      } else {
+        html = lvSheetHead(over ? "FIM DO TEMPO" : "ENCERRAR JOGO?") + '<div class="lv-sheet-body">' + board + '<p class="lv-center">Encerrar ' + escapeHtml(teamLabel(game.home) + " " + hs + " × " + as + " " + teamLabel(game.away)) + "?</p>" +
+          '<button type="button" class="lv-btn lv-red lv-big" data-lv-finish data-lv-first>■ Encerrar jogo</button><button type="button" class="lv-link lv-center" data-lv-close>Voltar ao jogo</button></div>';
+      }
+    } else { lvCloseSheet(); return; }
+    if (lvUI.marks.sheet !== html) {
+      const scroll = dialog.querySelector(".lv-sheet-body")?.scrollTop || 0, focusKey = document.activeElement && dialog.contains(document.activeElement) ? [...document.activeElement.attributes].filter((attr) => attr.name.startsWith("data-lv")).map((attr) => "[" + attr.name + '="' + CSS.escape(attr.value) + '"]').join("") : "";
+      lvUI.marks.sheet = html;
+      dialog.innerHTML = html;
+      const body = dialog.querySelector(".lv-sheet-body");
+      if (body) body.scrollTop = scroll;
+      if (focusKey) dialog.querySelector(focusKey)?.focus();
+    } else {
+      const title = dialog.querySelector("#lvSheetTitle");
+      if (title && (sheet.kind === "goal" || sheet.kind === "sub" || sheet.kind === "warn")) {
+        const text = title.textContent.replace(/\d+′$/, String(lvMinute()).padStart(2, "0") + "′");
+        if (title.textContent !== text) title.textContent = text;
+      }
+    }
+  }
+  // ---------- Ajustar jogadores ----------
+  function lvOriginalTeam(player) {
+    return (state.teams || []).find((team) => (team.players || []).includes(player))?.name || "";
+  }
+  function lvAdjustSheet(sheet) {
+    const { home, away } = lvMatchTeams(), superMode = isSuperMode(), team = sheet.team || home || (state.teams || [])[0]?.name, side = team === away ? "away" : "home",
+      playing = new Set([state.currentGame?.home, state.currentGame?.away].filter(Boolean)), choices = [home, away].filter(Boolean);
+    const toggle = '<div class="lv-pick2">' + choices.map((name, index) => {
+      const s = index === 0 ? "home" : "away", count = superMode ? starterSelection(name, s).length + " / " + effectiveOnCourt() : lvConvocados(name, s).length + " / 5";
+      return '<button type="button" class="lv-choice' + (team === name ? " is-on" : "") + '" aria-pressed="' + (team === name) + '" data-lv-adjust-team="' + escapeHtml(name) + '">' + lvCrest(name, "s") + "<span>" + escapeHtml(teamLabel(name)) + "<small>" + (superMode ? "Titulares " : "Jogadores para este jogo ") + count + "</small></span></button>";
+    }).join("") + "</div>";
+    let body = "";
+    if (superMode) {
+      const all = lvConvocados(team, side), picked = starterSelection(team, side), count = effectiveOnCourt(), keeperName = $(side === "home" ? "keeperHome" : "keeperAway").value;
+      body = '<p class="lv-step-title">' + escapeHtml(teamLabel(team).toUpperCase()) + " · TITULARES " + picked.length + " / " + count + '</p><ul class="lv-adjust-list">' + all.map((name) => {
+        const starter = picked.includes(name);
+        return "<li><span>" + escapeHtml(displayName(name)) + (name === keeperName || keeper(name) ? ' <b class="lv-g">G</b>' : "") + '</span><button type="button" class="lv-mini' + (starter ? " is-on" : "") + '" data-lv-starter="' + escapeHtml(name) + '" aria-pressed="' + starter + '"' + (!starter && picked.length >= count ? " disabled" : "") + ">" + (starter ? "Titular" : "Reserva") + "</button></li>";
+      }).join("") + "</ul>" +
+        (sheet.adding ? '<form class="lv-add" data-lv-add-form><label>Nome do jogador novo<input id="lvNewPlayer" maxlength="50" placeholder="Use * no fim para goleiro"></label><button type="submit" class="lv-btn lv-black">Inscrever</button></form>' : '<button type="button" class="lv-btn lv-white" data-lv-adding>＋ Inscrever jogador novo</button>') +
+        '<p class="lv-help">Na Super Liga, basta a mesma quantidade de titulares dos dois lados. Quem não for titular fica no banco e pode entrar durante o jogo.</p>';
+    } else {
+      const lineup = lineupForTeam(team), absent = Object.entries(state.absentPlayers || {}).filter(([, from]) => from === team).map(([name]) => name),
+        locked = playing.has(team), full = lineup.length >= 5,
+        pool = (state.teams || []).filter((other) => other.name !== team && !playing.has(other.name)).flatMap((other) => lineupForTeam(other.name).map((name) => ({ name, from: other.name }))).filter((item) => !(state.absentPlayers || {})[item.name] && (!keeper(item.name) || !lineup.some(keeper)));
+      body = '<ul class="lv-adjust-list">' + lineup.map((name) => {
+        const origin = lvOriginalTeam(name), borrowed = origin && origin !== team;
+        return "<li><span>" + escapeHtml(displayName(name)) + (keeper(name) ? ' <b class="lv-g">G</b>' : "") + (borrowed ? ' <small>· veio do ' + escapeHtml(teamLabel(origin)) + "</small>" : "") + "</span>" +
+          (borrowed ? '<button type="button" class="lv-mini" data-lv-return="' + escapeHtml(name) + '"' + (locked || playing.has(origin) || lineupForTeam(origin).length >= 5 ? " disabled" : "") + ">Devolver</button>" : '<button type="button" class="lv-mini" data-lv-absent="' + escapeHtml(name) + '"' + (locked ? " disabled" : "") + ">Ausente</button>") + "</li>";
+      }).join("") + absent.map((name) => '<li class="is-absent"><span><s>' + escapeHtml(displayName(name)) + "</s> <small>· ausente</small></span><button type=\"button\" class=\"lv-mini\" data-lv-back=\"" + escapeHtml(name) + '"' + (locked || full ? " disabled" : "") + ">Voltar</button></li>").join("") + "</ul>" +
+        (sheet.pulling ? '<div class="lv-group"><p>PUXAR DE OUTRO TIME</p>' + (full ? '<p class="lv-muted">' + escapeHtml(teamLabel(team)) + " já está com 5.</p>" : pool.length ? '<div class="lv-grid2">' + pool.map((item) => '<button type="button" class="lv-choice" data-lv-pull="' + escapeHtml(item.name) + '">' + escapeHtml(displayName(item.name)) + " <small>· " + escapeHtml(teamLabel(item.from)) + "</small></button>").join("") + "</div>" : '<p class="lv-muted">Sem jogador disponível em outro time.</p>') + "</div>" : '<button type="button" class="lv-btn lv-white" data-lv-pulling' + (locked || full ? " disabled" : "") + ">⇄ Puxar jogador de outro time</button>") +
+        '<p class="lv-help">Limite de 5 por time. Um time pode ficar com 0 a 4 e ser completado depois. Na Super Liga, basta a mesma quantidade de titulares dos dois lados.</p>';
+    }
+    return lvSheetHead("AJUSTAR JOGADORES", "Antes do jogo.") + '<div class="lv-sheet-body">' + (choices.length ? toggle : "") + body + '</div><footer class="lv-sheet-foot"><button type="button" class="lv-btn lv-green lv-big" data-lv-save-adjust>✓ Salvar ajustes</button></footer>';
+  }
+  async function lvAdjustAction(kind, player) {
+    const sheet = lvUI.sheet, team = sheet?.team || lvMatchTeams().home, teams = state.teams || [];
+    const playing = new Set([state.currentGame?.home, state.currentGame?.away].filter(Boolean));
+    const lineups = Object.fromEntries(teams.map((item) => [item.name, [...lineupForTeam(item.name)]]));
+    if (playing.has(team)) { notify("Esse time está jogando agora. Ajuste depois da partida.", true); return; }
+    if (kind === "absent") {
+      lineups[team] = lineups[team].filter((name) => name !== player);
+      await saveState({ lineups, absentPlayers: { ...(state.absentPlayers || {}), [player]: team } }, displayName(player) + " marcado como ausente.");
+    } else if (kind === "back") {
+      if (lineups[team].length >= 5) { notify(teamLabel(team) + " já está com 5 jogadores.", true); return; }
+      lineups[team].push(player);
+      const rest = { ...(state.absentPlayers || {}) };
+      delete rest[player];
+      await saveState({ lineups, absentPlayers: rest }, displayName(player) + " voltou para o " + teamLabel(team) + ".");
+    } else if (kind === "pull" || kind === "return") {
+      const target = kind === "pull" ? team : lvOriginalTeam(player), source = teams.find((item) => lineups[item.name].includes(player))?.name;
+      if (!source || !target || source === target || playing.has(source) || playing.has(target)) return;
+      if (lineups[target].length >= 5) { notify(teamLabel(target) + " já está com 5 jogadores.", true); return; }
+      if (keeper(player) && lineups[target].some(keeper)) { notify(teamLabel(target) + " já tem um goleiro marcado com *.", true); return; }
+      lineups[source] = lineups[source].filter((name) => name !== player);
+      lineups[target].push(player);
+      await saveState({ lineups }, displayName(player) + (kind === "pull" ? " veio do " + teamLabel(source) + " para o " : " voltou para o ") + teamLabel(target) + ".");
+      if (sheet) sheet.pulling = false;
+    }
+  }
+  // ---------- Ações ----------
+  function lvTrigger(id) {
+    const el = $(id);
+    if (el && !el.disabled) el.click();
+  }
+  async function lvConfirmGoal() {
+    const sheet = lvUI.sheet, game = state.currentGame;
+    if (!sheet || !game || !sheet.scorer || goalSubmitting) return;
+    $("goalTeam").value = sheet.team || game.home;
+    $("ownGoal").checked = !!sheet.own;
+    renderGoalOptions();
+    $("goalScorer").value = sheet.scorer;
+    renderGoalOptions();
+    $("goalAssist").value = sheet.own ? "" : sheet.assist || "";
+    const before = goals.length;
+    await addGoal();
+    if (goals.length > before) lvCloseSheet();
+  }
+  async function lvConfirmSub() {
+    const sheet = lvUI.sheet, game = state.currentGame;
+    if (!sheet || !game || !sheet.out || !sheet.in || substituting) return;
+    const before = (game.substitutions || []).length;
+    await substitutePlayer({ team: sheet.team || game.home, out: sheet.out, inn: sheet.in, keeperTo: sheet.keeperResolved || null });
+    if ((state.currentGame?.substitutions || []).length > before) lvCloseSheet();
+  }
+  async function lvConfirmWarn() {
+    const sheet = lvUI.sheet;
+    if (!sheet || !sheet.player || incidentSubmitting) return;
+    renderGoalOptions();
+    $("incidentType").value = sheet.type || "warning_verbal";
+    $("incidentPlayer").value = sheet.player;
+    $("incidentNote").value = ($("lvWarnNote")?.value || "").trim();
+    const before = (state.incidents || []).length;
+    await addIncident();
+    if ((state.incidents || []).length > before) lvCloseSheet();
+  }
+  // Desfazer uma troca: volta quem saiu, devolve quem entrou e corrige o goleiro.
+  async function lvUndoSub(id) {
+    const game = state.currentGame, subs = game?.substitutions || [], index = subs.findIndex((item) => item.id === id), sub = subs[index];
+    if (!game || !sub) return;
+    if (subs.slice(index + 1).some((item) => item.team === sub.team && [item.in, item.out, item.keeperIn].some((name) => name && [sub.in, sub.out].includes(name)))) { notify("Desfaça antes a troca mais recente que envolve " + displayName(sub.in) + " ou " + displayName(sub.out) + ".", true); return; }
+    const side = sub.team === game.home ? "home" : "away", players = [...(game[side + "Players"] || [])];
+    if (!players.includes(sub.in)) { notify(displayName(sub.in) + " não está mais em campo.", true); return; }
+    if (!confirm("Desfazer a troca? Volta " + displayName(sub.out) + " e sai " + displayName(sub.in) + ".")) return;
+    players[players.indexOf(sub.in)] = sub.out;
+    const loanIndex = (game.loans || []).findIndex((loan) => loan.substitution && loan.player === sub.in && loan.toTeam === sub.team),
+      bench = (game[side + "Bench"] || []).filter((name) => name !== sub.out),
+      nextGame = { ...game, [side + "Players"]: players, [side + "Bench"]: loanIndex >= 0 ? bench : [...bench, sub.in], substitutions: subs.filter((item) => item.id !== id) };
+    if (loanIndex >= 0) nextGame.loans = game.loans.filter((_, i) => i !== loanIndex);
+    if (sub.keeper) nextGame[side + "Keeper"] = sub.out;
+    await saveState({ currentGame: nextGame, incidents: (state.incidents || []).filter((item) => item.id !== id) }, "Troca desfeita.");
+  }
+  async function lvUndo(kind, id) {
+    const game = state.currentGame;
+    if (!game) return;
+    if (kind === "goal") {
+      const goal = goals.find((item) => item.id === id);
+      if (!goal || !confirm("Desfazer o gol de " + displayName(goal.player_name) + " (" + goal.minute + "′)? O placar volta sozinho.")) return;
+      await deleteGoal(id, false);
+    } else if (kind === "sub") await lvUndoSub(id);
+    else if (kind === "incident") {
+      const item = (state.incidents || []).find((entry) => entry.id === id);
+      if (!item || !confirm("Desfazer esta ocorrência de " + displayName(item.player || "") + "?")) return;
+      await saveState({ incidents: (state.incidents || []).filter((entry) => entry.id !== id) }, "Ocorrência desfeita.");
+    }
+  }
+  async function lvPenalties(rounds) {
+    const game = state.currentGame;
+    if (!game) return;
+    lvCloseSheet();
+    await openShootout();
+    const shoot = shootoutOf(state.currentGame);
+    if (shoot && !(shoot.kicks || []).length && shoot.rounds !== rounds) await saveState({ shootout: { ...shoot, rounds } }, "Pênaltis: " + rounds + " cobranças por time.");
+  }
+  function bindLive() {
+    const org = $("lvOrg"), dialog = $("lvSheet");
+    org.addEventListener("click", (event) => {
+      const target = event.target.closest("button");
+      if (!target || target.disabled) return;
+      const data = target.dataset;
+      if (data.lvPick) lvOpenSheet({ kind: "pick", side: data.lvPick });
+      else if (target.id === "lvAdjustBtn") lvOpenSheet({ kind: "adjust", team: lvMatchTeams().home });
+      else if (data.lvDuration) {
+        if (data.lvDuration === "outro") { lvUI.customDuration = true; lvUI.marks.lvDurations = ""; renderOrganizer(); $("lvDurationOther")?.focus(); return; }
+        lvUI.customDuration = false;
+        $("durationMinutes").value = data.lvDuration;
+        $("durationMinutes").dispatchEvent(new Event("change"));
+      }
+      else if (target.id === "lvPrepared") lvTrigger("preparedBtn");
+      else if ("lvUnprepare" in data) lvTrigger("preparedBtn");
+      else if (target.id === "lvBegin") { lvUI.prepOpen = false; lvTrigger("beginGame"); }
+      else if ("lvAlter" in data) {
+        if (!lvUI.prepOpen && !confirm("O jogo já está rolando. Abrir a preparação? Times e duração só mudam depois do fim do jogo.")) return;
+        lvUI.prepOpen = !lvUI.prepOpen; renderOrganizer();
+      }
+      else if (target.id === "lvGoal") lvOpenSheet({ kind: "goal", team: state.currentGame?.home });
+      else if (target.id === "lvPause") lvTrigger("pauseTimer");
+      else if (target.id === "lvSub") lvOpenSheet({ kind: "sub", team: state.currentGame?.home });
+      else if (target.id === "lvWarn") lvOpenSheet({ kind: "warn" });
+      else if (target.id === "lvFinish") lvOpenSheet({ kind: "end" });
+      else if (data.lvUndo) lvUndo(data.lvUndo, data.id);
+    });
+    org.addEventListener("change", (event) => {
+      if (event.target.id === "lvDurationOther") {
+        $("durationMinutes").value = event.target.value;
+        $("durationMinutes").dispatchEvent(new Event("change"));
+      }
+    });
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) { lvCloseSheet(); return; }
+      const target = event.target.closest("button");
+      if (!target || target.disabled) return;
+      const sheet = lvUI.sheet, data = target.dataset;
+      if (!sheet) return;
+      if ("lvClose" in data) { lvCloseSheet(); return; }
+      if (data.lvGoalTeam) { sheet.team = data.lvGoalTeam; sheet.scorer = ""; sheet.assist = ""; }
+      else if (data.lvScorer) { sheet.scorer = data.lvScorer; sheet.assist = ""; }
+      else if ("lvOwn" in data) { sheet.own = !sheet.own; sheet.scorer = ""; sheet.assist = ""; }
+      else if ("lvAssist" in data) sheet.assist = data.lvAssist;
+      else if ("lvConfirmGoal" in data) { lvConfirmGoal(); return; }
+      else if (data.lvSubTeam) { sheet.team = data.lvSubTeam; sheet.out = ""; sheet.in = ""; sheet.keeperTo = ""; }
+      else if (data.lvSubOut) { sheet.out = data.lvSubOut; sheet.keeperTo = ""; }
+      else if (data.lvSubIn) { sheet.in = data.lvSubIn; sheet.keeperTo = ""; }
+      else if (data.lvKeeperTo) sheet.keeperTo = data.lvKeeperTo;
+      else if ("lvConfirmSub" in data) { lvConfirmSub(); return; }
+      else if (data.lvWarnType) { sheet.note = $("lvWarnNote")?.value || ""; sheet.type = data.lvWarnType; }
+      else if (data.lvWarnPlayer) { sheet.note = $("lvWarnNote")?.value || ""; sheet.player = data.lvWarnPlayer; }
+      else if ("lvConfirmWarn" in data) { lvConfirmWarn(); return; }
+      else if (data.lvPickTeam) {
+        const select = $(sheet.side === "home" ? "matchHome" : "matchAway");
+        select.value = data.lvPickTeam;
+        lvCloseSheet();
+        select.dispatchEvent(new Event("change"));
+        return;
+      }
+      else if (data.lvAdjustTeam) { sheet.team = data.lvAdjustTeam; sheet.pulling = false; sheet.adding = false; }
+      else if (data.lvAbsent) { lvAdjustAction("absent", data.lvAbsent); return; }
+      else if (data.lvBack) { lvAdjustAction("back", data.lvBack); return; }
+      else if (data.lvReturn) { lvAdjustAction("return", data.lvReturn); return; }
+      else if (data.lvPull) { lvAdjustAction("pull", data.lvPull); return; }
+      else if ("lvPulling" in data) sheet.pulling = true;
+      else if ("lvAdding" in data) { sheet.adding = true; lvUI.marks.sheet = ""; lvRenderSheet(); $("lvNewPlayer")?.focus(); return; }
+      else if (data.lvStarter) {
+        const team = sheet.team, side = team === lvMatchTeams().away ? "away" : "home", current = new Set(starterSelection(team, side));
+        if (current.has(data.lvStarter)) current.delete(data.lvStarter); else current.add(data.lvStarter);
+        starterChoice[team] = [...current];
+        renderStarterPicks();
+        renderOrganizer();
+      }
+      else if ("lvSaveAdjust" in data) { lvCloseSheet(); renderAll(); notify("Ajustes salvos."); return; }
+      else if (data.lvRounds) { if (data.lvRounds === "outro") sheet.customRounds = true; else { sheet.customRounds = false; sheet.rounds = Number(data.lvRounds); } }
+      else if ("lvPenalties" in data) { const rounds = Math.min(10, Math.max(1, Math.floor(Number(sheet.customRounds ? $("lvRoundsOther")?.value : sheet.rounds) || 5))); lvPenalties(rounds); return; }
+      else if ("lvDraw" in data) { if (confirm("Encerrar o jogo empatado?")) { lvCloseSheet(); finishGame(); } return; }
+      else if ("lvFinish" in data) { lvCloseSheet(); finishGame(); return; }
+      lvRenderSheet();
+    });
+    dialog.addEventListener("change", (event) => {
+      if (event.target.id === "lvRoundsOther" && lvUI.sheet) lvUI.sheet.rounds = Math.min(10, Math.max(1, Math.floor(Number(event.target.value) || 5)));
+    });
+    dialog.addEventListener("submit", async (event) => {
+      if (!event.target.closest("[data-lv-add-form]")) return;
+      event.preventDefault();
+      const sheet = lvUI.sheet, name = $("lvNewPlayer")?.value || "";
+      if (!sheet || !name.trim()) return;
+      await superAddPlayer(sheet.team, name);
+      sheet.adding = false;
+      lvUI.marks.sheet = "";
+      lvRenderSheet();
+    });
+    dialog.addEventListener("close", () => { lvUI.sheet = null; lvUI.marks.sheet = ""; });
+  }
   function setTheme(theme) {
     const light = theme === "light";
     document.body.classList.toggle("light-theme", light);
@@ -5045,6 +5635,7 @@
     $("addIncident").addEventListener("click", addIncident);
     $("adminAccessButton").addEventListener("click", requestAdminAccess);
     $("footerAdminButton").addEventListener("click", requestAdminAccess);
+    bindLive();
     bindHistory();
     $("liveBadge").addEventListener("click", (event) => {
       event.preventDefault();
