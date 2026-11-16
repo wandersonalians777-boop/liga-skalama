@@ -1872,4 +1872,34 @@ body.light-theme .hx-nv.is-away{color:var(--a-l)}
   .hx-num-row{grid-template-columns:36px minmax(0,1fr) 96px minmax(0,1fr) 36px;gap:6px}
   .hx-nl{font-size:10px;letter-spacing:.2px}
   .hx-lu-grid{grid-template-columns:1fr}
+/* Autores dos gols ao lado do cronômetro (organizador) */
+.lv-clock{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;column-gap:14px;justify-items:stretch}
+.lv-clock-mid{display:grid;justify-items:center;gap:6px}
+.lv-goals{display:grid;align-content:center;gap:6px;min-width:0;margin:0;padding:0;list-style:none}
+.lv-goals.is-home{justify-items:end}
+.lv-goals.is-away{justify-items:start}
+.lv-goals:empty{visibility:hidden}
+.lv-gpill{display:flex;align-items:center;gap:6px;max-width:100%;min-height:32px;padding:4px 12px;border-radius:999px;background:var(--tb);color:var(--ti);font-weight:800;box-shadow:0 1px 3px #0003}
+.lv-gname{min-width:0;white-space:nowrap;font-size:14px}
+.lv-gpill small{flex:none;font-size:12px;font-weight:800;opacity:1}
+
+/* Gols ao lado do cronômetro também no celular: estado embaixo, nome curto */
+.lv-gshort{display:none}
+@media(max-width:620px){
+  .lv-clock{column-gap:6px;row-gap:6px}
+  .lv-clock-mid{display:contents}
+  .lv-clock .lv-timer{grid-column:2;grid-row:1}
+  .lv-clock .lv-state{grid-column:1/-1;grid-row:2;justify-self:center}
+  .lv-goals.is-home{grid-column:1;grid-row:1}
+  .lv-goals.is-away{grid-column:3;grid-row:1}
+  .lv-clock.has-goals .lv-timer{font-size:64px}
+  .lv-gpill{gap:3px;min-height:28px;padding:3px 7px}
+  .lv-gname{font-size:11px}
+  .lv-gpill small{font-size:10px}
+  .lv-gball,.lv-gfull{display:none}
+  .lv-gshort{display:inline}
+}
+@media(max-width:620px){
+  .lv-clock.has-goals .lv-timer{font-size:60px}
+  .lv-gpill{overflow:hidden;padding:3px 6px;gap:2px}
 }
