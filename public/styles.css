@@ -1795,3 +1795,81 @@ body:not(.light-theme) .pt-card.is-on-field{box-shadow:0 0 0 2px #ffc400}
 .lv-card .lv-field-cols{padding-top:4px}
 .lv-card .lv-field-cols .lv-ofield2{margin-top:0}
 .lv-card .lv-fhead{color:#fff}
+/* ===== Histórico · jogo aberto: lance a lance horizontal, números e escalação ===== */
+.hx-crest-xs{width:18px;height:18px}
+.hx-crest-xs.hx-initials{border-width:1px;font-size:8px}
+.hx-crest-md{width:30px;height:30px}
+.hx-crest-md.hx-initials{border-width:1px;font-size:11px}
+.hx-gsec{margin-top:18px}
+.hx-gsec:first-child{margin-top:0}
+.hx-gsec-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 14px}
+.hx-tl-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 0 8px;color:var(--muted);font-size:12px;font-weight:700}
+.hx-tl-legend span{display:inline-flex;align-items:center;gap:6px}
+.hx-sq{display:inline-block;width:12px;height:12px;border-radius:3px;background:var(--tb);box-shadow:inset 0 0 0 1px #0003}
+/* Linha do tempo */
+.hx-tl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+.hx-tl{position:relative;min-width:640px;padding:0 6px}
+.hx-lane{position:relative}
+.hx-stem{position:absolute;width:3px;margin-left:-1.5px;background:var(--tc);border-radius:2px}
+.hx-lane.is-home .hx-stem{bottom:0}
+.hx-lane.is-away .hx-stem{top:0}
+.hx-tl-chip{position:absolute;display:inline-flex;align-items:center;gap:6px;max-width:220px;min-height:40px;padding:4px 10px 4px 6px;border:2px solid var(--tc);border-radius:999px;background:#fff;color:#1b1b1b;font-size:12px;line-height:1.15;white-space:nowrap;box-shadow:0 1px 3px #0002;z-index:1}
+.hx-tl-chip.is-sub{border-style:dashed}
+.hx-tl-txt{display:grid;min-width:0}
+.hx-tl-txt b{font-weight:800}
+.hx-tl-txt small{color:#55554f;font-size:11px;font-weight:700}
+.hx-tl-chip .hx-in,body.light-theme .hx-tl-chip .hx-in{color:#1e7a3c}
+.hx-tl-chip .hx-out,body.light-theme .hx-tl-chip .hx-out{color:#b42318}
+.hx-axis{position:relative;height:34px}
+.hx-axis-line{position:absolute;left:0;right:0;top:9px;height:3px;border-radius:2px;background:#8a8a83}
+.hx-tick{position:absolute;top:6px;width:9px;height:9px;margin-left:-4.5px;border-radius:50%;background:#9a9a92}
+.hx-tick.is-edge{background:var(--ink);width:11px;height:11px;margin-left:-5.5px;top:5px}
+.hx-tick-label{position:absolute;top:19px;transform:translateX(-50%);color:var(--muted);font-size:10px;font-weight:800;white-space:nowrap}
+.hx-tick-label.is-start{transform:none}
+.hx-tick-label.is-end{transform:translateX(-100%);color:var(--ink)}
+.hx-mbadge{position:absolute;z-index:2;display:grid;place-items:center;min-width:22px;height:22px;padding:0 4px;margin-left:-11px;border:1.5px solid #0d0d0d;border-radius:999px;background:#ffc400;color:#0d0d0d;font:900 11px/1 'Barlow Condensed',sans-serif}
+.hx-mbadge.is-home{bottom:calc(100% - 12px)}
+.hx-mbadge.is-away{top:10px}
+.hx-tl-empty{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);margin:0;padding:4px 12px;border-radius:999px;background:var(--panel);color:var(--muted);font-size:13px;font-weight:700;white-space:nowrap}
+/* Números do jogo */
+.hx-num-head{display:flex;justify-content:space-between;gap:10px;margin:2px 0 8px}
+.hx-num-team{display:inline-flex;align-items:center;gap:8px;min-width:0;font:900 16px/1 'Barlow Condensed',sans-serif;text-transform:uppercase}
+.hx-num-team b{min-width:0;overflow:hidden;white-space:nowrap}
+.hx-num-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.hx-num-row{display:grid;grid-template-columns:44px minmax(0,1fr) 140px minmax(0,1fr) 44px;align-items:center;gap:8px}
+.hx-nv{font:900 22px/1 'Barlow Condensed',sans-serif;font-variant-numeric:tabular-nums}
+.hx-nv.is-home{text-align:left;color:var(--h-d)}
+.hx-nv.is-away{text-align:right;color:var(--a-d)}
+body.light-theme .hx-nv.is-home{color:var(--h-l)}
+body.light-theme .hx-nv.is-away{color:var(--a-l)}
+.hx-nl{text-align:center;color:var(--ink);font-size:11px;font-weight:900;letter-spacing:.6px}
+.hx-bar{display:flex;height:10px;border-radius:999px;background:#8a8a8333;overflow:hidden}
+.hx-bar.is-home{justify-content:flex-end}
+.hx-bar i{display:block;height:100%;border-radius:999px}
+.hx-bar.is-home i{background:var(--h-tb)}
+.hx-bar.is-away i{background:var(--a-tb)}
+/* Escalação e goleiros */
+.hx-lu-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.hx-lu{min-width:0}
+.hx-lu-head{display:flex;align-items:center;gap:8px;min-height:46px;padding:8px 12px;border-radius:12px 12px 0 0;background:var(--tb);color:var(--ti)}
+.hx-lu-head b{flex:1;min-width:0;overflow:hidden;white-space:nowrap;font:900 18px/1 'Barlow Condensed',sans-serif;text-transform:uppercase}
+.hx-lu-head span{flex:none;font-size:11px;font-weight:900;letter-spacing:.8px}
+.hx-lu-list{display:grid;gap:6px;margin:8px 0 0;padding:0;list-style:none}
+.hx-lu-p{container-type:inline-size;display:flex;align-items:center;gap:6px;min-height:48px;padding:6px 8px 6px 10px;border:2px solid var(--tc);border-left:8px solid var(--tc);border-radius:12px;background:#fff;color:#1b1b1b}
+.hx-lu-p.is-entered{border-style:dashed;border-left-style:solid;background:#f3f3ef}
+.hx-pname{flex:1 1 auto;min-width:0;white-space:nowrap;font-weight:800;font-size:clamp(12px,4.6cqi,15px)}
+.hx-lu-p .hx-g{flex:none;border:1px solid #0d0d0d}
+.hx-conc{flex:none;color:#55554f;font-size:11px;font-weight:800;white-space:nowrap}
+.hx-pstats{display:inline-flex;flex:none;gap:6px;color:#1b1b1b;font-size:12px;font-weight:800;white-space:nowrap}
+.hx-pstats .hx-in,body.light-theme .hx-pstats .hx-in{color:#1e7a3c}
+.hx-pstats .hx-out,body.light-theme .hx-pstats .hx-out{color:#b42318}
+.hx-note{flex:none;min-width:40px;padding:4px 6px;border-radius:8px;background:#e6e6e1;color:#1b1b1b;text-align:center;font:900 16px/1 'Barlow Condensed',sans-serif;font-variant-numeric:tabular-nums}
+.hx-note.is-best{background:#ffc400;color:#0d0d0d}
+.hx-lu-label{margin:12px 0 0;color:var(--muted);font-size:11px;font-weight:900;letter-spacing:1px}
+.hx-share{border-color:#ffc400}
+.hx-sub-title{margin:12px 0 6px;font-size:13px}
+@media(max-width:620px){
+  .hx-num-row{grid-template-columns:36px minmax(0,1fr) 96px minmax(0,1fr) 36px;gap:6px}
+  .hx-nl{font-size:10px;letter-spacing:.2px}
+  .hx-lu-grid{grid-template-columns:1fr}
+}

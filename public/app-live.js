@@ -2028,49 +2028,201 @@
       openText = "Ver lance a lance · " + goalsCount + (goalsCount === 1 ? " gol" : " gols") + " · " + subsCount + (subsCount === 1 ? " troca" : " trocas"),
       team = (side, key, label) => '<span class="hx-team hx-' + side + (winSide && winSide !== side ? " is-lose" : "") + '">' + hxCrest(key, label, "lg") + '<span class="hx-tname">' + escapeHtml(label) + "</span></span>",
       num = (side, value) => '<b class="' + (winSide === side ? "is-win" : winSide ? "is-lose" : "") + '">' + value + "</b>";
-    const events = hxEvents(game),
-      timeline = events.length
-        ? '<ol class="hx-timeline">' + events.map((item) => '<li class="hx-row"><span class="hx-cell hx-left">' + (item.side === "home" ? item.html : "") + '</span><span class="hx-min">' + item.minute + '′</span><span class="hx-cell hx-right">' + (item.side === "away" ? item.html : "") + "</span></li>").join("") + "</ol>"
-        : '<p class="empty-state">Sem gols nem substituições registrados.</p>';
-    // Conteúdo que já existia: escalações e goleiros, score individual e advertências.
-    const keeperLine = (side) => {
-      const spells = keeperSpells(game, side);
-      if (!spells.length) return "não registrado";
-      return spells.map((spell, index) => displayName(spell.player) + (spells.length > 1 ? " (" + spell.minute + "′–" + (spells[index + 1] ? spells[index + 1].minute + "′" : "fim") + ")" : "")).join(" · ");
-    };
-    const roster = (side) => {
-      const players = [...new Set([...(game[side + "Start"] || []), ...(game[side + "Players"] || []), ...(game[side + "Bench"] || [])])];
-      return '<div class="hx-lineup"><p><strong>' + escapeHtml(gameTeamLabel(game, side)) + "</strong></p><p class=\"hx-keepers\">Goleiro: " + escapeHtml(keeperLine(side)) + '</p><ul>' + players.map((name) => "<li>" + escapeHtml(displayName(name)) + ((game.loans || []).some((loan) => loan.player === name) ? " · emprestado" : "") + "</li>").join("") + "</ul></div>";
-    };
-    const perf = gamePerformance(game),
-      scoreRows = perf.length
-        ? '<ul class="hx-score-list">' + [...perf].sort((a, b) => Number(b.score) - Number(a.score)).map((p) => '<li><span><strong>' + escapeHtml(displayName(p.player)) + "</strong><small>" + escapeHtml(teamName(game, p.team) + " · " + (p.role === "goleiro" ? "goleiro · sofreu " + p.goalsAgainst : "linha") + " · " + p.result + (Number(p.goalsFor) ? " · " + p.goalsFor + (Number(p.goalsFor) === 1 ? " gol" : " gols") : "") + (Number(p.assists) ? " · " + p.assists + " assist." : "") + (Number(p.ownGoals) ? " · " + p.ownGoals + " contra" : "")) + "</small></span><b>" + Number(p.score).toFixed(1).replace(".", ",") + "</b></li>").join("") + "</ul>"
-        : '<p class="empty-state">Sem score individual registrado.</p>',
-      warnings = (game.incidents || []).filter((item) => item.type !== "sub" && (!item.gameId || item.gameId === game.id)),
-      warningRows = warnings.length
-        ? '<ul class="hx-warn-list">' + warnings.map((item) => "<li><span>" + escapeHtml(item.type === "warning" ? item.warningType || "Advertência" : incidentLabels[item.type] || item.type) + " · " + escapeHtml(displayName(item.player || "")) + (item.note ? ' <small>' + escapeHtml(item.note) + "</small>" : "") + "</span><b>" + (Number(item.minute) || 0) + "′</b></li>").join("") + "</ul>"
-        : '<p class="empty-state">Sem advertências ou ocorrências registradas.</p>',
-      shootRows = shoot && (shoot.kicks || []).length ? '<ul class="hx-warn-list">' + shoot.kicks.map((kick, index) => "<li><span>" + (index + 1) + ". " + escapeHtml(teamName(game, kick.team)) + " · " + escapeHtml(kick.player ? displayName(kick.player) : "Batedor não identificado") + "</span><b>" + (kick.scored ? "✓ Gol" : "✗ Errou") + "</b></li>").join("") + "</ul>" : "",
-      panels = [hxPanel(game, "lineups", "Escalações e goleiros", '<div class="hx-lineups">' + roster("home") + roster("away") + "</div>"), hxPanel(game, "score", "Score individual", scoreRows), hxPanel(game, "warnings", "Advertências", warningRows), ...(shootRows ? [hxPanel(game, "shootout", "Pênaltis", shootRows)] : [])];
     return '<details class="hx-game' + (title ? " is-final" : "") + '" data-hx-game="' + escapeHtml(game.id) + '"' + (historyOpenGames.has(game.id) ? " open" : "") + "><summary>" +
       '<span class="hx-strip"><b class="hx-num">JOGO ' + game.number + '</b><span class="hx-comp">' + competition + "</span>" + tag + (timeText ? '<span class="hx-time">' + escapeHtml(timeText) + "</span>" : "") + "</span>" +
       '<span class="hx-board">' + team("home", game.home, home) + '<span class="hx-score" aria-label="' + escapeHtml(home + " " + hs + " a " + as + " " + away) + '">' + num("home", hs) + '<i aria-hidden="true">×</i>' + num("away", as) + "</span>" + team("away", game.away, away) + "</span>" +
       '<span class="hx-result">' + escapeHtml(result) + "</span>" +
       '<span class="hx-toggle"><span class="hx-when-closed">' + escapeHtml(openText) + '</span><span class="hx-when-open">Minimizar</span>' + HX_CHEVRON + "</span></summary>" +
-      '<div class="hx-body"><p class="hx-legend"><span>' + HX_BALL + 'gol</span><span>' + HX_SWAP + 'substituição: <b class="hx-in">↑ entra</b> <b class="hx-out">↓ sai</b></span></p>' +
-      '<h3 class="hx-body-title">LANCE A LANCE</h3>' + timeline +
-      '<div class="hx-pbtns">' + panels.map((item) => item.button).join("") + "</div>" + panels.map((item) => item.panel).join("") + "</div></details>";
+      '<div class="hx-body">' + hxTimeline(game, minutes) + hxNumbers(game) + hxLineups(game) + hxFooter(game, shoot) + "</div></details>";
+  }
+  // ---------- Jogo aberto: cores, linha do tempo, números e escalação ----------
+  function hxColors(key) {
+    const sl = superTeam(key);
+    let [bg, ink] = sl ? superHead(sl) : EL_HEAD[key] || ["#3a3a35", "#ffffff"];
+    if (String(bg).toLowerCase() === "#0d0d0d") bg = "#3a3a35";
+    const b = String(bg).toLowerCase(),
+      dark = { "#c2560c": "#f07a2e", "#ffc400": "#ffc400", "#1f6e3a": "#3dba6e", "#23439c": "#7a9bff" }[b] || "#ffffff",
+      light = { "#ffc400": "#7a5c00" }[b] || (["#c2560c", "#1f6e3a", "#23439c", "#3a3a35"].includes(b) ? bg : "#3a3a35");
+    return { bg, ink, line: b === "#ffc400" ? "#e0a800" : bg, light, dark };
+  }
+  function hxVars(key) {
+    const c = hxColors(key);
+    return "--tc:" + c.line + ";--tb:" + c.bg + ";--ti:" + c.ink + ";--tnl:" + c.light + ";--tnd:" + c.dark;
+  }
+  // Time de um jogador naquele jogo (escalação, banco ou trocas).
+  function hxSideOf(game, player) {
+    if (!player) return null;
+    for (const side of ["home", "away"]) {
+      const pool = [...(game[side + "Start"] || []), ...(game[side + "Players"] || []), ...(game[side + "Bench"] || [])];
+      if (pool.includes(player) || (game.substitutions || []).some((sub) => sub.team === game[side] && (sub.in === player || sub.out === player))) return side;
+    }
+    return null;
+  }
+  function hxWarnings(game) {
+    return (game.incidents || []).filter((item) => item.type !== "sub" && (!item.gameId || item.gameId === game.id));
+  }
+  function hxWarnLabel(item) {
+    return item.type === "warning" ? item.warningType || "Advertência" : incidentLabels[item.type] || item.type || "Ocorrência";
+  }
+  function hxTimeline(game, minutes) {
+    const warns = hxWarnings(game), items = hxEvents(game).map((item) => ({ ...item, html: null })), spells = { home: keeperSpells(game, "home"), away: keeperSpells(game, "away") };
+    warns.forEach((item) => items.push({ kind: "warn", side: hxSideOf(game, item.player) || (item.team === game.away ? "away" : "home"), minute: Number(item.minute) || 0, warn: item }));
+    const maxMinute = Math.max(0, ...items.map((item) => item.minute)), end = Math.max(1, minutes || 0, maxMinute),
+      step = end <= 12 ? 1 : end <= 30 ? 2 : 5, pct = (minute) => Math.min(100, Math.max(0, (minute / end) * 100));
+    const key = (side) => game[side], label = (side) => gameTeamLabel(game, side);
+    const chip = (item) => {
+      const team = key(item.side), crest = hxCrest(team, label(item.side), "xs");
+      if (item.kind === "goal") {
+        const goal = item.goal, times = item.count > 1 ? " ×" + item.count : "";
+        return { cls: "", html: crest + '<span class="hx-tl-txt"><b><span aria-hidden="true">⚽ </span><span class="sr-only">Gol: </span>' + escapeHtml(displayName(goal.player || "Gol")) + escapeHtml(times) + (goal.ownGoal ? " (contra)" : "") + "</b>" + (item.assists.length ? '<small>assist. ' + item.assists.map((name) => escapeHtml(displayName(name))).join(", ") + "</small>" : "") + "</span>" };
+      }
+      if (item.kind === "sub") {
+        const sub = item.sub, sideSpells = spells[item.side], goalie = sub.keeperIn || sub.in,
+          toGoal = sub.keeper || sideSpells.some((spell) => spell.player === goalie && spell.minute === (Number(sub.minute) || 0) && spell.out === sub.out);
+        return { cls: " is-sub", html: crest + '<span class="hx-tl-txt"><b><span aria-hidden="true">⇄ </span><span class="sr-only">Substituição: </span><span class="hx-in"><span aria-hidden="true">↑ </span><span class="sr-only">entra </span>' + escapeHtml(displayName(sub.in)) + '</span> <span class="hx-out"><span aria-hidden="true">↓ </span><span class="sr-only">sai </span>' + escapeHtml(displayName(sub.out)) + "</span></b>" + (toGoal ? '<small class="hx-in"><span aria-hidden="true">↑ </span>' + escapeHtml(displayName(goalie)) + " vai pro gol</small>" : "") + "</span>" };
+      }
+      const w = item.warn;
+      return { cls: " is-warn", html: crest + '<span class="hx-tl-txt"><b><span aria-hidden="true">⚠ </span><span class="sr-only">Advertência: </span>' + escapeHtml(displayName(w.player || "")) + " · " + escapeHtml(hxWarnLabel(w)) + "</b>" + (w.note ? "<small>" + escapeHtml(w.note) + "</small>" : "") + "</span>" };
+    };
+    // Empilha as fichas do mesmo lado que ficariam encostadas (mesmo minuto ou muito perto).
+    const gap = Math.max(1, end * 0.24), lanes = { home: [], away: [] };
+    const placed = items.map((item) => {
+      const used = lanes[item.side];
+      let level = 0;
+      while (used.some((other) => other.level === level && Math.abs(other.minute - item.minute) < gap)) level++;
+      used.push({ level, minute: item.minute });
+      return { ...item, level, ...chip(item) };
+    });
+    const levels = { home: Math.max(0, ...placed.filter((p) => p.side === "home").map((p) => p.level + 1)), away: Math.max(0, ...placed.filter((p) => p.side === "away").map((p) => p.level + 1)) };
+    const ROW = 52, BASE = 22;
+    const lane = (side) => {
+      const list = placed.filter((p) => p.side === side), h = levels[side] ? BASE + levels[side] * ROW : 18;
+      return '<div class="hx-lane is-' + side + '" style="height:' + h + "px;" + hxVars(key(side)) + '">' + list.map((p) => {
+        const off = BASE + p.level * ROW;
+        return '<span class="hx-stem" style="left:' + pct(p.minute) + "%;height:" + (off + 4) + 'px" aria-hidden="true"></span>' +
+          '<span class="hx-tl-chip' + p.cls + '" data-pct="' + pct(p.minute) + '" style="left:' + pct(p.minute) + "%;transform:translateX(-" + pct(p.minute) + "%);" + (side === "home" ? "bottom" : "top") + ":" + off + 'px"><span class="sr-only">' + p.minute + " minutos, " + escapeHtml(label(side)) + ": </span>" + p.html + "</span>";
+      }).join("") + "</div>";
+    };
+    const ticks = [];
+    for (let m = 0; m <= end; m += step) ticks.push(m);
+    if (ticks[ticks.length - 1] !== end) ticks.push(end);
+    const badges = [...new Set(placed.map((p) => p.side + "|" + p.minute))].map((k) => { const [side, m] = k.split("|"); return '<span class="hx-mbadge is-' + side + '" style="left:' + pct(Number(m)) + '%" aria-hidden="true">' + m + "′</span>"; }).join("");
+    const axis = '<div class="hx-axis" aria-hidden="true"><span class="hx-axis-line"></span>' + ticks.map((m) => '<span class="hx-tick' + (m === 0 || m === end ? " is-edge" : "") + '" style="left:' + pct(m) + '%"></span><span class="hx-tick-label' + (m === end ? " is-end" : m === 0 ? " is-start" : "") + '" style="left:' + pct(m) + '%">' + m + "′" + (m === end ? " · FIM" : "") + "</span>").join("") + badges + "</div>";
+    const legend = '<p class="hx-tl-legend">' + ["home", "away"].map((side) => '<span><i class="hx-sq" style="' + hxVars(key(side)) + '" aria-hidden="true"></i>' + escapeHtml(label(side)) + "</span>").join("") + "<span>⚽ gol · ⇄ troca · ⚠ advertência</span></p>";
+    return '<section class="hx-gsec hx-gsec-tl" aria-label="Lance a lance"><div class="hx-gsec-head"><h3 class="hx-body-title">LANCE A LANCE</h3>' + legend + "</div>" +
+      '<div class="hx-tl-scroll"><div class="hx-tl">' + lane("home") + axis + lane("away") + (placed.length ? "" : '<p class="hx-tl-empty">Sem gols ou ocorrências</p>') + "</div></div></section>";
+  }
+  function hxNumbers(game) {
+    const perf = gamePerformance(game), sides = ["home", "away"], teamKey = (side) => game[side],
+      goalsOf = (side) => Number(game[side + "Score"]) || 0,
+      assistsOf = (side) => (game.goals || []).filter((goal) => !goal.ownGoal && goal.assistedBy && (goal.scoringTeam || goal.team) === teamKey(side)).length,
+      subsOf = (side) => (game.substitutions || []).filter((sub) => sub.team === teamKey(side)).length,
+      warnsOf = (side) => hxWarnings(game).filter((item) => (hxSideOf(game, item.player) || (item.team === game.away ? "away" : item.team === game.home ? "home" : null)) === side).length,
+      avgOf = (side) => { const list = perf.filter((p) => p.team === teamKey(side)); return list.length ? list.reduce((sum, p) => sum + (Number(p.score) || 0), 0) / list.length : null; },
+      shoot = game.shootout && Number.isFinite(game.shootout.homeScore) ? game.shootout : null;
+    const rows = [
+      ["GOLS", goalsOf("home"), goalsOf("away")],
+      ["ASSISTÊNCIAS", assistsOf("home"), assistsOf("away")],
+      ["GOLS SOFRIDOS", goalsOf("away"), goalsOf("home")],
+      ["SUBSTITUIÇÕES", subsOf("home"), subsOf("away")],
+      ["ADVERTÊNCIAS", warnsOf("home"), warnsOf("away")],
+    ];
+    const ah = avgOf("home"), aa = avgOf("away");
+    if (ah != null || aa != null) rows.push(["SCORE MÉDIO", ah, aa, true]);
+    if (shoot) rows.push(["PÊNALTIS CONVERTIDOS", Number(shoot.homeScore) || 0, Number(shoot.awayScore) || 0]);
+    const fmt = (v, dec) => v == null ? "–" : dec ? v.toFixed(1).replace(".", ",") : String(v);
+    const head = '<div class="hx-num-head"><span class="hx-num-team">' + hxCrest(teamKey("home"), gameTeamLabel(game, "home"), "sm") + "<b>" + escapeHtml(gameTeamLabel(game, "home")) + '</b></span><span class="hx-num-team is-away"><b>' + escapeHtml(gameTeamLabel(game, "away")) + "</b>" + hxCrest(teamKey("away"), gameTeamLabel(game, "away"), "sm") + "</span></div>";
+    return '<section class="hx-gsec hx-gsec-num" aria-label="Números do jogo" style="--h-tb:' + hxColors(teamKey("home")).bg + ";--h-l:" + hxColors(teamKey("home")).light + ";--h-d:" + hxColors(teamKey("home")).dark + ";--a-tb:" + hxColors(teamKey("away")).bg + ";--a-l:" + hxColors(teamKey("away")).light + ";--a-d:" + hxColors(teamKey("away")).dark + '"><h3 class="hx-body-title">NÚMEROS DO JOGO</h3>' + head +
+      '<ul class="hx-num-list">' + rows.map(([labelText, h, a, dec]) => {
+        const max = Math.max(Number(h) || 0, Number(a) || 0), w = (v) => (max > 0 ? Math.round(((Number(v) || 0) / max) * 100) : 0);
+        return '<li class="hx-num-row"><b class="hx-nv is-home">' + fmt(h, dec) + '</b><span class="hx-bar is-home"><i style="width:' + w(h) + '%"></i></span><span class="hx-nl">' + labelText + '</span><span class="hx-bar is-away"><i style="width:' + w(a) + '%"></i></span><b class="hx-nv is-away">' + fmt(a, dec) + "</b></li>";
+      }).join("") + "</ul></section>";
+  }
+  function hxLineups(game) {
+    const perf = gamePerformance(game), subs = game.substitutions || [];
+    const block = (side) => {
+      const team = game[side], label = gameTeamLabel(game, side), spells = keeperSpells(game, side), keepers = spells.map((spell) => spell.player),
+        starters = [...(game[side + "Start"] || game[side + "Players"] || [])],
+        entered = [...new Set(subs.filter((sub) => sub.team === team && !starters.includes(sub.in)).map((sub) => sub.in))],
+        mine = perf.filter((p) => p.team === team), best = mine.length ? Math.max(...mine.map((p) => Number(p.score) || 0)) : null,
+        startKeeper = spells[0]?.player;
+      if (!starters.length && !entered.length) return '<div class="hx-lu" style="' + hxVars(team) + '"><div class="hx-lu-head">' + hxCrest(team, label, "md") + "<b>" + escapeHtml(label) + '</b><span>SCORE</span></div><p class="empty-state">Escalação não registrada.</p></div>';
+      const ordered = startKeeper && starters.includes(startKeeper) ? [startKeeper, ...starters.filter((name) => name !== startKeeper)] : starters;
+      const row = (name, isEntered) => {
+        const p = mine.find((item) => item.player === name), isKeeper = keepers.includes(name) || p?.role === "goleiro",
+          inMin = subs.filter((sub) => sub.team === team && sub.in === name).map((sub) => Number(sub.minute) || 0),
+          outMin = subs.filter((sub) => sub.team === team && sub.out === name).map((sub) => Number(sub.minute) || 0),
+          stats = [
+            p && Number(p.goalsFor) ? '<span class="hx-pst"><span aria-hidden="true">⚽ </span><span class="sr-only">gols: </span>' + Number(p.goalsFor) + "</span>" : "",
+            p && Number(p.assists) ? '<span class="hx-pst"><span aria-hidden="true">🅰 </span><span class="sr-only">assistências: </span>' + Number(p.assists) + "</span>" : "",
+            ...inMin.map((m) => '<span class="hx-pst hx-in"><span aria-hidden="true">↑ </span><span class="sr-only">entrou aos </span>' + m + "′</span>"),
+            ...outMin.map((m) => '<span class="hx-pst hx-out"><span aria-hidden="true">↓ </span><span class="sr-only">saiu aos </span>' + m + "′</span>"),
+          ].join(""),
+          conceded = isKeeper && p ? Number(p.goalsAgainst) || 0 : null,
+          note = p ? '<b class="hx-note' + (best != null && Number(p.score) === best ? " is-best" : "") + '" aria-label="Nota ' + Number(p.score).toFixed(1).replace(".", ",") + '">' + Number(p.score).toFixed(1).replace(".", ",") + "</b>" : "";
+        return '<li class="hx-lu-p' + (isEntered ? " is-entered" : "") + '"><span class="hx-pname">' + escapeHtml(displayName(name)) + "</span>" +
+          (isKeeper ? '<b class="hx-g" title="Goleiro" aria-label="Goleiro">G</b>' + (conceded != null ? '<small class="hx-conc">' + conceded + (conceded === 1 ? " sofrido" : " sofridos") + "</small>" : "") : "") +
+          '<span class="hx-pstats">' + stats + "</span>" + note + "</li>";
+      };
+      return '<div class="hx-lu" style="' + hxVars(team) + '"><div class="hx-lu-head">' + hxCrest(team, label, "md") + "<b>" + escapeHtml(label) + '</b><span>SCORE</span></div><ul class="hx-lu-list">' + ordered.map((name) => row(name, false)).join("") + "</ul>" +
+        (entered.length ? '<p class="hx-lu-label">ENTROU</p><ul class="hx-lu-list">' + entered.map((name) => row(name, true)).join("") + "</ul>" : "") + "</div>";
+    };
+    return '<section class="hx-gsec hx-gsec-lu" aria-label="Escalação e goleiros"><h3 class="hx-body-title">ESCALAÇÃO E GOLEIROS</h3><div class="hx-lu-grid">' + block("home") + block("away") + "</div></section>";
+  }
+  function hxFooter(game, shoot) {
+    const warnings = hxWarnings(game),
+      warningRows = warnings.length
+        ? '<ul class="hx-warn-list">' + warnings.map((item) => "<li><span>" + escapeHtml(hxWarnLabel(item)) + " · " + escapeHtml(displayName(item.player || "")) + (item.note ? ' <small>' + escapeHtml(item.note) + "</small>" : "") + "</span><b>" + (Number(item.minute) || 0) + "′</b></li>").join("") + "</ul>"
+        : '<p class="empty-state">Sem advertências ou ocorrências registradas.</p>',
+      shootRows = shoot && (shoot.kicks || []).length ? '<h5 class="hx-sub-title">Pênaltis</h5><ul class="hx-warn-list">' + shoot.kicks.map((kick, index) => "<li><span>" + (index + 1) + ". " + escapeHtml(teamName(game, kick.team)) + " · " + escapeHtml(kick.player ? displayName(kick.player) : "Batedor não identificado") + "</span><b>" + (kick.scored ? "✓ Gol" : "✗ Errou") + "</b></li>").join("") + "</ul>" : "",
+      panel = hxPanel(game, "warnings", "Advertências e ocorrências", warningRows + shootRows);
+    return '<div class="hx-pbtns">' + panel.button + '<button type="button" class="hx-pbtn hx-share" data-hx-share="' + escapeHtml(game.id) + '">Compartilhar súmula</button></div>' + panel.panel;
+  }
+  // Linha do tempo: mede as fichas de verdade e empilha só as que encostariam (o nível inicial é uma estimativa).
+  function hxLayout(root) {
+    const ROW = 52, BASE = 22;
+    root?.querySelectorAll(".hx-tl").forEach((tl) => {
+      const width = tl.getBoundingClientRect().width;
+      if (!width) return;
+      tl.querySelectorAll(".hx-lane").forEach((lane) => {
+        const home = lane.classList.contains("is-home"), chips = [...lane.querySelectorAll(".hx-tl-chip")], stems = [...lane.querySelectorAll(".hx-stem")];
+        const rows = [];
+        chips.map((chip, i) => { const w = chip.getBoundingClientRect().width, pct = Number(chip.dataset.pct) || 0, left = (pct / 100) * (width - w); return { chip, stem: stems[i], left, right: left + w }; })
+          .sort((a, b) => a.left - b.left)
+          .forEach((item) => {
+            let level = 0;
+            while ((rows[level] || []).some((other) => item.left < other.right + 6 && other.left < item.right + 6)) level++;
+            (rows[level] = rows[level] || []).push(item);
+            const off = BASE + level * ROW;
+            item.chip.style[home ? "bottom" : "top"] = off + "px";
+            if (item.stem) item.stem.style.height = off + 4 + "px";
+          });
+        if (chips.length) lane.style.height = BASE + rows.length * ROW + "px";
+      });
+    });
+  }
+  // Nomes sempre numa linha: diminui a fonte até caber (escalação do jogo aberto).
+  function hxFit(root) {
+    hxLayout(root);
+    root?.querySelectorAll(".hx-pname").forEach((el) => {
+      el.style.fontSize = "";
+      let size = parseFloat(getComputedStyle(el).fontSize), guard = 0;
+      while (el.scrollWidth > el.clientWidth + 0.5 && size > 9 && guard++ < 24) { size -= 0.5; el.style.fontSize = size + "px"; }
+    });
   }
   function teamName(game, key) {
     return key === game.home ? gameTeamLabel(game, "home") : key === game.away ? gameTeamLabel(game, "away") : teamLabel(key);
   }
   function bindHistory() {
     const list = $("gameHistory");
+    window.addEventListener("resize", () => list.querySelectorAll("details[open]").forEach(hxFit));
     list.addEventListener("toggle", (event) => {
       const id = event.target.dataset?.hxGame;
-      if (id) { if (event.target.open) historyOpenGames.add(id); else historyOpenGames.delete(id); list.dataset.markup = ""; }
+      if (id) { if (event.target.open) { historyOpenGames.add(id); hxFit(event.target); } else historyOpenGames.delete(id); list.dataset.markup = ""; }
     }, true);
     list.addEventListener("click", (event) => {
+      const share = event.target.closest("[data-hx-share]");
+      if (share) { ART.type = "result"; ART.gameId = share.dataset.hxShare; setView("arte"); renderArt(); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
       const button = event.target.closest("[data-hx-panel]");
       if (!button) return;
       const id = button.dataset.hxPanel, panel = document.getElementById(id), open = button.getAttribute("aria-expanded") !== "true";
@@ -2121,7 +2273,7 @@
     const summary = (games) => [hxDayLabel(games[0]), String(games[0].venue || state.venue || "").trim(), games.length + (games.length === 1 ? " jogo" : " jogos")].filter(Boolean).join(" · ");
     if (night) night.textContent = summary(groups[0].games) + " · toque no jogo para abrir";
     const markup = groups.map((group, index) => (index ? '<h3 class="hx-day">' + escapeHtml(summary(group.games)) + "</h3>" : "") + group.games.map(hxGameCard).join("")).join("");
-    if (list.dataset.markup !== markup) { list.dataset.markup = markup; list.innerHTML = markup; }
+    if (list.dataset.markup !== markup) { list.dataset.markup = markup; list.innerHTML = markup; list.querySelectorAll("details[open]").forEach(hxFit); }
   }
   function renderGoals() {
     const totals = new Map(),
