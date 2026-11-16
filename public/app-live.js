@@ -893,7 +893,7 @@
   // As regras continuam as mesmas (startersFor, drawTeams, troca livre, fila); aqui muda só a apresentação e o fluxo.
   const elUI = { filter: "all", showAll: false, menu: null, editing: null, naming: {}, reorder: false };
   const EL_PREVIEW = 12;
-  const EL_HEAD = { "Time Águia": ["#c4570c", "#ffffff"], "Time Sol": ["#ffc400", "#0d0d0d"], "Time Verde": ["#1f6e3a", "#ffffff"], "Time Azul": ["#23439c", "#ffffff"] };
+  const EL_HEAD = { "Time Águia": ["#c2560c", "#ffffff"], "Time Sol": ["#ffc400", "#0d0d0d"], "Time Verde": ["#1f6e3a", "#ffffff"], "Time Azul": ["#23439c", "#ffffff"] };
   // Mesma regra do sorteio: quantos times e quantos reservas saem com n confirmados.
   function elDrawPlan(n) {
     if (n < MIN_PLAYERS) return { ok: false, text: "faltam " + (MIN_PLAYERS - n) + " para fechar 2 times", teams: 0, sizes: [], reserves: 0 };
@@ -2422,6 +2422,11 @@
       '<span class="sl-side sl-away">' + escapeHtml(teamLabel(fixture.away)) + superChip(fixture.away) + "</span>" +
       '<span class="sl-state">' + stateText + (canPlay ? '<button type="button" class="text-button" data-sl-play="' + escapeHtml(fixture.id) + '">Jogar agora</button>' : "") + "</span></li>";
   }
+  // As 4 primeiras cores da Super Liga usam o mesmo cabeçalho dos times fixos do Elenco.
+  function superHead(team) {
+    const fixed = [EL_HEAD["Time Águia"], EL_HEAD["Time Sol"], EL_HEAD["Time Verde"], EL_HEAD["Time Azul"]][team.color], color = SUPER_COLORS[team.color];
+    return fixed || (color ? [color.color, color.ink] : ["#0d0d0d", "#ffffff"]);
+  }
   function superTeamCard(team, sl, editable) {
     // Jogadores já cadastrados no Elenco que ainda não estão em nenhum time da Super Liga.
     const available = (state.roster || []).filter((name) => !sl.teams.some((item) => item.players.some((player) => playerKey(player) === playerKey(name)))),
@@ -2689,12 +2694,14 @@
         html += "</div></div>";
         html += superRankings(sl);
       }
-      const playing = new Set([state.currentGame?.home, state.currentGame?.away].filter(Boolean)),
-        cards = teams.map((team) => superTeamCard(team, sl, !locked && !playing.has(team.key))).join("");
+      const playing = new Set([state.currentGame?.home, state.currentGame?.away].filter(Boolean)), field = locked ? ptOnField(true) : null,
+        cards = locked
+          ? teams.map((team) => { const [head, ink] = superHead(team); return ptCard(team.key, team.name, head, ink, team.players.map((player) => [player, team.starters.includes(player) ? "" : "Reserva"]), field.has(team.key)); }).join("")
+          : teams.map((team) => superTeamCard(team, sl, !playing.has(team.key))).join("");
       // Visitantes só veem os times depois que o organizador confirma (sorteio da ordem dos jogos).
       html += status === "setup"
         ? locked ? "" : '<div class="sl-teams">' + cards + "</div>"
-        : '<details class="sl-teams-details"' + (superTeamsOpen || locked ? " open" : "") + "><summary>" + (locked ? "Escalação dos times" : "Times e jogadores") + " · " + teams.length + " times · " + sl.starters + " titulares por time</summary><div class=\"sl-teams\">" + cards + "</div></details>";
+        : '<details class="sl-teams-details"' + (superTeamsOpen || locked ? " open" : "") + "><summary>" + (locked ? "Escalação dos times" : "Times e jogadores") + " · " + teams.length + " times · " + sl.starters + " titulares por time</summary><div class=\"" + (locked ? "public-teams-grid pt-grid" : "sl-teams") + "\">" + cards + "</div></details>";
       if (!locked)
         html += '<div class="button-row sl-actions">' +
           (status === "setup" ? '<button type="button" class="button button-primary" data-sl-action="draw">' + (teams.length === 2 ? "Começar jogo único" : "Sortear ordem dos jogos") + "</button>" : "") +
@@ -2713,8 +2720,45 @@
     const focusKey = box.contains(document.activeElement) ? document.activeElement?.dataset?.focusKey : "";
     superMarkup = html;
     box.innerHTML = html;
+    box.querySelectorAll(".pt-grid").forEach(ptFit);
     if (focusKey) box.querySelector('[data-focus-key="' + focusKey + '"]')?.focus();
   }
+  // Escalação dos times (visitante): card com a cor e o escudo do time, igual ao Elenco e sorteio.
+  function ptOnField(superMode) {
+    const game = state.currentGame;
+    if (game && !!game.superLigaId === superMode) return new Set([game.home, game.away]);
+    if (game) return new Set();
+    if (!superMode) { const p = state.pendingMatch; return new Set(p?.prepared ? [p.home, p.away] : []); }
+    const fixture = superNextFixture(), pending = state.superLiga?.pending;
+    return new Set(fixture && pending?.prepared && pending.fixtureId === fixture.id ? [fixture.home, fixture.away] : []);
+  }
+  function ptCard(key, label, head, ink, players, onField) {
+    const src = crestFor(key, label),
+      initials = String(label || "").replace(/^time\s+/i, "").split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+    const crest = '<span class="pt-crest' + (src ? "" : " pt-initials") + '" aria-hidden="true">' + (src ? '<img src="' + escapeHtml(src) + '" alt="">' : escapeHtml(initials || "?")) + "</span>";
+    return '<article class="pt-card' + (onField ? " is-on-field" : "") + '"><header class="pt-head" style="--team-color:' + head + ";--team-ink:" + ink + '">' + crest + '<strong class="pt-name">' + escapeHtml(label) + "</strong>" + (onField ? '<span class="pt-live">EM CAMPO</span>' : "") + '</header><ol class="pt-list">' +
+      players.map(([name, extra], index) => '<li><span class="pt-num">' + (index + 1) + '</span><span class="pt-player">' + escapeHtml(displayName(name)) + "</span>" + (keeper(name) ? '<b class="pt-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + (extra ? '<small class="pt-extra">' + extra + "</small>" : "") + "</li>").join("") +
+      "</ol></article>";
+  }
+  // Garantia extra: se um nome ainda não couber na linha, diminui a fonte até caber (nunca corta nem quebra).
+  function ptFit(root) {
+    // Selo EM CAMPO desce para baixo do nome quando os dois não cabem lado a lado.
+    root.querySelectorAll(".pt-head").forEach((head) => {
+      head.classList.remove("is-tight");
+      const name = head.querySelector(".pt-name");
+      name.style.fontSize = "";
+      if (!head.querySelector(".pt-live")) return;
+      let size = parseFloat(getComputedStyle(name).fontSize);
+      while (name.scrollWidth > name.clientWidth + 0.5 && size > 16) { size = Math.max(16, size - 0.5); name.style.fontSize = size + "px"; }
+      if (name.scrollWidth > name.clientWidth + 0.5) { name.style.fontSize = ""; head.classList.add("is-tight"); }
+    });
+    root.querySelectorAll(".pt-name, .pt-player").forEach((el) => {
+      if (el.classList.contains("pt-player")) el.style.fontSize = "";
+      let size = parseFloat(getComputedStyle(el).fontSize), guard = 0;
+      while (el.scrollWidth > el.clientWidth + 0.5 && size > 9 && guard++ < 20) { size -= 0.5; el.style.fontSize = size + "px"; }
+    });
+  }
+  window.addEventListener("resize", () => document.querySelectorAll(".pt-grid").forEach(ptFit));
   function renderLigaPublicTeams(otherMode) {
     const section = $("ligaPublicTeams");
     if (!section) return;
@@ -2725,12 +2769,13 @@
     const note = $("ligaPublicNote");
     note.hidden = !(otherMode && state.currentGame);
     note.textContent = "Agora está rolando um jogo da Super Liga. Veja o placar na aba Modo Super Liga.";
-    const markup = teams.map((team, index) => {
-      const color = teamColors[index] || teamColors[0], players = lineupForTeam(team.name);
-      return '<article class="public-team-card"><header style="--team-color:' + color.color + ';--team-ink:' + color.ink + '"><strong>' + escapeHtml(teamLabel(team.name)) + '</strong><span>' + players.length + ' jogadores</span></header><ol>' + players.map((name) => '<li>' + escapeHtml(displayName(name)) + (keeper(name) ? ' <b class="keeper-mark">*</b>' : '') + '</li>').join('') + '</ol></article>';
+    const field = ptOnField(false);
+    const markup = teams.map((team) => {
+      const [head, ink] = EL_HEAD[team.name] || ["#0d0d0d", "#ffffff"];
+      return ptCard(team.name, teamLabel(team.name), head, ink, lineupForTeam(team.name).map((name) => [name, ""]), field.has(team.name));
     }).join("");
     const grid = $("ligaPublicTeamsGrid");
-    if (grid.dataset.markup !== markup) { grid.dataset.markup = markup; grid.innerHTML = markup; }
+    if (grid.dataset.markup !== markup) { grid.dataset.markup = markup; grid.innerHTML = markup; ptFit(grid); }
   }
   function bindSuperLiga() {
     const box = $("superLigaPanel");
