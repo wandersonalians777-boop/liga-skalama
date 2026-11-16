@@ -5155,18 +5155,23 @@
   // Goleiros: duas colunas de botões que escolhem no mesmo select de antes (#keeperHome / #keeperAway).
   function lvKeeperColumns() {
     const { home, away } = lvMatchTeams();
+    lvUI.kOpen = lvUI.kOpen || {};
     return [["home", home, "keeperHome"], ["away", away, "keeperAway"]].map(([side, team, id]) => {
-      const select = $(id), chosen = select.value, off = select.disabled,
+      const select = $(id), chosen = select.value, off = select.disabled, open = !!lvUI.kOpen[side] && !off,
         names = [...select.options].map((option) => option.value).filter(Boolean).sort((a, b) => keeper(b) - keeper(a));
       if (!team) return "";
       const label = teamLabel(team);
-      return '<div class="lv-kcol" style="' + lvTeamVars(team) + '"><div class="lv-khead">' + lvCrest(team, "k") + '<strong id="lvK-' + side + '">' + escapeHtml(label) + "</strong>" +
-        (chosen ? '<span class="lv-kstate is-ok">✓ ESCOLHIDO</span>' : '<span class="lv-kstate">FALTA ESCOLHER</span>') + "</div>" +
-        '<div class="lv-klist" role="radiogroup" aria-labelledby="lvKeepersTitle lvK-' + side + '">' +
+      // Fechada: mostra o time, o selo e o goleiro escolhido. Tocar abre a lista.
+      return '<div class="lv-kcol' + (open ? " is-open" : "") + '" style="' + lvTeamVars(team) + '"><button type="button" class="lv-khead" data-lv-ktoggle="' + side + '" aria-expanded="' + open + '" aria-controls="lvKList-' + side + '"' + (off ? " disabled" : "") + ">" +
+        '<span class="lv-ktop">' + lvCrest(team, "k") + '<strong id="lvK-' + side + '">' + escapeHtml(label) + "</strong>" + '<span class="lv-kchev" aria-hidden="true">' + (open ? "▴" : "▾") + "</span></span>" +
+        '<span class="lv-kpick">' + (chosen ? '<span class="lv-kname">' + escapeHtml(displayName(chosen)) + '</span><b class="lv-g" title="Goleiro" aria-label="Goleiro">G</b>' : '<span class="lv-kname lv-kmuted">' + (open ? "Escolha abaixo" : "Toque para escolher") + "</span>") + "</span>" +
+        (chosen ? '<span class="lv-kstate is-ok">✓ ESCOLHIDO</span>' : '<span class="lv-kstate">FALTA ESCOLHER</span>') + "</button>" +
+        '<div class="lv-klist" id="lvKList-' + side + '" role="radiogroup" aria-labelledby="lvKeepersTitle lvK-' + side + '"' + (open ? "" : " hidden") + ">" +
         (names.length ? names.map((name) => '<button type="button" class="lv-kbtn' + (chosen === name ? " is-on" : "") + '" role="radio" aria-checked="' + (chosen === name) + '" data-lv-keeper="' + side + '" data-name="' + escapeHtml(name) + '"' + (off ? " disabled" : "") + '><span class="lv-kname">' + escapeHtml(displayName(name)) + "</span>" + (chosen === name ? '<b class="lv-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "</button>").join("") : '<p class="lv-muted">Sem jogadores.</p>') +
         "</div></div>";
     }).join("");
   }
+
   function lvFieldColumn(game, s) {
     const team = game[s], keeperName = game[s + "Keeper"], players = [...lineupForTeam(team, game)].sort((a, b) => (b === keeperName) - (a === keeperName)),
       title = s === "home" ? lvCrest(team, "xs") + "<span>" + escapeHtml(teamLabel(team).toUpperCase()) + " · EM CAMPO</span>" : "<span>EM CAMPO · " + escapeHtml(teamLabel(team).toUpperCase()) + "</span>" + lvCrest(team, "xs");
@@ -5675,13 +5680,20 @@
         $("durationMinutes").value = data.lvDuration;
         $("durationMinutes").dispatchEvent(new Event("change"));
       }
-      else if (data.lvKeeper) {
-        const select = $(data.lvKeeper === "home" ? "keeperHome" : "keeperAway");
-        if (select.disabled || select.value === data.name) return;
-        select.value = data.name;
-        select.dispatchEvent(new Event("change"));
+      else if (data.lvKtoggle) {
+        lvUI.kOpen = lvUI.kOpen || {};
+        lvUI.kOpen[data.lvKtoggle] = !lvUI.kOpen[data.lvKtoggle];
         renderOrganizer();
-        org.querySelector('[data-lv-keeper="' + data.lvKeeper + '"][data-name="' + CSS.escape(data.name) + '"]')?.focus();
+        org.querySelector('[data-lv-ktoggle="' + data.lvKtoggle + '"]')?.focus();
+      }
+      else if (data.lvKeeper) {
+        const side = data.lvKeeper, select = $(side === "home" ? "keeperHome" : "keeperAway");
+        if (select.disabled) return;
+        if (select.value !== data.name) { select.value = data.name; select.dispatchEvent(new Event("change")); }
+        // Escolheu: a janela fecha e mostra o goleiro no cabeçalho.
+        lvUI.kOpen = { ...(lvUI.kOpen || {}), [side]: false };
+        renderOrganizer();
+        org.querySelector('[data-lv-ktoggle="' + side + '"]')?.focus();
       }
       else if (target.id === "lvPrepared") lvTrigger("preparedBtn");
       else if ("lvUnprepare" in data) lvTrigger("preparedBtn");

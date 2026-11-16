@@ -1734,3 +1734,15 @@ body:not(.light-theme) .pt-card.is-on-field{box-shadow:0 0 0 2px #ffc400}
 .lv-kbtn:focus-visible{outline:3px solid #6f8fe8;outline-offset:2px}
 .lv-kname{flex:0 1 auto;min-width:0;white-space:nowrap;font-size:clamp(12px,6.4cqi,15px)}
 .lv-kbtn .lv-g{flex:none;margin-left:auto}
+/* Goleiros: cada time numa janela que expande (fechada por padrão) */
+.lv-kcol .lv-khead{display:grid;gap:6px;width:100%;min-height:48px;padding:8px 10px;border:2px solid var(--tc);border-bottom-width:3px;border-radius:12px;background:transparent;color:var(--ink);text-align:left;cursor:pointer;font:inherit}
+.lv-kcol .lv-khead:disabled{cursor:default}
+.lv-kcol .lv-khead:focus-visible{outline:3px solid #6f8fe8;outline-offset:2px}
+.lv-ktop{display:flex;align-items:center;gap:6px;min-width:0}
+.lv-ktop strong{flex:1 1 auto;min-width:0;font:900 15px/1.1 'Barlow Condensed',sans-serif;text-transform:uppercase;white-space:nowrap;overflow:hidden}
+.lv-kchev{flex:none;font-size:16px;line-height:1}
+.lv-kpick{display:flex;align-items:center;gap:6px;min-width:0;font-weight:800}
+.lv-kpick .lv-g{flex:none}
+.lv-kmuted{color:var(--muted);font-weight:700}
+.lv-kcol .lv-kstate{justify-self:start;margin-left:0}
+.lv-kcol.is-open .lv-khead{border-radius:12px 12px 4px 4px}
