@@ -42,7 +42,7 @@
     state = null,
     goals = [],
     toastTimer = 0,
-    sharedStatePoll = null,
+    sharedStatePoll = null, stateChannel = null,
     goalSubmitting = false,
     substituting = false,
     starterChoice = {},
@@ -391,6 +391,7 @@
       state = next; renderAll(); localSave(); notify(successMessage + " (somente neste navegador)"); return true;
     }
     const { error } = await client.from("league_night").upsert({ id: 1, state: next, updated_at: new Date().toISOString() });
+    if (!error) stateChannel?.send({ type: "broadcast", event: "state", payload: { at: nowMs() } }).catch?.(() => {});
     if (error) { notify("Não foi possível salvar no banco compartilhado: " + error.message, true); return false; }
     state = next; renderAll(); notify(successMessage); return true;
   }
@@ -453,8 +454,19 @@
     client.channel("liga-skalama-live")
       .on("postgres_changes", { event: "*", schema: "public", table: "goals" }, refreshGoals)
       .subscribe((status) => { if (status === "SUBSCRIBED") updateAccessUI(); });
-    if (sharedStatePoll) clearInterval(sharedStatePoll);
-    sharedStatePoll = setInterval(() => refreshSharedState().catch((error) => console.warn("Falha ao atualizar a rodada compartilhada:", error)), 6000);
+    // Aviso imediato: quando o organizador grava, os espectadores buscam o estado na hora (canal de broadcast, sem dados).
+    stateChannel = client.channel("liga-skalama-state", { config: { broadcast: { self: false } } })
+      .on("broadcast", { event: "state" }, () => refreshSharedState().catch((error) => console.warn("Falha ao atualizar a rodada compartilhada:", error)))
+      .subscribe();
+    // Busca de segurança: a cada 2 s com jogo rolando, a cada 6 s sem jogo.
+    if (sharedStatePoll) clearTimeout(sharedStatePoll);
+    const poll = () => {
+      sharedStatePoll = setTimeout(async () => {
+        try { await refreshSharedState(); } catch (error) { console.warn("Falha ao atualizar a rodada compartilhada:", error); }
+        poll();
+      }, state?.currentGame ? 2000 : 6000);
+    };
+    poll();
     renderAll();
     return true;
   }
@@ -533,7 +545,7 @@
   }
   function isPlayerSuspended(player, game = state.currentGame) {
     if (!player || !game) return false;
-    return (state.incidents || []).some((item) => item.gameId === game.id && item.type === "hand" && item.player === player && Number(item.expiresAt) > Date.now());
+    return (state.incidents || []).some((item) => item.gameId === game.id && item.type === "hand" && item.player === player && Number(item.expiresAt) > nowMs());
   }
   function gameTeamLabel(game, side) {
     const name = game && game[side];
@@ -1102,6 +1114,32 @@
   function clockText(seconds) {
     return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
   }
+  // ---------- Hora do servidor: organizador e espectador contam o tempo pelo mesmo relógio ----------
+  // O cronômetro guarda horários absolutos; cada aparelho tem o relógio um pouco diferente. Medimos a diferença
+  // para o servidor do site (cabeçalho Date, com várias amostras para chegar a ~décimos de segundo) e usamos nowMs().
+  let clockOffset = 0, clockSyncing = false;
+  const nowMs = () => Date.now() + clockOffset;
+  async function syncServerClock() {
+    if (clockSyncing || typeof fetch !== "function") return;
+    clockSyncing = true;
+    try {
+      let low = -Infinity, high = Infinity, got = 0;
+      for (let i = 0; i < 6; i++) {
+        const t0 = Date.now();
+        const res = await fetch("./manifest.webmanifest?clock=" + t0 + "-" + i, { method: "HEAD", cache: "no-store" }).catch(() => null);
+        const t1 = Date.now(), header = res?.headers?.get("date"), server = header ? Date.parse(header) : NaN;
+        if (Number.isFinite(server) && t1 - t0 < 3000) {
+          // O servidor gerou a resposta entre t0 e t1; o cabeçalho corta os milissegundos (server <= real < server + 1000).
+          low = Math.max(low, server - t1);
+          high = Math.min(high, server + 1000 - t0);
+          got++;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 170 + Math.random() * 60));
+      }
+      if (got && low <= high) clockOffset = Math.round((low + high) / 2);
+      else if (got && Number.isFinite(low)) clockOffset = Math.round(low);
+    } finally { clockSyncing = false; }
+  }
   function pauseLimitMs(timer = state.timer || {}) {
     return timer.mode === "coca" ? 120000 : 60000;
   }
@@ -1112,20 +1150,20 @@
       limit,
       used +
         (timer.pauseStartedAt
-          ? Math.max(0, Date.now() - timer.pauseStartedAt)
+          ? Math.max(0, nowMs() - timer.pauseStartedAt)
           : 0),
     );
   }
   function isPauseActive(timer = state.timer || {}) {
     return (
       !!timer.pauseStartedAt &&
-      Date.now() <
+      nowMs() <
         timer.pauseStartedAt +
           Math.max(0, pauseLimitMs(timer) - (timer.pauseUsedMs || 0))
     );
   }
   function timerRemaining(timer = state.timer || {}) {
-    const now = Date.now();
+    const now = nowMs();
     if (timer.endsAt)
       return Math.max(0, Math.ceil((timer.endsAt - now) / 1000));
     if (timer.pauseStartedAt && timer.remainingAtPause != null) {
@@ -1165,8 +1203,8 @@
       const loan = state.currentGame ? null : $("loan" + side[0].toUpperCase() + side.slice(1) + "Player").value;
       if (loan && !players.includes(loan)) players.push(loan);
       return '<div class="match-preview-team" style="--team-color:' + colorOf(name).color + ';--team-ink:' + colorOf(name).ink + '"><strong>' + escapeHtml(teamLabel(name)) + '</strong><ul>' + players.map((player) => {
-        const penalty = (state.incidents || []).find((item) => item.type === "hand" && item.gameId === state.currentGame?.id && item.player === player && Number(item.expiresAt) > Date.now());
-        const countdown = penalty ? '<b class="suspension-badge">FORA · ' + clockText(Math.ceil((Number(penalty.expiresAt) - Date.now()) / 1000)) + '</b>' : "";
+        const penalty = (state.incidents || []).find((item) => item.type === "hand" && item.gameId === state.currentGame?.id && item.player === player && Number(item.expiresAt) > nowMs());
+        const countdown = penalty ? '<b class="suspension-badge">FORA · ' + clockText(Math.ceil((Number(penalty.expiresAt) - nowMs()) / 1000)) + '</b>' : "";
         return '<li>' + escapeHtml(displayName(player)) + (keeper(player) ? ' · Goleiro' : '') + (player === loan ? ' · emprestado' : '') + countdown + '</li>';
       }).join('') + '</ul></div>';
     }).join('');
@@ -2144,15 +2182,15 @@
     const list = $("incidentList"), entries = state.incidents || [];
     if (!entries.length) { suspensionSignature = ""; list.innerHTML = '<p class="empty-state">Nenhuma ocorrência registrada nesta partida.</p>'; return; }
     list.innerHTML = [...entries].filter((item) => !state.currentGame || !item.gameId || item.gameId === state.currentGame.id).reverse().map((item) => {
-      const active = item.type === "hand" && item.gameId === state.currentGame?.id && Number(item.expiresAt) > Date.now();
-      const left = active ? Math.ceil((Number(item.expiresAt) - Date.now()) / 1000) : 0;
+      const active = item.type === "hand" && item.gameId === state.currentGame?.id && Number(item.expiresAt) > nowMs();
+      const left = active ? Math.ceil((Number(item.expiresAt) - nowMs()) / 1000) : 0;
       const status = item.type === "hand" ? active ? "Retorno em " + clockText(left) : "Liberado para retornar" : "Registrado";
       const label = item.type === "warning" ? (item.warningType || "Advertência") : (incidentLabels[item.type] || item.type);
       const time = item.createdAt ? new Date(item.createdAt).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : "—";
       return '<article class="incident-row"><div><strong>' + escapeHtml(label) + " · " + escapeHtml(displayName(item.player || "Sem jogador associado")) + '</strong><small>' + escapeHtml(item.note || "Minuto " + (item.minute || 0)) + " · " + time + '</small></div><span class="incident-status ' + (item.type === "hand" && !active ? "done" : "") + '">' + status + '</span></article>';
     }).join("");
     if (state.currentGame && (state.incidents || []).some((item) => item.type === "hand" && item.gameId === state.currentGame.id)) renderMatchPreview();
-    const suspended = (state.incidents || []).filter((item) => item.type === "hand" && item.gameId === state.currentGame?.id && Number(item.expiresAt) > Date.now()).map((item) => item.player).sort().join("|");
+    const suspended = (state.incidents || []).filter((item) => item.type === "hand" && item.gameId === state.currentGame?.id && Number(item.expiresAt) > nowMs()).map((item) => item.player).sort().join("|");
     if (suspended !== suspensionSignature) { suspensionSignature = suspended; renderGoalOptions(); renderKeeperChoices(); }
   }
   async function addIncident() {
@@ -2161,7 +2199,7 @@
     const warningTypes = { warning_verbal: "Advertência verbal", warning_yellow: "Cartão amarelo", warning_red: "Cartão vermelho" };
     const type = warningTypes[selectedType] ? "warning" : selectedType;
     if (!game || !player || ![...(game.homePlayers || []), ...(game.awayPlayers || [])].includes(player)) { notify("Escolha um jogador da partida em andamento.", true); return; }
-    const item = { id: crypto.randomUUID(), gameId: game.id, minute: Math.max(1, Math.ceil(timerElapsed()/60)), type, player, note: $("incidentNote").value.trim(), createdAt: new Date().toISOString(), expiresAt: type === "hand" ? Date.now() + 60000 : null };
+    const item = { id: crypto.randomUUID(), gameId: game.id, minute: Math.max(1, Math.ceil(timerElapsed()/60)), type, player, note: $("incidentNote").value.trim(), createdAt: new Date().toISOString(), expiresAt: type === "hand" ? nowMs() + 60000 : null };
     if (type === "warning") item.warningType = warningTypes[selectedType];
     incidentSubmitting = true; $("addIncident").disabled = true;
     try {
@@ -4875,7 +4913,7 @@
     if (!homeKeeper || !awayKeeper || !homePlayers.includes(homeKeeper) || !awayPlayers.includes(awayKeeper)) { notify("Defina um goleiro que esteja escalado em cada time.", true); return; }
     const durationMinutes = Number($("durationMinutes").value);
     if ((!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 180)) { notify("A duração deve ser de 1 a 180 minutos.", true); return; }
-    const now = Date.now(), duration = durationMinutes * 60;
+    const now = nowMs(), duration = durationMinutes * 60;
     const fixture = superMode ? superFixture(pending.fixtureId) : null;
     const currentGame = { id: crypto.randomUUID(), roundId: (fixture ? sl.id : state.roundId) || null, ...(fixture ? { superLigaId: sl.id, fixtureId: fixture.id, stage: fixture.stage, round: fixture.round } : {}), number: (state.gameHistory || []).length + 1, home, away, homePlayers, awayPlayers, homeStart: [...homePlayers], awayStart: [...awayPlayers], homeBench, awayBench, onCourt, substitutions: [], homeKeeper, awayKeeper, homeKeeperStart: homeKeeper, awayKeeperStart: awayKeeper, loans, timerMode: mode, durationMinutes: mode === "coca" ? null : durationMinutes, startedAt: now };
     const order = [...(state.challengeQueue || []), pending.home, pending.away, ...teams.map((team) => team.name)].filter((name,index,all) => name && name !== home && name !== away && all.indexOf(name) === index);
@@ -4889,7 +4927,7 @@
   async function pauseTimer() {
     if (!state.currentGame) return;
     const timer = state.timer || freshTimer(state.currentGame.timerMode),
-      now = Date.now(),
+      now = nowMs(),
       limit = pauseLimitMs(timer);
     const pauseLog = (kind) => ({ ...state.currentGame, pauseLog: [...(state.currentGame.pauseLog || []), { kind, minute: Math.max(1, Math.ceil(timerElapsed(timer) / 60)), at: now }] });
     if (isPauseActive(timer)) {
@@ -5200,7 +5238,7 @@
       while (el.scrollWidth > el.clientWidth + 0.5 && size > floor && guard++ < 40) { size -= 0.5; el.style.fontSize = size + "px"; }
     });
   }
-  window.addEventListener("resize", () => { lvFit($("lvBoard")); lvFit($("lvKeepers")); });
+  window.addEventListener("resize", () => { lvFit($("lvBoard")); lvFit($("lvKeepers")); lvFit($("lvSpectator")); });
   // Goleiros: duas colunas de botões que escolhem no mesmo select de antes (#keeperHome / #keeperAway).
   function lvKeeperColumns() {
     const { home, away } = lvMatchTeams();
@@ -5226,7 +5264,7 @@
       title = s === "home" ? lvCrest(team, "xs") + "<span>" + escapeHtml(teamLabel(team).toUpperCase()) + " · EM CAMPO</span>" : "<span>EM CAMPO · " + escapeHtml(teamLabel(team).toUpperCase()) + "</span>" + lvCrest(team, "xs");
     return '<div class="lv-fcol2 is-' + s + '" style="' + lvTeamVars(team) + '"><p class="lv-fhead">' + title + '</p><ul class="lv-fplist">' +
       (players.length ? players.map((name) => {
-        const suspension = (state.incidents || []).find((item) => item.type === "hand" && item.gameId === game.id && item.player === name && Number(item.expiresAt) > Date.now());
+        const suspension = (state.incidents || []).find((item) => item.type === "hand" && item.gameId === game.id && item.player === name && Number(item.expiresAt) > nowMs());
         return '<li class="lv-fp' + (suspension ? " is-out" : "") + '"><span class="lv-fp-name">' + escapeHtml(displayName(name)) + "</span>" + (name === keeperName ? '<b class="lv-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + (suspension ? "<small>fora</small>" : "") + "</li>";
       }).join("") : '<li class="lv-muted">Sem jogadores</li>') + "</ul></div>";
   }
@@ -5255,7 +5293,7 @@
   function lvChips(players, keeperName, game) {
     return players.length
       ? players.map((name) => {
-          const suspension = game && (state.incidents || []).find((item) => item.type === "hand" && item.gameId === game.id && item.player === name && Number(item.expiresAt) > Date.now());
+          const suspension = game && (state.incidents || []).find((item) => item.type === "hand" && item.gameId === game.id && item.player === name && Number(item.expiresAt) > nowMs());
           return '<li class="lv-chip' + (suspension ? " is-out" : "") + '">' + escapeHtml(displayName(name)) + (name === keeperName ? ' <b class="lv-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + (suspension ? ' <small>fora</small>' : "") + "</li>";
         }).join("")
       : '<li class="lv-muted">Sem jogadores</li>';
@@ -5320,8 +5358,7 @@
       '<div class="lv-clock-value" data-lv-clock>' + clockText(timerRemaining()) + '</div><div class="lv-bar" aria-hidden="true"><i data-lv-bar></i></div><small data-lv-clock-label>tempo restante</small>' + shootLine + "</div>" +
       side(game.away, "lv-away") + "</div>" +
       '<div class="lv-scorers"><ul aria-label="' + escapeHtml("Gols do " + teamLabel(game.home)) + '">' + lvScorers(game, game.home) + '</ul><ul aria-label="' + escapeHtml("Gols do " + teamLabel(game.away)) + '">' + lvScorers(game, game.away) + "</ul></div>" +
-      '<div class="lv-field"><p class="lv-field-title">EM CAMPO</p><div class="lv-field-grid">' +
-      ["home", "away"].map((s) => '<div><small>' + escapeHtml(teamLabel(game[s])) + '</small><ul class="lv-chips">' + lvChips(lineupForTeam(game[s], game), game[s + "Keeper"], game) + "</ul></div>").join("") + "</div></div></section>" +
+      '<div class="lv-field lv-field-cols"><div class="lv-ofield2">' + lvFieldColumn(game, "home") + lvFieldColumn(game, "away") + "</div></div></section>" +
       (waiting.length ? '<section class="lv-wait" aria-label="Na espera"><p class="lv-field-title">NA ESPERA</p><ul>' + waiting.map((key) => "<li>" + lvCrest(key, "s") + "<span>" + escapeHtml(teamLabel(key)) + "</span></li>").join("") + "</ul></section>" : "");
   }
   // Atualiza o relógio, a barra e o estado sem redesenhar o card inteiro.
@@ -5345,7 +5382,9 @@
     else if (pending?.home && pending?.away && (pending.prepared || !last)) html = lvNextCard(pending.home, pending.away);
     else if (last) html = lvEndedCard(last);
     else html = '<section class="lv-card is-next"><div class="lv-strip"><span class="lv-tag">PRÓXIMA PARTIDA</span><span>' + lvModeName(activeLiveMode()) + '</span></div><p class="lv-empty">Os jogos aparecem aqui quando o organizador preparar a partida.</p></section>';
+    const changed = lvUI.marks.lvSpectator !== html;
     lvSet("lvSpectator", html);
+    if (changed) lvFit(box);
     lvTick(box, game);
   }
   // ---------- Painel do organizador ----------
@@ -5444,8 +5483,7 @@
     // Placar
     const hs = game ? currentScore(game.home) : 0, as = game ? currentScore(game.away) : 0;
     lvSet("lvBoard", home && away
-      ? '<div class="lv-oboard" style="' + (() => { const h = lvColors(home), a = lvColors(away); return "--hb:" + h.bg + ";--hi:" + h.ink + ";--hl:" + h.light + ";--ab:" + a.bg + ";--ai:" + a.ink + ";--al:" + a.light; })() + '"><div class="lv-oteam">' + lvCrest(home, "b") + '<strong class="lv-oname">' + escapeHtml(teamLabel(home)) + '</strong></div><div class="lv-onums" aria-label="Placar ' + hs + " a " + as + '"><b class="is-home">' + hs + '</b><i aria-hidden="true">×</i><b class="is-away">' + as + '</b></div><div class="lv-oteam is-away">' + lvCrest(away, "b") + '<strong class="lv-oname">' + escapeHtml(teamLabel(away)) + "</strong></div></div>" +
-        (game ? '<div class="lv-ofield2">' + lvFieldColumn(game, "home") + lvFieldColumn(game, "away") + "</div>" : "")
+      ? '<div class="lv-oboard" style="' + (() => { const h = lvColors(home), a = lvColors(away); return "--hb:" + h.bg + ";--hi:" + h.ink + ";--hl:" + h.light + ";--ab:" + a.bg + ";--ai:" + a.ink + ";--al:" + a.light; })() + '"><div class="lv-oteam">' + lvCrest(home, "b") + '<strong class="lv-oname">' + escapeHtml(teamLabel(home)) + '</strong></div><div class="lv-onums" aria-label="Placar ' + hs + " a " + as + '"><b class="is-home">' + hs + '</b><i aria-hidden="true">×</i><b class="is-away">' + as + '</b></div><div class="lv-oteam is-away">' + lvCrest(away, "b") + '<strong class="lv-oname">' + escapeHtml(teamLabel(away)) + "</strong></div></div>"
       : '<p class="lv-muted lv-center">Escolha os times para ver o placar.</p>');
     if (lvUI.marks.lvBoardFit !== lvUI.marks.lvBoard) { lvUI.marks.lvBoardFit = lvUI.marks.lvBoard; lvFit($("lvBoard")); }
     // Cronômetro e estado
@@ -6076,6 +6114,9 @@
     if (!openNewsFromHash()) loadNews();
     initPush();
     setTheme(localStorage.getItem("liga-skalama-theme-v2") || "light");
+    syncServerClock();
+    setInterval(syncServerClock, 5 * 60 * 1000);
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") syncServerClock(); });
     setInterval(() => {
       renderTimer();
       renderIncidents();

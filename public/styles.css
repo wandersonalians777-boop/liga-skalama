@@ -1791,3 +1791,7 @@ body:not(.light-theme) .pt-card.is-on-field{box-shadow:0 0 0 2px #ffc400}
 .lv-oboard .lv-onums{box-sizing:border-box;width:200px;min-width:200px;padding:10px 22px}
 .lv-oboard .lv-onums b{font-size:56px}
 @media(max-width:620px){.lv-oboard .lv-onums{width:136px;min-width:136px;padding:8px 12px;gap:4px}.lv-oboard .lv-onums b{font-size:42px}}
+/* Espectador: escalação "em campo" em duas colunas (saiu do painel do organizador) */
+.lv-card .lv-field-cols{padding-top:4px}
+.lv-card .lv-field-cols .lv-ofield2{margin-top:0}
+.lv-card .lv-fhead{color:#fff}
