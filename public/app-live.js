@@ -5362,7 +5362,7 @@
     // Quem vai jogar
     const teamsDisabled = !!game || $("matchHome").disabled;
     lvSet("lvTeams", [["home", home, "Casa"], ["away", away, "Visitante"]].map(([side, team, word]) =>
-      '<button type="button" class="lv-team-btn" data-lv-pick="' + side + '"' + (teamsDisabled ? " disabled" : "") + ">" + (team ? lvCrest(team, "m") : '<span class="lv-crest lv-crest-m lv-initials" aria-hidden="true">?</span>') +
+      '<button type="button" class="lv-team-btn' + (team ? " has-team" : "") + '" data-lv-pick="' + side + '"' + (team ? ' style="' + lvTeamVars(team) + '"' : "") + (teamsDisabled ? " disabled" : "") + ">" + (team ? lvCrest(team, "m") : '<span class="lv-crest lv-crest-m lv-initials" aria-hidden="true">?</span>') +
       "<span><strong>" + escapeHtml(team ? teamLabel(team) : "Escolher time") + "</strong><small>" + word + (teamsDisabled ? "" : " · trocar") + "</small></span></button>").join('<span class="lv-x" aria-hidden="true">×</span>'));
     // Ajustar jogadores · contagem real
     const superMode = isSuperMode(), adjust = $("lvAdjustBtn");
@@ -5496,9 +5496,15 @@
         '<label class="lv-field-input">Observação (opcional)<input id="lvWarnNote" maxlength="160" value="' + escapeHtml(sheet.note || "") + '"></label></div>' +
         '<footer class="lv-sheet-foot"><button type="button" class="lv-btn lv-black lv-big" data-lv-confirm-warn' + (player && !incidentSubmitting ? "" : " disabled") + ">" + (player ? "✓ Registrar para " + escapeHtml(displayName(player)) : "✓ Registrar") + '</button><button type="button" class="lv-btn lv-white" data-lv-close>Cancelar</button></footer>';
     } else if (sheet.kind === "pick") {
-      const teams = modeTeams().map((team) => team.name), current = $(sheet.side === "home" ? "matchHome" : "matchAway").value;
+      // Cada time com a cor e o escudo dele; o time do outro lado fica desabilitado (não dá para repetir).
+      const teams = modeTeams().map((team) => team.name), current = $(sheet.side === "home" ? "matchHome" : "matchAway").value,
+        other = $(sheet.side === "home" ? "matchAway" : "matchHome").value, suggested = currentPending()?.[sheet.side] || "";
       html = lvSheetHead(sheet.side === "home" ? "TIME DA CASA" : "TIME VISITANTE", "Toque no time que vai jogar.") +
-        '<div class="lv-sheet-body"><div class="lv-grid2">' + teams.map((team) => '<button type="button" class="lv-choice lv-choice-team' + (current === team ? " is-on" : "") + '" aria-pressed="' + (current === team) + '" data-lv-pick-team="' + escapeHtml(team) + '">' + lvCrest(team, "s") + "<span>" + escapeHtml(teamLabel(team)) + "</span></button>").join("") + '</div></div><footer class="lv-sheet-foot"><button type="button" class="lv-btn lv-white" data-lv-close>Cancelar</button></footer>';
+        '<div class="lv-sheet-body"><div class="lv-grid2">' + teams.map((team) => {
+          const on = current === team, taken = !on && other === team, note = taken ? (sheet.side === "home" ? "já é o visitante" : "já é o time da casa") : suggested === team ? "sugerido" : "";
+          return '<button type="button" class="lv-choice lv-choice-team lv-pickteam' + (on ? " is-on" : "") + (taken ? " is-taken" : "") + '" style="' + lvTeamVars(team) + '" aria-pressed="' + on + '" data-lv-pick-team="' + escapeHtml(team) + '"' + (taken ? " disabled" : "") + ">" + lvCrest(team, "s") +
+            "<span><strong>" + escapeHtml(teamLabel(team)) + "</strong>" + (note ? "<small>" + note + "</small>" : "") + "</span>" + (on ? '<b class="lv-check" aria-hidden="true">✓</b>' : "") + "</button>";
+        }).join("") + '</div></div><footer class="lv-sheet-foot"><button type="button" class="lv-btn lv-white" data-lv-close>Cancelar</button></footer>';
     } else if (sheet.kind === "adjust") {
       html = lvAdjustSheet(sheet);
     } else if (sheet.kind === "end" && game) {
@@ -5737,6 +5743,7 @@
       else if ("lvConfirmWarn" in data) { lvConfirmWarn(); return; }
       else if (data.lvPickTeam) {
         const select = $(sheet.side === "home" ? "matchHome" : "matchAway");
+        if ($(sheet.side === "home" ? "matchAway" : "matchHome").value === data.lvPickTeam) return;
         select.value = data.lvPickTeam;
         lvCloseSheet();
         select.dispatchEvent(new Event("change"));
