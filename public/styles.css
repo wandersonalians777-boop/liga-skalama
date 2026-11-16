@@ -1872,6 +1872,7 @@ body.light-theme .hx-nv.is-away{color:var(--a-l)}
   .hx-num-row{grid-template-columns:36px minmax(0,1fr) 96px minmax(0,1fr) 36px;gap:6px}
   .hx-nl{font-size:10px;letter-spacing:.2px}
   .hx-lu-grid{grid-template-columns:1fr}
+}
 /* Autores dos gols ao lado do cronômetro (organizador) */
 .lv-clock{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;column-gap:14px;justify-items:stretch}
 .lv-clock-mid{display:grid;justify-items:center;gap:6px}
