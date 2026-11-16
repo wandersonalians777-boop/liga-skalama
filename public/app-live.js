@@ -573,6 +573,8 @@
     return '<button type="button" class="swap-btn" data-swap-team="' + escapeHtml(team) + '" data-swap-player="' + escapeHtml(player) + '" title="' + escapeHtml(label) + '" aria-label="' + escapeHtml(label) + '" aria-pressed="' + (selected ? "true" : "false") + '"' + (locked ? " disabled" : "") + '>' + SWAP_ICON + '</button>';
   }
   function swapHintMarkup() {
+    if (swapPick) return '<div class="swap-hint active el-swapbar" role="status"><span>⇄ Trocando <b>' + escapeHtml(displayName(swapPick.player)) + '</b> (' + escapeHtml(swapPick.team === "__reservas" ? "Reservas" : teamLabel(swapPick.team)) + '), toque no ⇄ de outro jogador para trocar os dois</span><button type="button" class="el-btn el-white el-small" data-swap-cancel>Cancelar troca</button></div>';
+    return '<p class="el-swaptip">Para trocar alguém de time, toque no ⇄ ao lado do nome.</p>';
     const text = !swapPick
       ? "Quer trocar alguém de time? Toque no botão ⇄ ao lado de um jogador e depois no ⇄ de outro jogador de outro time para trocar os dois, ou em \"Mover para cá\" para passá-lo a um time com vaga."
       : "Selecionado: " + displayName(swapPick.player) + " (" + (swapPick.team === "__reservas" ? "Reservas" : teamLabel(swapPick.team)) + "). Toque no ⇄ de outro jogador para trocar, ou escolha um time com vaga.";
@@ -581,7 +583,7 @@
   function swapReservesMarkup() {
     const reserves = state.reservePlayers || [];
     if (!reserves.length && !swapPick) return "";
-    const chips = reserves.map((name) => '<span class="swap-chip swap-row' + (swapPick && swapPick.team === "__reservas" && swapPick.player === name ? ' selected' : '') + (swapPick && swapPick.team !== "__reservas" ? ' swap-target' : '') + '"><span class="swap-name">' + escapeHtml(displayName(name)) + (keeper(name) ? ' <b class="keeper-mark">*</b>' : '') + '</span>' + swapButton("__reservas", name, false) + '</span>').join("");
+    const chips = reserves.map((name) => '<span class="swap-chip swap-row' + (swapPick && swapPick.team === "__reservas" && swapPick.player === name ? ' selected' : '') + (swapPick && swapPick.team !== "__reservas" ? ' swap-target' : '') + '"><span class="swap-name">' + escapeHtml(displayName(name)) + (keeper(name) ? ' <b class="el-g" title="Goleiro" aria-label="Goleiro">G</b>' : '') + '</span>' + swapButton("__reservas", name, false) + '</span>').join("");
     const toBench = swapPick && swapPick.team !== "__reservas" ? '<button type="button" class="swap-drop" data-swap-drop="__reservas">Mandar ' + escapeHtml(displayName(swapPick.player)) + ' para as reservas</button>' : "";
     return '<section class="swap-reserves"><strong>Reservas do sorteio (' + reserves.length + ')</strong>' + toBench + '<div class="swap-chips">' + (chips || '<span class="help-text">Nenhuma reserva.</span>') + '</div></section>';
   }
@@ -634,15 +636,16 @@
   function renderTeams() {
     const grid = $("teamsGrid"), publicGrid = $("publicTeamsGrid"), teams = state.teams || [];
     if (!teams.length) {
-      grid.innerHTML = '<div class="empty-state">Adicione pelo menos 10 nomes e faça o sorteio.</div>';
+      grid.innerHTML = '<p class="el-empty">Os times aparecem aqui depois do sorteio.</p>';
       if (publicGrid) publicGrid.innerHTML = '<p class="empty-state">Os times aparecerão depois do sorteio.</p>';
       return;
     }
     const markup = teams.map((team, index) => {
       const color = teamColors[index] || teamColors[0], players = lineupForTeam(team.name), short = players.length === 4;
       const locked = swapLocked(team.name), canDrop = !!swapPick && swapPick.team !== team.name && !locked && players.length < swapCapacity();
-      const items = players.map((name) => '<li class="swap-row' + (swapPick && swapPick.team === team.name && swapPick.player === name ? ' selected' : '') + (swapPick && swapPick.team !== team.name && !locked ? ' swap-target' : '') + '"><span class="swap-name">' + escapeHtml(displayName(name)) + (keeper(name) ? ' <b class="keeper-mark">*</b>' : '') + '</span>' + swapButton(team.name, name, locked) + '</li>').join('');
-      return '<article class="team-card ' + (short ? 'team-card-short' : '') + '"><header class="team-head" style="--team-color:' + color.color + ';--team-ink:' + color.ink + '"><span>' + (crestFor(team.name) ? '<img class="team-logo" src="' + crestFor(team.name) + '" alt="">' : '') + escapeHtml(teamLabel(team.name)) + '</span><small>' + players.length + ' JOGADORES' + (short ? ' · VAGA' : players.length < 4 ? ' · INCOMPLETO' : '') + '</small></header>' + (canDrop ? '<button type="button" class="swap-drop" data-swap-drop="' + escapeHtml(team.name) + '">Mover ' + escapeHtml(displayName(swapPick.player)) + ' para cá</button>' : '') + '<input class="team-label-input" data-team-label="' + escapeHtml(team.name) + '" maxlength="30" placeholder="Nome do time (opcional)" aria-label="Nome do ' + escapeHtml(defaultTeamLabel(team.name)) + ' (opcional)" value="' + escapeHtml(state.teamLabels?.[team.name] || '') + '"><ol>' + items + '</ol></article>';
+      const items = players.map((name) => '<li class="swap-row' + (swapPick && swapPick.team === team.name && swapPick.player === name ? ' selected' : '') + (swapPick && swapPick.team !== team.name && !locked ? ' swap-target' : '') + '"><span class="swap-name">' + escapeHtml(displayName(name)) + (keeper(name) ? ' <b class="el-g" title="Goleiro" aria-label="Goleiro">G</b>' : '') + '</span>' + swapButton(team.name, name, locked) + '</li>').join('');
+      const [head, ink] = EL_HEAD[team.name] || [color.color, color.ink], naming = elUI.naming[team.name] || !!state.teamLabels?.[team.name];
+      return '<article class="team-card el-team' + (short ? ' team-card-short' : '') + '"><header class="team-head el-team-head" style="--team-color:' + head + ';--team-ink:' + ink + '">' + elCrest(team.name, "m") + '<strong>' + escapeHtml(teamLabel(team.name)) + '</strong>' + (players.length < 5 ? '<small>' + (players.length < 4 ? 'INCOMPLETO' : 'VAGA') + '</small>' : '') + '</header>' + (canDrop ? '<button type="button" class="swap-drop" data-swap-drop="' + escapeHtml(team.name) + '">Mover ' + escapeHtml(displayName(swapPick.player)) + ' para cá</button>' : '') + '<ol>' + items + '</ol>' + (naming ? '<label class="el-team-name">Nome do time<input class="team-label-input" data-team-label="' + escapeHtml(team.name) + '" maxlength="30" placeholder="Nome do time (opcional)" value="' + escapeHtml(state.teamLabels?.[team.name] || '') + '"></label>' : '<button type="button" class="el-name-btn" data-el-name-team="' + escapeHtml(team.name) + '">✎ Dar nome ao time</button>') + '</article>';
     }).join('');
     grid.innerHTML = swapHintMarkup() + markup + swapReservesMarkup();
     if (publicGrid) {
@@ -886,20 +889,204 @@
     $("newTeamPlayer").disabled = !open.length;
     $("addNewTeamPlayer").disabled = !open.length;
   }
-  function renderFixtures() {
-    const list = $("fixturesList");
-    if (!state.teams?.length) {
-      list.innerHTML =
-        '<p class="empty-state">Sorteie os times para ver as equipes disponíveis.</p>';
-      return;
-    }
-    list.innerHTML = state.teams
-      .map(
-        (team) =>
-          `<div class="fixture"><span class="game-no">●</span><span class="versus">${escapeHtml(teamLabel(team.name))}</span><span class="fixture-state">${lineupForTeam(team.name).length} jogadores</span></div>`,
-      )
-      .join("");
+  // ---------- Elenco e sorteio: painel do organizador ----------
+  // As regras continuam as mesmas (startersFor, drawTeams, troca livre, fila); aqui muda só a apresentação e o fluxo.
+  const elUI = { filter: "all", showAll: false, menu: null, editing: null, naming: {}, reorder: false };
+  const EL_PREVIEW = 12;
+  const EL_HEAD = { "Time Águia": ["#c4570c", "#ffffff"], "Time Sol": ["#ffc400", "#0d0d0d"], "Time Verde": ["#1f6e3a", "#ffffff"], "Time Azul": ["#23439c", "#ffffff"] };
+  // Mesma regra do sorteio: quantos times e quantos reservas saem com n confirmados.
+  function elDrawPlan(n) {
+    if (n < MIN_PLAYERS) return { ok: false, text: "faltam " + (MIN_PLAYERS - n) + " para fechar 2 times", teams: 0, sizes: [], reserves: 0 };
+    const starters = startersFor(n), teams = Math.ceil(starters / 5), reserves = n - starters, exact = starters === teams * 5;
+    const sizes = Array.from({ length: teams }, () => (exact ? "5" : "≤5"));
+    const text = "dá " + teams + " times " + (exact ? "de 5" : "(até 5 por time)") + (reserves ? " + " + reserves + (reserves === 1 ? " reserva" : " reservas") : "");
+    return { ok: true, text, teams, sizes, reserves, starters, exact };
   }
+  function elCrest(key, size = "m") {
+    const label = teamLabel(key), src = crestFor(key, label),
+      initials = String(label || "").replace(/^time\s+/i, "").split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+    return '<span class="el-crest el-crest-' + size + (src ? "" : " el-initials") + '" aria-hidden="true">' + (src ? '<img src="' + escapeHtml(src) + '" alt="">' : escapeHtml(initials || "?")) + "</span>";
+  }
+  function elSteps() {
+    const done = [
+      !!(String(state.venue || "").trim() && state.matchDate && state.startTime),
+      activeRoster().length >= MIN_PLAYERS,
+      !!(state.teams || []).length,
+      false,
+    ];
+    let current = done.findIndex((value) => !value);
+    if (current < 0) current = 3;
+    document.querySelectorAll("#elSteps li").forEach((li, index) => {
+      li.classList.toggle("is-done", done[index] && index !== current);
+      li.classList.toggle("is-current", index === current);
+      if (index === current) li.setAttribute("aria-current", "step"); else li.removeAttribute("aria-current");
+    });
+  }
+  function renderRoster() {
+    const roster = state.roster || [], list = $("rosterList"), active = roster.filter((name) => !isInactive(name)), plan = elDrawPlan(active.length);
+    $("rosterCount").innerHTML = "<b>" + active.length + '</b><span><strong>de ' + roster.length + " confirmados</strong><small>" + escapeHtml(plan.text) + "</small></span>";
+    const counts = { all: roster.length, in: active.length, out: roster.length - active.length };
+    $("elFilters").innerHTML = [["all", "Todos"], ["in", "Vão jogar"], ["out", "Não vão"]].map(([key, label]) => '<button type="button" class="el-filter' + (elUI.filter === key ? " is-on" : "") + '" data-el-filter="' + key + '" aria-pressed="' + (elUI.filter === key) + '">' + label + " <b>" + counts[key] + "</b></button>").join("");
+    const rows = roster.map((name, index) => ({ name, index, off: isInactive(name) })).filter((row) => elUI.filter === "all" || (elUI.filter === "in" ? !row.off : row.off)),
+      shown = elUI.showAll ? rows : rows.slice(0, EL_PREVIEW);
+    list.innerHTML = shown.length
+      ? shown.map(({ name, index, off }) => {
+          const label = displayName(name), menuOpen = elUI.menu === index, editing = elUI.editing === index;
+          return '<li class="el-player' + (off ? " is-off" : "") + '">' +
+            (editing
+              ? '<form class="el-edit" data-el-edit-form="' + index + '"><label class="sr-only" for="elEditName">Novo nome de ' + escapeHtml(label) + '</label><input id="elEditName" maxlength="50" value="' + escapeHtml(label) + '"><button type="submit" class="el-btn el-black el-small">Salvar</button><button type="button" class="el-btn el-white el-small" data-el-edit-cancel>Cancelar</button></form>'
+              : '<span class="el-pname">' + escapeHtml(label) + (keeper(name) ? ' <b class="el-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "</span>" +
+                '<button type="button" class="el-switch' + (off ? "" : " is-on") + '" role="switch" aria-checked="' + !off + '" aria-label="' + escapeHtml(label) + ": " + (off ? "não vai jogar" : "vai jogar") + '" data-toggle-player="' + index + '"><i aria-hidden="true"></i><span>' + (off ? "Não vai" : "Vai jogar") + "</span></button>" +
+                '<div class="el-menu-wrap"><button type="button" class="el-more" aria-haspopup="true" aria-expanded="' + menuOpen + '" aria-label="Mais opções para ' + escapeHtml(label) + '" data-el-menu="' + index + '">⋯</button>' +
+                (menuOpen ? '<div class="el-menu" role="menu"><button type="button" role="menuitem" data-el-edit="' + index + '">✎ Editar nome</button><button type="button" role="menuitem" data-el-keeper="' + index + '">' + (keeper(name) ? "Desmarcar como goleiro" : "Marcar como goleiro") + '</button><button type="button" role="menuitem" class="is-danger" data-el-remove="' + index + '">Remover do cadastro</button></div>' : "") + "</div>") +
+            "</li>";
+        }).join("")
+      : '<li class="el-empty">' + (roster.length ? "Ninguém neste filtro." : "Nenhum jogador cadastrado ainda.") + "</li>";
+    $("elMore").innerHTML = rows.length > EL_PREVIEW ? '<button type="button" class="el-btn el-white" data-el-more>' + (elUI.showAll ? "Mostrar menos" : "Mostrar todos os " + rows.length + " jogadores") + "</button>" : "";
+    if (elUI.editing !== null) { const input = $("elEditName"); if (input && document.activeElement !== input) { input.focus(); input.select(); } }
+    $("newPlayer").disabled = roster.length >= ROSTER_MAX;
+    $("addPlayer").disabled = roster.length >= ROSTER_MAX;
+    $("drawTeams").disabled = active.length < MIN_PLAYERS;
+    // Depois do sorteio vale o "↻ Sortear de novo" (embaixo dos times).
+    $("drawTeams").hidden = !!(state.teams || []).length;
+    // Aviso do sorteio, com um quadradinho por time
+    $("elDrawInfo").innerHTML = '<div class="el-plan' + (plan.ok ? "" : " is-short") + '"><span class="el-plan-boxes" aria-hidden="true">' + plan.sizes.map((size) => "<i>" + size + "</i>").join("") + "</span><p>" +
+      (plan.ok ? escapeHtml(active.length + " jogadores → " + plan.teams + " times " + (plan.exact ? "de 5" : "(até 5 por time)") + ".") + " Os goleiros ficam em times diferentes." + (plan.reserves ? " Os que sobram viram reservas." : "")
+        : escapeHtml("Marque pelo menos " + MIN_PLAYERS + " jogadores para sortear (" + plan.text + ").")) + "</p></div>";
+    elSteps();
+  }
+  async function elAddPlayer() {
+    const input = $("newPlayer"), raw = input.value.trim().replace(/\*+\s*$/, "").trim();
+    if (!raw) { notify("Digite o nome do jogador.", true); input.focus(); return; }
+    input.value = raw + ($("newPlayerKeeper").checked ? "*" : "");
+    const before = (state.roster || []).length;
+    await addPlayer();
+    if ((state.roster || []).length > before) $("newPlayerKeeper").checked = false;
+    else input.value = raw;
+  }
+  // Troca o nome (ou a marca de goleiro) do jogador em todos os lugares da rodada atual.
+  async function elReplacePlayer(index, next, message) {
+    const roster = [...(state.roster || [])], old = roster[index];
+    if (!old || old === next) return;
+    if (roster.some((name, i) => i !== index && playerKey(name) === playerKey(next))) { notify("Já existe um jogador com esse nome.", true); return; }
+    roster[index] = next;
+    const swap = (list) => (list || []).map((name) => (name === old ? next : name));
+    const patch = { roster, inactivePlayers: (state.inactivePlayers || []).map((name) => (playerKey(name) === playerKey(old) ? next : name)) };
+    if ((state.teams || []).length) {
+      patch.teams = state.teams.map((team) => ({ ...team, players: swap(team.players) }));
+      if (state.lineups) patch.lineups = Object.fromEntries(Object.entries(state.lineups).map(([team, players]) => [team, swap(players)]));
+      patch.reservePlayers = swap(state.reservePlayers);
+      if (state.absentPlayers?.[old]) { const absent = { ...state.absentPlayers, [next]: state.absentPlayers[old] }; delete absent[old]; patch.absentPlayers = absent; }
+    }
+    if (swapPick?.player === old) swapPick = null;
+    await saveState(patch, message);
+  }
+  function elKeeperFlag(name, on) {
+    return displayName(name) + (on ? "*" : "");
+  }
+  function bindElenco() {
+    const quem = $("elQuem");
+    $("elAddForm").addEventListener("submit", (event) => { event.preventDefault(); elAddPlayer(); });
+    quem.addEventListener("click", (event) => {
+      const target = event.target.closest("button");
+      if (!target || target.disabled) return;
+      const data = target.dataset;
+      if (data.elFilter) { elUI.filter = data.elFilter; elUI.menu = null; renderRoster(); }
+      else if ("elMore" in data) { elUI.showAll = !elUI.showAll; renderRoster(); }
+      else if (data.togglePlayer) { elUI.menu = null; toggleActivePlayer(Number(data.togglePlayer)); }
+      else if (data.elMenu) { const index = Number(data.elMenu); elUI.menu = elUI.menu === index ? null : index; renderRoster(); quem.querySelector('[data-el-menu="' + index + '"]')?.focus(); }
+      else if (data.elEdit) { elUI.editing = Number(data.elEdit); elUI.menu = null; renderRoster(); }
+      else if ("elEditCancel" in data) { elUI.editing = null; renderRoster(); }
+      else if (data.elKeeper) {
+        const index = Number(data.elKeeper), name = (state.roster || [])[index];
+        elUI.menu = null;
+        if (name) elReplacePlayer(index, elKeeperFlag(name, !keeper(name)), displayName(name) + (keeper(name) ? " não é mais goleiro." : " agora é goleiro."));
+      }
+      else if (data.elRemove) {
+        const index = Number(data.elRemove), name = (state.roster || [])[index];
+        elUI.menu = null;
+        if (!name) return;
+        const extra = state.teams?.length ? " Os times sorteados serão desfeitos." : "";
+        if (!confirm("Remover " + displayName(name) + " do cadastro? Essa ação não pode ser desfeita." + extra)) { renderRoster(); return; }
+        removePlayer(index, true);
+      }
+    });
+    quem.addEventListener("submit", (event) => {
+      const form = event.target.closest("[data-el-edit-form]");
+      if (!form) return;
+      event.preventDefault();
+      const index = Number(form.dataset.elEditForm), name = (state.roster || [])[index], value = ($("elEditName")?.value || "").trim().replace(/\*+\s*$/, "").trim();
+      if (!name) return;
+      if (!value) { notify("Digite o nome do jogador.", true); return; }
+      elUI.editing = null;
+      if (value === displayName(name)) { renderRoster(); return; }
+      elReplacePlayer(index, elKeeperFlag(value, keeper(name)), "Nome atualizado: " + value + ".");
+    });
+    document.addEventListener("click", (event) => {
+      if (elUI.menu !== null && !event.target.closest(".el-menu-wrap")) { elUI.menu = null; renderRoster(); }
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && elUI.menu !== null) { const index = elUI.menu; elUI.menu = null; renderRoster(); $("rosterList").querySelector('[data-el-menu="' + index + '"]')?.focus(); }
+    });
+    // Sortear de novo, dar nome ao time
+    $("elRedraw").addEventListener("click", (event) => {
+      if (!event.target.closest("[data-el-redraw]")) return;
+      const manual = (state.teams || []).some((team) => JSON.stringify(lineupForTeam(team.name)) !== JSON.stringify(team.players));
+      if (manual && !confirm("Sortear de novo? As trocas feitas à mão serão perdidas.")) return;
+      drawTeams();
+    });
+    $("teamsGrid").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-el-name-team]");
+      if (!button) return;
+      const team = button.dataset.elNameTeam;
+      elUI.naming[team] = true;
+      renderTeams();
+      $("teamsGrid").querySelector('[data-team-label="' + CSS.escape(team) + '"]')?.focus();
+    });
+    // Sequência: trocar ordem e confirmar
+    $("elReorder").addEventListener("click", () => { elUI.reorder = !elUI.reorder; renderFixtures(); });
+    $("elReorderBox").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-el-move]");
+      if (!button || button.disabled) return;
+      const order = elOrder(), index = Number(button.dataset.elIndex), to = index + (button.dataset.elMove === "up" ? -1 : 1);
+      if (to < 0 || to >= order.length) return;
+      [order[index], order[to]] = [order[to], order[index]];
+      saveState({ pendingMatch: { home: order[0], away: order[1] }, challengeQueue: order.slice(2) }, "Nova ordem: " + teamLabel(order[0]) + " × " + teamLabel(order[1]) + " começam.");
+    });
+    $("elConfirm").addEventListener("click", async () => {
+      if (!(state.teams || []).length) return;
+      if (!state.currentGame && activeLiveMode() !== "liga") await saveState({ timerMode: "liga" }, "Modo Liga selecionado.");
+      setView("live");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
+  // Ordem atual da fila: jogo 1 (casa, visitante) e depois os que esperam.
+  function elOrder() {
+    const pending = state.pendingMatch, teams = (state.teams || []).map((team) => team.name);
+    const order = [pending?.home, pending?.away, ...(state.challengeQueue || []), ...teams];
+    return order.filter((name, index) => name && teams.includes(name) && order.indexOf(name) === index);
+  }
+  function renderFixtures() {
+    const list = $("fixturesList"), teams = state.teams || [], box = $("elReorderBox"), reorder = $("elReorder"), confirmBtn = $("elConfirm");
+    confirmBtn.disabled = !teams.length;
+    reorder.disabled = !teams.length || !!state.currentGame;
+    if (!teams.length) { list.innerHTML = '<p class="el-empty">Sorteie os times para ver a sequência dos jogos.</p>'; box.hidden = true; $("elRedraw").innerHTML = ""; elSteps(); return; }
+    const order = elOrder(), game = state.currentGame, [a, b, ...rest] = order;
+    const blocks = [];
+    if (game && !game.superLigaId) blocks.push('<li class="el-block is-first"><small>EM QUADRA</small><span class="el-block-teams">' + elCrest(game.home, "s") + "<strong>" + escapeHtml(teamLabel(game.home) + " × " + teamLabel(game.away)) + "</strong>" + elCrest(game.away, "s") + "</span></li>");
+    else blocks.push('<li class="el-block is-first"><small>JOGO 1</small><span class="el-block-teams">' + elCrest(a, "s") + "<strong>" + escapeHtml(teamLabel(a) + " × " + teamLabel(b)) + "</strong>" + elCrest(b, "s") + "</span></li>");
+    const waiting = game && !game.superLigaId ? lvWaiting(game) : rest;
+    waiting.forEach((team, index) => blocks.push('<li class="el-block"><small>JOGO ' + (index + 2) + '</small><span class="el-block-teams"><strong>Vencedor ×</strong>' + elCrest(team, "s") + "<strong>" + escapeHtml(teamLabel(team)) + "</strong></span></li>"));
+    if (!waiting.length) blocks.push('<li class="el-block"><small>JOGO 2</small><span class="el-block-teams"><strong>Vencedor × Perdedor</strong></span></li>');
+    blocks.push('<li class="el-block is-after"><small>DEPOIS</small><span class="el-block-teams"><strong>Perdedores entram na fila</strong></span></li>');
+    list.innerHTML = '<ol class="el-chain">' + blocks.join('<li class="el-arrow" aria-hidden="true">→</li>') + "</ol>";
+    box.hidden = !elUI.reorder || !!state.currentGame;
+    reorder.textContent = elUI.reorder ? "✓ Pronto" : "⇅ Trocar ordem";
+    box.innerHTML = '<p class="el-lead">Use as setas para escolher quem começa. Os dois primeiros fazem o jogo 1.</p><ol>' + order.map((team, index) => '<li><span class="el-pos">' + (index + 1) + "</span>" + elCrest(team, "s") + "<strong>" + escapeHtml(teamLabel(team)) + '</strong><button type="button" class="el-btn el-white el-small" data-el-move="up" data-el-index="' + index + '" aria-label="Subir ' + escapeHtml(teamLabel(team)) + '"' + (index === 0 ? " disabled" : "") + '>↑</button><button type="button" class="el-btn el-white el-small" data-el-move="down" data-el-index="' + index + '" aria-label="Descer ' + escapeHtml(teamLabel(team)) + '"' + (index === order.length - 1 ? " disabled" : "") + ">↓</button></li>").join("") + "</ol>";
+    $("elRedraw").innerHTML = '<button type="button" class="el-btn el-white" data-el-redraw>↻ Sortear de novo</button>';
+    elSteps();
+  }
+
   function clockText(seconds) {
     return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
   }
@@ -1970,52 +2157,7 @@
       if (saved) $("incidentNote").value = "";
     } finally { incidentSubmitting = false; renderGoalOptions(); }
   }
-  function renderRoster() {
-    const roster = state.roster || [],
-      list = $("rosterList"),
-      active = roster.filter((name) => !isInactive(name)),
-      startersLimit = state.teams?.length ? state.teams.length * 5 : startersFor(active.length);
-    $("rosterCount").textContent = active.length + " ativos · " + roster.length + " cadastrados";
-    list.innerHTML = roster.length
-      ? roster
-          .map((name, index) => {
-            const off = isInactive(name),
-              activeIndex = active.indexOf(name);
-            return (
-              '<li class="' + (off ? "is-inactive" : "") + '"><span class="roster-number">' +
-              String(index + 1).padStart(2, "0") +
-              "</span><span>" +
-              escapeHtml(displayName(name)) +
-              (keeper(name) ? ' <b class="keeper-mark">* · GOLEIRO</b>' : "") +
-              (off ? ' <small class="reserve-label">· FORA DO SORTEIO</small>' : activeIndex >= startersLimit ? ' <small class="reserve-label">· RESERVA</small>' : "") +
-              '</span><button type="button" class="roster-toggle' + (off ? "" : " is-active") + '" data-toggle-player="' + index + '" aria-pressed="' + String(!off) + '" aria-label="' + escapeHtml(displayName(name)) + (off ? ": inativo, tocar para ativar" : ": ativo, tocar para deixar inativo") + '">' + (off ? "Inativo" : "Ativo") + "</button>" +
-              '<button class="text-button" data-remove-player="' +
-              index +
-              '" aria-label="Remover ' +
-              escapeHtml(displayName(name)) +
-              '">Remover</button></li>'
-            );
-          })
-          .join("")
-      : '<li class="empty-state">Nenhum jogador adicionado.</li>';
-    list
-      .querySelectorAll("[data-remove-player]")
-      .forEach((button) =>
-        button.addEventListener("click", () =>
-          removePlayer(Number(button.dataset.removePlayer)),
-        ),
-      );
-    list
-      .querySelectorAll("[data-toggle-player]")
-      .forEach((button) =>
-        button.addEventListener("click", () =>
-          toggleActivePlayer(Number(button.dataset.togglePlayer)),
-        ),
-      );
-    $("newPlayer").disabled = roster.length >= ROSTER_MAX;
-    $("addPlayer").disabled = roster.length >= ROSTER_MAX;
-    $("drawTeams").disabled = active.length < MIN_PLAYERS;
-  }
+
   // ---------- Painel da Super Liga ----------
   function superStandings(sl = state.superLiga, history = state.gameHistory || []) {
     if (!sl) return [];
@@ -4328,13 +4470,13 @@
       notify(error.message, true);
     }
   }
-  async function removePlayer(index) {
+  async function removePlayer(index, confirmed = false) {
     const roster = [...(state.roster || [])];
     if (index < 0 || index >= roster.length) return;
     const removed = roster[index],
       hasDraw = !!state.teams?.length;
     if (
-      hasDraw &&
+      hasDraw && !confirmed &&
       !confirm(
         `Remover ${displayName(removed)}? A escalação será encerrada e os times precisarão ser sorteados novamente. O histórico e a artilharia permanecem.`,
       )
@@ -5518,20 +5660,12 @@
     localStorage.setItem("liga-skalama-theme-v2", light ? "light" : "dark");
   }
   function bindEvents() {
-    $("newPlayer").addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        addPlayer();
-      }
-    });
-    $("addPlayer").addEventListener("click", addPlayer);
+    bindElenco();
     $("drawTeams").addEventListener("click", drawTeams);
     bindArt();
     bindSuperLiga();
     bindNews();
     bindNewsPush();
-    $("artDownload").addEventListener("click", downloadArt);
-    $("artShare").addEventListener("click", shareArt);
     bindSwapGrid();
     $("teamsGrid").addEventListener("change", (event) => {
       const team = event.target.dataset?.teamLabel;
