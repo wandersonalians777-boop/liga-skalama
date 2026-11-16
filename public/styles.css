@@ -1763,3 +1763,31 @@ body:not(.light-theme) .pt-card.is-on-field{box-shadow:0 0 0 2px #ffc400}
 .ask-sheet .lv-sheet-head{padding-right:18px}
 .ask-message{margin:0;color:var(--ink);font-size:16px;line-height:1.45}
 .ask-sheet::backdrop{background:#000a}
+/* Placar do organizador dividido pelas cores dos times: um único fundo com degradê seco (sem fresta) */
+.lv-oboard{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:stretch;gap:0;padding:0;overflow:hidden;background:linear-gradient(90deg,var(--hb,#0d0d0d) 0 50%,var(--ab,#0d0d0d) 50% 100%)}
+.lv-oboard .lv-oteam{min-width:0;padding:12px 10px;gap:10px}
+.lv-oboard .lv-oteam:first-child{color:var(--hi,#fff)}
+.lv-oboard .lv-oteam.is-away{color:var(--ai,#fff)}
+.lv-crest-b{width:58px;height:58px;filter:drop-shadow(0 2px 3px #0006)}
+.lv-crest-b.lv-initials{font-size:20px;border-width:2px}
+.lv-oname{flex:1 1 auto;min-width:0;white-space:nowrap;font:900 20px/1.05 'Barlow Condensed',sans-serif;text-transform:uppercase}
+.lv-oteam.is-away .lv-oname{text-align:right}
+.lv-oboard .lv-onums{justify-content:center;gap:6px;min-width:170px;padding:10px 26px;background:#0d0d0d;clip-path:polygon(18px 0,calc(100% - 18px) 0,100% 50%,calc(100% - 18px) 100%,18px 100%,0 50%)}
+.lv-oboard .lv-onums b{flex:1 1 0;min-width:0;font:900 64px/.85 'Barlow Condensed',sans-serif;font-variant-numeric:tabular-nums}
+.lv-oboard .lv-onums b.is-home{color:var(--hl,#fff);text-align:right}
+.lv-oboard .lv-onums b.is-away{color:var(--al,#fff);text-align:left}
+.lv-oboard .lv-onums i{flex:none;color:#9a9a92}
+@media(max-width:620px){
+  .lv-oboard .lv-oteam,.lv-oboard .lv-oteam.is-away{flex-direction:column;align-items:center;gap:6px;padding:10px 6px;text-align:center}
+  .lv-oteam.is-away .lv-oname{text-align:center}
+  .lv-crest-b{width:40px;height:40px}
+  .lv-oname{flex:none;max-width:100%;font-size:15px}
+  .lv-oboard .lv-onums{min-width:120px;padding:8px 18px;clip-path:polygon(12px 0,calc(100% - 12px) 0,100% 50%,calc(100% - 12px) 100%,12px 100%,0 50%)}
+  .lv-oboard .lv-onums b{font-size:42px}
+}
+/* Escolha dos times: o time do outro lado aparece tracejado */
+.lv-choice.lv-pickteam.is-taken{border-style:dashed}
+/* Placar: largura FIXA para não mudar de tamanho com 2 dígitos */
+.lv-oboard .lv-onums{box-sizing:border-box;width:200px;min-width:200px;padding:10px 22px}
+.lv-oboard .lv-onums b{font-size:56px}
+@media(max-width:620px){.lv-oboard .lv-onums{width:136px;min-width:136px;padding:8px 12px;gap:4px}.lv-oboard .lv-onums b{font-size:42px}}

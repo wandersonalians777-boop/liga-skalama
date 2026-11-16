@@ -5183,18 +5183,21 @@
     const sl = superTeam(key);
     let [bg, ink] = sl ? superHead(sl) : EL_HEAD[key] || ["#3a3a35", "#ffffff"];
     if (String(bg).toLowerCase() === "#0d0d0d") bg = "#3a3a35";
-    return { bg, ink, line: String(bg).toLowerCase() === "#ffc400" ? "#e0a800" : bg };
+    // Cor clara: números e textos sobre fundo preto (time sem cor fixa: branco).
+    const light = { "#c2560c": "#f07a2e", "#ffc400": "#ffc400", "#1f6e3a": "#3dba6e", "#23439c": "#7a9bff" }[String(bg).toLowerCase()] || "#ffffff";
+    return { bg, ink, light, line: String(bg).toLowerCase() === "#ffc400" ? "#e0a800" : bg };
   }
   function lvTeamVars(key) {
     const c = lvColors(key);
-    return "--tc:" + c.line + ";--tb:" + c.bg + ";--ti:" + c.ink;
+    return "--tc:" + c.line + ";--tb:" + c.bg + ";--ti:" + c.ink + ";--tl:" + c.light;
   }
   // Nomes sempre numa linha só: diminui a fonte até caber (mesmo ajuste da Escalação dos times).
   function lvFit(root) {
-    root?.querySelectorAll(".lv-fp-name, .lv-kname").forEach((el) => {
+    root?.querySelectorAll(".lv-fp-name, .lv-kname, .lv-oname").forEach((el) => {
       el.style.fontSize = "";
       let size = parseFloat(getComputedStyle(el).fontSize), guard = 0;
-      while (el.scrollWidth > el.clientWidth + 0.5 && size > 9 && guard++ < 24) { size -= 0.5; el.style.fontSize = size + "px"; }
+      const floor = el.classList.contains("lv-oname") ? 6 : 9;
+      while (el.scrollWidth > el.clientWidth + 0.5 && size > floor && guard++ < 40) { size -= 0.5; el.style.fontSize = size + "px"; }
     });
   }
   window.addEventListener("resize", () => { lvFit($("lvBoard")); lvFit($("lvKeepers")); });
@@ -5441,7 +5444,7 @@
     // Placar
     const hs = game ? currentScore(game.home) : 0, as = game ? currentScore(game.away) : 0;
     lvSet("lvBoard", home && away
-      ? '<div class="lv-oboard"><div class="lv-oteam">' + lvCrest(home, "m") + "<strong>" + escapeHtml(teamLabel(home)) + '</strong></div><div class="lv-onums"><b>' + hs + '</b><i aria-hidden="true">×</i><b>' + as + '</b></div><div class="lv-oteam is-away">' + lvCrest(away, "m") + "<strong>" + escapeHtml(teamLabel(away)) + "</strong></div></div>" +
+      ? '<div class="lv-oboard" style="' + (() => { const h = lvColors(home), a = lvColors(away); return "--hb:" + h.bg + ";--hi:" + h.ink + ";--hl:" + h.light + ";--ab:" + a.bg + ";--ai:" + a.ink + ";--al:" + a.light; })() + '"><div class="lv-oteam">' + lvCrest(home, "b") + '<strong class="lv-oname">' + escapeHtml(teamLabel(home)) + '</strong></div><div class="lv-onums" aria-label="Placar ' + hs + " a " + as + '"><b class="is-home">' + hs + '</b><i aria-hidden="true">×</i><b class="is-away">' + as + '</b></div><div class="lv-oteam is-away">' + lvCrest(away, "b") + '<strong class="lv-oname">' + escapeHtml(teamLabel(away)) + "</strong></div></div>" +
         (game ? '<div class="lv-ofield2">' + lvFieldColumn(game, "home") + lvFieldColumn(game, "away") + "</div>" : "")
       : '<p class="lv-muted lv-center">Escolha os times para ver o placar.</p>');
     if (lvUI.marks.lvBoardFit !== lvUI.marks.lvBoard) { lvUI.marks.lvBoardFit = lvUI.marks.lvBoard; lvFit($("lvBoard")); }
