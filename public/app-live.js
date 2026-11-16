@@ -5236,7 +5236,7 @@
     root?.querySelectorAll(".lv-fp-name, .lv-kname, .lv-oname, .lv-gname").forEach((el) => {
       el.style.fontSize = "";
       let size = parseFloat(getComputedStyle(el).fontSize), guard = 0;
-      const floor = el.classList.contains("lv-oname") ? 6 : 9;
+      const floor = el.classList.contains("lv-oname") ? 6 : el.classList.contains("lv-gname") ? 8 : 9;
       while (el.scrollWidth > el.clientWidth + 0.5 && size > floor && guard++ < 40) { size -= 0.5; el.style.fontSize = size + "px"; }
     });
   }
@@ -5493,10 +5493,19 @@
       if (!game) return "";
       const c = lvColors(team);
       return goals.filter((goal) => goal.game_id === game.id && scoreTeam(goal, game) === team).sort((a, b) => (Number(a.minute) || 0) - (Number(b.minute) || 0))
-        .map((goal) => '<li class="lv-gpill" style="--tb:' + c.bg + ";--ti:" + c.ink + '"><span class="lv-gname">⚽ ' + escapeHtml(displayName(goal.player_name || "Gol")) + (goal.own_goal ? " (contra)" : "") + "</span><small>" + (Number(goal.minute) || 0) + "′</small></li>").join("");
+        .map((goal) => {
+          const full = displayName(goal.player_name || "Gol"), parts = full.split(/\s+/).filter(Boolean),
+            first = (name) => displayName(name).split(/\s+/)[0],
+            people = [...(game.homePlayers || []), ...(game.awayPlayers || []), ...(game.homeBench || []), ...(game.awayBench || [])].filter((name) => displayName(name) !== full),
+            // Nome curto: só o primeiro nome; a inicial do sobrenome entra se outro jogador do jogo tiver o mesmo primeiro nome.
+            short = parts.length > 1 && people.some((name) => first(name) === parts[0]) ? parts[0] + " " + parts[1][0] + "." : parts[0] || full;
+          // No celular aparece o nome curto (PATRICK S.), sem o ⚽; no PC, o nome inteiro.
+          return '<li class="lv-gpill" style="--tb:' + c.bg + ";--ti:" + c.ink + '" title="' + escapeHtml(full) + '"><span class="lv-gname"><span class="lv-gball" aria-hidden="true">⚽ </span><span class="lv-gfull">' + escapeHtml(full) + '</span><span class="lv-gshort" aria-hidden="true">' + escapeHtml(short) + "</span>" + (goal.own_goal ? '<span class="lv-gfull"> (contra)</span><span class="lv-gshort"> (GC)</span>' : "") + "</span><small>" + (Number(goal.minute) || 0) + "′</small></li>";
+        }).join("");
     };
     const gh = goalPills(game?.home), ga = goalPills(game?.away), gChanged = lvUI.marks.lvGoalsHome !== gh || lvUI.marks.lvGoalsAway !== ga;
     lvSet("lvGoalsHome", gh); lvSet("lvGoalsAway", ga);
+    $("lvGoalsHome").closest(".lv-clock")?.classList.toggle("has-goals", !!(gh || ga));
     if (gChanged) { lvFit($("lvGoalsHome")); lvFit($("lvGoalsAway")); }
     // Cronômetro e estado
     const timer = state.timer || {}, remaining = game ? timerRemaining(timer) : minutes * 60, paused = !!game && isPauseActive(timer),
