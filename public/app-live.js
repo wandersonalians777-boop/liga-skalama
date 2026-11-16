@@ -1133,8 +1133,10 @@
           low = Math.max(low, server - t1);
           high = Math.min(high, server + 1000 - t0);
           got++;
+          // Já vale desde a primeira resposta e fica mais precisa a cada amostra.
+          if (low <= high) clockOffset = Math.round((low + high) / 2);
         }
-        await new Promise((resolve) => setTimeout(resolve, 170 + Math.random() * 60));
+        if (i < 5) await new Promise((resolve) => setTimeout(resolve, 170 + Math.random() * 60));
       }
       if (got && low <= high) clockOffset = Math.round((low + high) / 2);
       else if (got && Number.isFinite(low)) clockOffset = Math.round(low);
