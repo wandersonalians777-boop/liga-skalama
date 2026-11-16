@@ -3545,7 +3545,6 @@
   const artShield = new Image();
   artShield.src = "./assets/escudo-skalama-oficial.png";
   artShield.onload = () => drawArt(true);
-  const ART_FONT = 'system-ui, "Segoe UI", Roboto, sans-serif';
   const TEAM_NAMES = ["Time Águia", "Time Sol", "Time Verde", "Time Azul"];
   const LOGO_KEY = "liga-skalama-team-logos";
   // Logos dos times ficam só neste aparelho (localStorage), por escolha do organizador.
@@ -3611,79 +3610,22 @@
     saveTeamLogos();
     renderAll();
   }
-  let artKey = "";
-  function artGames() {
-    return [...(state?.gameHistory || [])].sort(
-      (a, b) => new Date(b.finishedAt) - new Date(a.finishedAt),
-    );
-  }
-  function renderArt() {
-    const type = $("artType").value,
-      games = artGames(),
-      teams = state.teams || [],
-      select = $("artGame"),
-      selected = select.value,
-      markup = games
-        .map(
-          (game) =>
-            '<option value="' +
-            escapeHtml(game.id) +
-            '">Jogo ' +
-            game.number +
-            " · " +
-            escapeHtml(gameTeamLabel(game, "home")) +
-            " " +
-            game.homeScore +
-            " × " +
-            game.awayScore +
-            " " +
-            escapeHtml(gameTeamLabel(game, "away")) +
-            "</option>",
-        )
-        .join("");
-    if (select.innerHTML !== markup) select.innerHTML = markup;
-    if (games.some((game) => game.id === selected)) select.value = selected;
-    $("artGameLabel").hidden = type !== "result";
-    $("artFormatHelp").hidden = $("artFormat").value !== "story";
-    const ready = type === "result" ? games.length > 0 : teams.length > 0;
-    $("artEmpty").textContent =
-      type === "result"
-        ? "As artes de resultado aparecem depois do primeiro jogo encerrado."
-        : "Sorteie os times para gerar a arte dos times sorteados.";
-    $("artEmpty").hidden = ready;
-    for (const id of ["artCanvas", "artDownload", "artShare"])
-      $(id).hidden = !ready;
-    const logos = teams
-      .map(
-        (team) =>
-          (fixedCrest(team.name)
-            ? '<div class="art-logo-row"><img src="' + fixedCrest(team.name) + '" alt=""><strong>' + escapeHtml(teamLabel(team.name)) + '</strong><span class="help-text">Escudo oficial</span></div>'
-            : '<div class="art-logo-row">' +
-          (teamLogos[team.name]
-            ? '<img src="' + teamLogos[team.name] + '" alt="">'
-            : '<span class="art-logo-empty" aria-hidden="true"></span>') +
-          "<strong>" +
-          escapeHtml(teamLabel(team.name)) +
-          '</strong><label class="button button-outline button-small">' +
-          (teamLogos[team.name] ? "Trocar logo" : "Subir logo") +
-          '<input type="file" accept="image/*" hidden data-logo-team="' +
-          escapeHtml(team.name) +
-          '"></label>' +
-          (teamLogos[team.name]
-            ? '<button type="button" class="text-button" data-logo-remove="' +
-              escapeHtml(team.name) +
-              '">Remover</button>'
-            : "") +
-          "</div>"),
-      )
-      .join("");
-    if ($("artLogos").innerHTML !== logos) $("artLogos").innerHTML = logos;
-    if (ready) drawArt();
-  }
-  function fitFont(ctx, text, weight, size, maxWidth, family = ART_FONT) {
-    do ctx.font = `${weight} ${size}px ${family}`;
-    while (ctx.measureText(text).width > maxWidth && --size > 12);
-  }
+  // ---------- Divulgação: artes para redes ----------
+  // Painel em 3 passos; a arte é desenhada no canvas #artCanvas e baixada dele (toBlob), como antes.
+  // Fontes (Anton e Inter, hospedadas no site) e escudos são carregados ANTES de desenhar.
+  const ART = { type: "result", gameId: "", format: "story", goals: true, star: true, stripe: false, scope: "" };
+  const AX_Y = "#ffc400", AX_DISPLAY = '"Anton", "Arial Narrow", Impact, sans-serif', AX_TEXT = '"Inter", system-ui, sans-serif';
+  const AX_ICONS = {
+    result: '<path d="M4 5h16v14H4z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 5v14M8 10v4M16 10v4" stroke="currentColor" stroke-width="2"/>',
+    teams: '<circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="16" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M2.5 19c.5-3 2.7-5 5.5-5s5 2 5.5 5M10.5 19c.5-3 2.7-5 5.5-5s5 2 5.5 5" fill="none" stroke="currentColor" stroke-width="2"/>',
+    champion: '<path d="M7 4h10v3a5 5 0 0 1-10 0V4Zm-3 1h3v3a3 3 0 0 1-3-3Zm16 0h-3v3a3 3 0 0 0 3-3ZM12 12v4m-4 4h8m-6-4h4v4h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
+    night: '<path d="m12 3 2.6 5.6 6.1.6-4.6 4.1 1.3 6-5.4-3.1-5.4 3.1 1.3-6-4.6-4.1 6.1-.6Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
+    scorers: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path fill="currentColor" d="m12 7.5 3.2 2.3-1.2 3.8h-4l-1.2-3.8Z"/>',
+    next: '<rect x="3.5" y="5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3.5 10h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="2"/>',
+  };
+  const AX_TYPES = [["result", "Resultado de jogo"], ["teams", "Times sorteados"], ["champion", "Campeão"], ["night", "Destaques da noite"], ["scorers", "Artilharia"], ["next", "Próximo jogo"]];
+  let artKey = "", artToken = 0, artDone = Promise.resolve(), axFontsPromise = null;
+  const axImages = new Map();
   function colorOf(name) {
     const sl = superTeam(name);
     if (sl) return SUPER_COLORS[sl.color] || SUPER_COLORS[0];
@@ -3692,541 +3634,571 @@
     const past = (state?.gameHistory || []).find((game) => (game.home === name && game.homeColor) || (game.away === name && game.awayColor));
     return (past && (past.home === name ? past.homeColor : past.awayColor)) || teamColors[0];
   }
-  // Topo comum: escudo, nome da liga e linha de informações. Devolve o y seguinte.
-  function drawArtHeader(ctx, W, story, info) {
-    let y = story ? 150 : 80;
-    if (artShield.complete && artShield.naturalWidth) {
-      const size = story ? 260 : 150;
-      ctx.drawImage(artShield, (W - size) / 2, y, size, size);
-      y += size + (story ? 110 : 75);
+  function artGames() {
+    return [...(state?.gameHistory || [])].sort((a, b) => new Date(b.finishedAt) - new Date(a.finishedAt));
+  }
+  // ---------- Carregamento: fontes e imagens antes de desenhar ----------
+  function axFontsReady() {
+    if (!axFontsPromise) {
+      axFontsPromise = document.fonts?.load
+        ? Promise.all(['400 100px "Anton"', '600 40px "Inter"', '700 40px "Inter"', '800 40px "Inter"'].map((font) => document.fonts.load(font))).then(() => document.fonts.ready).catch(() => {})
+        : Promise.resolve();
     }
-    ctx.fillStyle = "#ffc400";
-    fitFont(ctx, "LIGA SKALAMA", 900, story ? 84 : 66, W - 120);
-    ctx.fillText("LIGA SKALAMA", W / 2, y);
-    y += story ? 64 : 50;
-    ctx.fillStyle = "#bdbdbd";
-    const text = info.filter(Boolean).join(" · ").toUpperCase();
-    fitFont(ctx, text, 600, 34, W - 120);
-    ctx.fillText(text, W / 2, y);
-    return y + (story ? 130 : 80);
+    return axFontsPromise;
   }
-  // Retângulo colorido com logo (se houver) e nome do time centralizados.
-  function drawTeamBadge(ctx, name, text, x, y, w, h, fontSize, family = ART_FONT) {
-    const color = colorOf(name),
-      logo = logoImage(name),
-      logoSize = logo ? h - 36 : 0,
-      gap = logo ? 18 : 0;
-    ctx.fillStyle = color.color;
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, h, 22);
-    ctx.fill();
-    fitFont(ctx, text, 800, fontSize, w - 40 - logoSize - gap, family);
-    const textW = ctx.measureText(text).width,
-      startX = x + (w - (logoSize + gap + textW)) / 2;
-    if (logo) {
-      const ratio = logo.naturalWidth / logo.naturalHeight,
-        drawW = ratio >= 1 ? logoSize : logoSize * ratio,
-        drawH = ratio >= 1 ? logoSize / ratio : logoSize;
-      ctx.drawImage(
-        logo,
-        startX + (logoSize - drawW) / 2,
-        y + (h - drawH) / 2,
-        drawW,
-        drawH,
-      );
+  function axLoadImage(src) {
+    if (!src) return Promise.resolve(null);
+    if (!axImages.has(src)) {
+      axImages.set(src, new Promise((resolve) => {
+        const image = new Image();
+        image.onload = () => (image.decode ? image.decode().catch(() => {}) : Promise.resolve()).then(() => resolve(image));
+        image.onerror = () => resolve(null);
+        image.src = src;
+      }).then((image) => { axImages.set(src, image); return image; }));
     }
-    ctx.fillStyle = color.ink;
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, startX + logoSize + gap, y + h / 2);
-    ctx.textAlign = "center";
-    ctx.textBaseline = "alphabetic";
+    return Promise.resolve(axImages.get(src));
   }
-  function drawResultArt(ctx, W, H, story, game) {
-    const label = (side) => game[side + "Label"] || game[side],
-      date = new Date(game.finishedAt || Date.now()).toLocaleDateString(
-        "pt-BR",
-        { day: "2-digit", month: "2-digit" },
-      );
-    ctx.fillStyle = colorOf(game.home).color;
-    ctx.fillRect(0, 0, W / 2, 18);
-    ctx.fillStyle = colorOf(game.away).color;
-    ctx.fillRect(W / 2, 0, W / 2, 18);
-    let y = drawArtHeader(ctx, W, story, [
-      `JOGO ${game.number}`,
-      date,
-      state.venue,
-    ]);
-    const colW = 400,
-      cardH = story ? 150 : 130;
-    [
-      ["home", 70],
-      ["away", W - 70 - colW],
-    ].forEach(([side, x]) => {
-      drawTeamBadge(
-        ctx,
-        game[side],
-        label(side).toUpperCase(),
-        x,
-        y,
-        colW,
-        cardH,
-        46,
-      );
-      ctx.fillStyle = "#ffffff";
-      ctx.font = `900 ${story ? 230 : 190}px ${ART_FONT}`;
-      ctx.fillText(
-        String(game[side + "Score"]),
-        x + colW / 2,
-        y + cardH + (story ? 250 : 210),
-      );
-    });
-    ctx.fillStyle = "#6f6f6f";
-    ctx.font = `800 ${story ? 120 : 100}px ${ART_FONT}`;
-    ctx.fillText("×", W / 2, y + cardH + (story ? 215 : 180));
-    y += cardH + (story ? 340 : 280);
-    const winnerSide = game.winner === game.home ? "home" : "away",
-      result =
-        game.winner === "Empate"
-          ? "EMPATE"
-          : game.homeScore === game.awayScore
-            ? `${label(winnerSide)} VENCE NOS PÊNALTIS`
-            : `VITÓRIA DO ${label(winnerSide)}`;
-    ctx.fillStyle = "#ffc400";
-    fitFont(ctx, result.toUpperCase(), 800, 44, W - 120);
-    ctx.fillText(result.toUpperCase(), W / 2, y);
-    y += story ? 90 : 70;
-    ctx.fillStyle = "#e8e8e8";
-    const lineH = story ? 52 : 44,
-      maxLines = story ? 10 : 6;
-    [
-      ["home", 70 + colW / 2],
-      ["away", W - 70 - colW / 2],
-    ].forEach(([side, x]) => {
-      (game.goals || [])
-        .filter((goal) => (goal.scoringTeam || goal.team) === game[side])
-        .sort((a, b) => a.minute - b.minute)
-        .slice(0, maxLines)
-        .forEach((goal, index) => {
-          const text = `${displayName(goal.player)} ${goal.minute}'${goal.ownGoal ? " (contra)" : ""}`;
-          fitFont(ctx, text, 500, story ? 34 : 30, colW);
-          ctx.fillText(text, x, y + index * lineH);
-        });
-    });
+  function axImg(src) {
+    const image = src && axImages.get(src);
+    return image && !(image instanceof Promise) && image.naturalWidth ? image : null;
   }
-  function drawTeamsArt(ctx, W, H, story) {
-    const teams = state.teams || [];
-    teams.forEach((team, index) => {
-      ctx.fillStyle = colorOf(team.name).color;
-      ctx.fillRect((W / teams.length) * index, 0, W / teams.length, 18);
-    });
-    const date = state.matchDate
-      ? new Date(state.matchDate + "T12:00:00").toLocaleDateString("pt-BR", {
-          day: "2-digit",
-          month: "2-digit",
-        })
-      : "";
-    let y = drawArtHeader(ctx, W, story, ["TIMES SORTEADOS", date, state.venue]);
-    const gap = 40,
-      colW = (W - 140 - gap) / 2,
-      badgeH = story ? 110 : 84,
-      lineH = story ? 50 : 38,
-      rows = Math.ceil(teams.length / 2),
-      blockH = badgeH + 24 + lineH * 5 + (story ? 60 : 36);
-    if (story) y += Math.max(0, (H - 160 - y - blockH * rows) / 2 - 40);
-    teams.forEach((team, index) => {
-      const row = Math.floor(index / 2),
-        alone = teams.length % 2 === 1 && index === teams.length - 1,
-        x = alone ? (W - colW) / 2 : 70 + (index % 2) * (colW + gap),
-        top = y + row * blockH,
-        players = lineupForTeam(team.name);
-      drawTeamBadge(
-        ctx,
-        team.name,
-        teamLabel(team.name).toUpperCase(),
-        x,
-        top,
-        colW,
-        badgeH,
-        story ? 40 : 32,
-      );
-      ctx.fillStyle = "#e8e8e8";
-      players.forEach((player, line) => {
-        const text = displayName(player) + (keeper(player) ? " (G)" : "");
-        fitFont(ctx, text, 500, story ? 34 : 28, colW - 20);
-        ctx.fillText(text, x + colW / 2, top + badgeH + 24 + lineH * (line + 0.8));
-      });
-    });
+  const AX_SHIELD = "./assets/escudo-skalama-oficial.png";
+  function axCrestSrc(key, label) {
+    return key ? crestFor(key, label || teamLabel(key)) : "";
   }
-  // ---------- Story do Instagram (1080×1920) no estilo do site ----------
-  // O Instagram cobre ~250px no topo (perfil) e ~280px embaixo (resposta):
-  // o conteúdo importante fica entre STORY_SAFE_TOP e STORY_SAFE_BOTTOM.
-  const STORY_SAFE_TOP = 230,
-    STORY_SAFE_BOTTOM = 1660,
-    STORY_DISPLAY = '"Barlow Condensed", "Arial Narrow", system-ui, sans-serif',
-    STORY_TEXT = '"DM Sans", system-ui, "Segoe UI", Roboto, sans-serif',
-    STORY_YELLOW = "#ffc400";
-  // As fontes do site vêm do Google Fonts; o canvas só as usa depois de carregadas.
-  if (document.fonts?.load)
-    Promise.all(
-      ['900 100px "Barlow Condensed"', '800 100px "Barlow Condensed"', '700 30px "DM Sans"', '500 30px "DM Sans"'].map((font) => document.fonts.load(font)),
-    )
-      .catch(() => {})
-      .finally(() => drawArt(true));
-  function storySpaced(ctx, px) {
+  // ---------- Dados de cada arte ----------
+  function axVenueShort() {
+    return String(state?.venue || "").replace(/^(quadra|campo|arena)\s+(do|da|de|dos|das)\s+/i, "").trim().toUpperCase();
+  }
+  function axDate(value) {
+    const date = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value + "T12:00:00") : new Date(value || 0);
+    return Number.isFinite(date.getTime()) && date.getTime() > 0 ? date : null;
+  }
+  function axDayMonth(value) {
+    const date = axDate(value);
+    return date ? date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "";
+  }
+  function axScorerRows(scope) {
+    const games = (state.gameHistory || []).filter((game) =>
+      scope === "superliga" ? !!game.superLigaId : scope === "temporada" ? !game.superLigaId : !game.superLigaId && !!state.roundId && game.roundId === state.roundId);
+    const rows = new Map();
+    for (const game of games)
+      for (const goal of game.goals || []) {
+        if (goal.ownGoal || !goal.player) continue;
+        const row = rows.get(goal.player) || { name: goal.player, goals: 0, team: goal.team, teamLabel: teamName(game, goal.team) };
+        row.goals++;
+        row.team = goal.team; row.teamLabel = teamName(game, goal.team);
+        rows.set(goal.player, row);
+      }
+    return [...rows.values()].sort((a, b) => b.goals - a.goals || a.name.localeCompare(b.name, "pt-BR")).slice(0, 5);
+  }
+  const AX_SCOPES = [["rodada", "Rodada"], ["temporada", "Temporada (Modo Liga)"], ["superliga", "Super Liga"]];
+  function axNight() {
+    const roundId = state.roundId || state.currentGame?.roundId,
+      games = roundId ? (state.gameHistory || []).filter((game) => game.roundId === roundId) : [];
+    if (!games.length) return null;
+    const totals = new Map();
+    for (const game of games)
+      for (const p of gamePerformance(game)) {
+        const key = p.role + "|" + p.player, row = totals.get(key) || { player: p.player, role: p.role, team: p.team, teamLabel: teamName(game, p.team), sum: 0, games: 0, goals: 0, conceded: 0 };
+        row.sum += Number(p.score) || 0; row.games++; row.goals += Number(p.goalsFor) || 0; row.conceded += Number(p.goalsAgainst) || 0;
+        totals.set(key, row);
+      }
+    const best = (role) => [...totals.values()].filter((row) => row.role === role && (role !== "goleiro" || row.games >= MIN_KEEPER_GAMES)).map((row) => ({ ...row, average: row.sum / row.games })).sort((a, b) => b.average - a.average || a.player.localeCompare(b.player, "pt-BR"))[0] || null;
+    return { player: best("linha"), keeper: best("goleiro"), games: games.length };
+  }
+  function axData() {
+    const type = ART.type;
+    if (type === "result") {
+      const games = artGames(), game = games.find((item) => item.id === ART.gameId) || games[0];
+      return game ? { type, game } : { warn: "As artes de resultado aparecem depois do primeiro jogo encerrado." };
+    }
+    if (type === "teams") {
+      const teams = (state.teams || []).map((team) => ({ key: team.name, label: teamLabel(team.name), players: lineupForTeam(team.name) }));
+      return teams.length ? { type, teams, date: state.matchDate, venue: state.venue } : { warn: "Sorteie os times em Elenco e sorteio para gerar esta arte." };
+    }
+    if (type === "champion") {
+      const sl = state.superLiga, final = sl?.status === "finished" ? superFinalGame(sl) : null;
+      if (!final) return { warn: "A arte do campeão aparece quando uma Super Liga é encerrada." };
+      const champion = final.winner === final.home || final.winner === final.away ? final.winner : sl.champion;
+      if (!champion) return { warn: "A final ainda não tem campeão definido." };
+      const side = final.home === champion ? "home" : "away";
+      return { type, final, champion, side, played: slxLineup(final, side).played, keeperName: slxLineup(final, side).keeperName };
+    }
+    if (type === "night") {
+      const night = axNight();
+      return night && night.player ? { type, ...night } : { warn: "Os destaques da noite aparecem depois do primeiro jogo da rodada (Modo Liga)." };
+    }
+    if (type === "scorers") {
+      const scope = ART.scope || "rodada", rows = axScorerRows(scope);
+      return rows.length ? { type, scope, rows } : { warn: "Ainda não há gols em " + (AX_SCOPES.find(([key]) => key === scope)?.[1] || "rodada").toLowerCase() + ". Escolha outro período." };
+    }
+    if (type === "next") {
+      if (!state.matchDate) return { warn: "Defina a data do próximo jogo em Elenco e sorteio para gerar esta arte." };
+      // Vagas: lugares livres nos times sorteados (5 por time); sem sorteio, pela lista de ativos (até 20).
+      const teams = (state.teams || []).map((team) => ({ key: team.name, label: teamLabel(team.name) })),
+        spots = teams.length ? teams.reduce((sum, team) => sum + Math.max(0, 5 - lineupForTeam(team.key).length), 0) : Array.isArray(state.roster) && state.roster.length ? Math.max(0, 20 - activeRoster().length) : 0;
+      return { type, date: state.matchDate, time: state.startTime || "", venue: state.venue || "", teams, spots };
+    }
+    return { warn: "Escolha o que divulgar." };
+  }
+  function axImagesFor(info) {
+    const list = [AX_SHIELD], add = (key, label) => list.push(axCrestSrc(key, label));
+    if (info.game) { add(info.game.home, gameTeamLabel(info.game, "home")); add(info.game.away, gameTeamLabel(info.game, "away")); }
+    if (info.final) { add(info.final.home, gameTeamLabel(info.final, "home")); add(info.final.away, gameTeamLabel(info.final, "away")); }
+    (info.teams || []).forEach((team) => add(team.key, team.label));
+    (info.rows || []).forEach((row) => add(row.team, row.teamLabel));
+    if (info.player) add(info.player.team, info.player.teamLabel);
+    if (info.keeper) add(info.keeper.team, info.keeper.teamLabel);
+    return [...new Set(list.filter(Boolean))];
+  }
+  // ---------- Desenho: peças comuns ----------
+  function axFont(ctx, weight, size, display) {
+    ctx.font = (display ? "400 " : weight + " ") + size + "px " + (display ? AX_DISPLAY : AX_TEXT);
+  }
+  function axSpacing(ctx, px) {
     if ("letterSpacing" in ctx) ctx.letterSpacing = px + "px";
   }
-  function storyBackground(ctx, W, H, colors) {
-    ctx.fillStyle = "#0d0d0d";
-    ctx.fillRect(0, 0, W, H);
-    let glow = ctx.createRadialGradient(W / 2, -80, 0, W / 2, -80, 1000);
-    glow.addColorStop(0, "rgba(255,196,0,0.30)");
-    glow.addColorStop(0.45, "rgba(255,196,0,0.07)");
-    glow.addColorStop(1, "rgba(255,196,0,0)");
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, W, H);
-    glow = ctx.createRadialGradient(W / 2, H + 120, 0, W / 2, H + 120, 900);
-    glow.addColorStop(0, "rgba(255,196,0,0.12)");
-    glow.addColorStop(1, "rgba(255,196,0,0)");
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, W, H);
-    // Linhas de quadra bem discretas ao fundo.
-    ctx.save();
-    ctx.strokeStyle = "rgba(255,255,255,0.035)";
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.arc(W / 2, H / 2 + 120, 300, 0, Math.PI * 2);
-    ctx.moveTo(0, H / 2 + 120);
-    ctx.lineTo(W, H / 2 + 120);
-    ctx.stroke();
-    ctx.restore();
-    // Faixa com as cores dos times no topo e moldura amarela fina.
-    colors.forEach((color, index) => {
-      ctx.fillStyle = color;
-      ctx.fillRect((W / colors.length) * index, 0, W / colors.length + 1, 16);
-    });
-    ctx.strokeStyle = "rgba(255,196,0,0.28)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(34, 50, W - 68, H - 84, 28);
-    ctx.stroke();
+  function axFit(ctx, text, weight, size, maxWidth, display, min = 14) {
+    let s = size;
+    do axFont(ctx, weight, s, display); while (ctx.measureText(text).width > maxWidth && --s > min);
+    return s;
   }
-  // Escudo, "LIGA SKALAMA" e a pílula de informações. Devolve o y seguinte.
-  // compact: escudo menor, para sobrar espaço quando os times têm mais jogadores.
-  function storyHeader(ctx, W, info, compact = false) {
-    let y = STORY_SAFE_TOP - (compact ? 10 : 0);
-    if (artShield.complete && artShield.naturalWidth) {
-      const h = compact ? 130 : 220,
-        w = (h * artShield.naturalWidth) / artShield.naturalHeight;
-      ctx.save();
-      ctx.shadowColor = "rgba(255,196,0,0.35)";
-      ctx.shadowBlur = 60;
-      ctx.drawImage(artShield, (W - w) / 2, y, w, h);
-      ctx.restore();
-      y += h + (compact ? 52 : 62);
+  function axRound(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
+    else { ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+  }
+  function axBackground(ctx, W, H) {
+    ctx.fillStyle = "#0b0b0b";
+    ctx.fillRect(0, 0, W, H);
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,196,0,0.045)";
+    ctx.lineWidth = 16;
+    for (let x = -H; x < W + H; x += 64) { ctx.beginPath(); ctx.moveTo(x, H); ctx.lineTo(x + H, 0); ctx.stroke(); }
+    if (ART.stripe) {
+      // Faixa diagonal amarela atrás do conteúdo (como no escudo do lobo), translúcida para não atrapalhar a leitura.
+      const grad = ctx.createLinearGradient(0, H, W, 0);
+      grad.addColorStop(0, "rgba(255,196,0,0.30)"); grad.addColorStop(1, "rgba(255,196,0,0.16)");
+      ctx.fillStyle = grad;
+      const band = W * 0.34;
+      ctx.beginPath(); ctx.moveTo(-band, H * 0.78); ctx.lineTo(W, H * 0.78 - W - band * 0.2); ctx.lineTo(W + band, H * 0.78 - W + band * 0.4); ctx.lineTo(0, H * 0.78 + band * 1.1); ctx.closePath(); ctx.fill();
     }
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#c9c2a3";
-    ctx.font = `800 22px ${STORY_TEXT}`;
-    storySpaced(ctx, 7);
+    const vignette = ctx.createRadialGradient(W / 2, H * 0.32, 40, W / 2, H * 0.32, H * 0.9);
+    vignette.addColorStop(0, "rgba(255,196,0,0.08)"); vignette.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = vignette; ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+  // Marca: escudo da liga + frase + LIGA SKALAMA. Devolve o y abaixo.
+  function axBrand(ctx, W, top, story) {
+    const shield = axImg(AX_SHIELD), size = story ? 132 : 96;
+    if (shield) { const w = (size * shield.naturalWidth) / shield.naturalHeight; ctx.drawImage(shield, (W - w) / 2, top, w, size); }
+    let y = top + size + (story ? 44 : 34);
+    ctx.textAlign = "center"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = "#c9c9c1";
+    axFont(ctx, 700, story ? 24 : 20); axSpacing(ctx, 6);
     ctx.fillText("FUTEBOL · AMIZADE · COMPETIÇÃO", W / 2, y);
-    storySpaced(ctx, 0);
-    y += compact ? 92 : 104;
-    ctx.font = `900 ${compact ? 104 : 118}px ${STORY_DISPLAY}`;
-    storySpaced(ctx, 2);
-    const liga = "LIGA ",
-      sk = "SKALAMA",
-      ligaW = ctx.measureText(liga).width,
-      total = ligaW + ctx.measureText(sk).width,
-      start = (W - total) / 2;
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#f8f8f5";
-    ctx.fillText(liga, start, y);
-    ctx.fillStyle = STORY_YELLOW;
-    ctx.fillText(sk, start + ligaW, y);
-    storySpaced(ctx, 0);
-    ctx.textAlign = "center";
-    y += 40;
-    const text = info.filter(Boolean).join("  ·  ").toUpperCase();
-    fitFont(ctx, text, 700, 28, W - 260, STORY_TEXT);
-    storySpaced(ctx, 2);
-    const pillW = Math.min(W - 160, ctx.measureText(text).width + 80);
-    ctx.fillStyle = "#17160f";
-    ctx.strokeStyle = "#514611";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect((W - pillW) / 2, y, pillW, 62, 31);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = "#e9e3c8";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, W / 2, y + 32);
-    ctx.textBaseline = "alphabetic";
-    storySpaced(ctx, 0);
-    return y + 62;
+    axSpacing(ctx, 2);
+    y += story ? 92 : 72;
+    axFont(ctx, 0, story ? 92 : 70, true);
+    const a = "LIGA ", b = "SKALAMA", wa = ctx.measureText(a).width, wb = ctx.measureText(b).width, x0 = W / 2 - (wa + wb) / 2;
+    ctx.textAlign = "left"; ctx.fillStyle = "#ffffff"; ctx.fillText(a, x0, y); ctx.fillStyle = AX_Y; ctx.fillText(b, x0 + wa, y);
+    ctx.textAlign = "center"; axSpacing(ctx, 0);
+    return y + (story ? 34 : 26);
   }
-  function storyPanel(ctx, x, y, w, h, accent = STORY_YELLOW) {
+  // Etiquetas de contexto em pílulas: { text, style: "white" | "yellow" | "outline" }.
+  function axPills(ctx, W, y, pills, story) {
+    const h = story ? 58 : 48, gap = 14, size = story ? 24 : 20;
+    axFont(ctx, 800, size); axSpacing(ctx, 2);
+    const widths = pills.map((pill) => ctx.measureText(pill.text).width + (story ? 48 : 40)), total = widths.reduce((s, w) => s + w, 0) + gap * (pills.length - 1);
+    let x = (W - total) / 2;
+    pills.forEach((pill, index) => {
+      const w = widths[index];
+      axRound(ctx, x, y, w, h, h / 2);
+      if (pill.style === "outline") { ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.lineWidth = 3; ctx.stroke(); ctx.fillStyle = "#ffffff"; }
+      else { ctx.fillStyle = pill.style === "yellow" ? AX_Y : "#ffffff"; ctx.fill(); ctx.fillStyle = "#0b0b0b"; }
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(pill.text, x + w / 2, y + h / 2 + 1);
+      x += w + gap;
+    });
+    ctx.textBaseline = "alphabetic"; axSpacing(ctx, 0);
+    return y + h;
+  }
+  function axCrest(ctx, key, label, cx, cy, size, dim = false) {
+    const image = axImg(axCrestSrc(key, label));
     ctx.save();
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, h, 30);
-    const fill = ctx.createLinearGradient(x, y, x + w, y + h);
-    fill.addColorStop(0, "#1e1e1b");
-    fill.addColorStop(0.6, "#161616");
-    fill.addColorStop(1, "#231f0d");
-    ctx.fillStyle = fill;
-    ctx.fill();
-    ctx.clip();
-    ctx.fillStyle = accent;
-    ctx.fillRect(x, y, w, 6);
+    if (dim) { ctx.globalAlpha = 0.55; if ("filter" in ctx) ctx.filter = "grayscale(0.5)"; }
+    if (image) {
+      const ratio = image.naturalWidth / image.naturalHeight, w = ratio >= 1 ? size : size * ratio, h = ratio >= 1 ? size / ratio : size;
+      ctx.drawImage(image, cx - w / 2, cy - h / 2, w, h);
+    } else {
+      ctx.beginPath(); ctx.arc(cx, cy, size / 2 - 4, 0, Math.PI * 2); ctx.fillStyle = "#222"; ctx.fill();
+      ctx.lineWidth = Math.max(3, size / 40); ctx.strokeStyle = dim ? "#555" : AX_Y; ctx.stroke();
+      const initials = String(label || "").replace(/^time\s+/i, "").split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase() || "?";
+      ctx.fillStyle = "#ffffff"; axFont(ctx, 0, Math.round(size * 0.36), true); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(initials, cx, cy + 2); ctx.textBaseline = "alphabetic";
+    }
     ctx.restore();
-    ctx.strokeStyle = "#34342f";
-    ctx.lineWidth = 2;
+  }
+  function axFooter(ctx, W, y) {
+    ctx.textAlign = "center"; ctx.fillStyle = "#9a9a92"; axFont(ctx, 700, 24); axSpacing(ctx, 5);
+    ctx.fillText("#LIGASKALAMA · SKALAMA.COM.BR", W / 2, y); axSpacing(ctx, 0);
+  }
+  function axBand(ctx, W, y, text, story, color = AX_Y, ink = "#0b0b0b") {
+    const h = story ? 92 : 78, pad = story ? 70 : 70;
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.moveTo(pad + 20, y); ctx.lineTo(W - pad, y); ctx.lineTo(W - pad - 20, y + h); ctx.lineTo(pad, y + h); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = ink; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    axFit(ctx, text, 0, story ? 52 : 44, W - pad * 2 - 80, true);
+    axSpacing(ctx, 1); ctx.fillText(text, W / 2, y + h / 2 + 2); axSpacing(ctx, 0);
+    ctx.restore();
+    return y + h;
+  }
+  function axStar(ctx, cx, cy, r, color = AX_Y) {
     ctx.beginPath();
-    ctx.roundRect(x, y, w, h, 30);
-    ctx.stroke();
+    for (let i = 0; i < 10; i++) { const angle = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? r * 0.45 : r; ctx.lineTo(cx + rr * Math.cos(angle), cy + rr * Math.sin(angle)); }
+    ctx.closePath(); ctx.fillStyle = color; ctx.fill();
   }
-  function storyFooter(ctx, W, text) {
+  function axTrophy(ctx, cx, cy, r) {
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fillStyle = AX_Y; ctx.fill(); ctx.lineWidth = r * 0.12; ctx.strokeStyle = "#0b0b0b"; ctx.stroke();
+    const s = r / 24; ctx.fillStyle = "#0b0b0b";
+    ctx.beginPath(); ctx.moveTo(cx - 10 * s, cy - 12 * s); ctx.lineTo(cx + 10 * s, cy - 12 * s); ctx.lineTo(cx + 9 * s, cy - 2 * s); ctx.quadraticCurveTo(cx, cy + 7 * s, cx - 9 * s, cy - 2 * s); ctx.closePath(); ctx.fill();
+    ctx.fillRect(cx - 2.5 * s, cy + 3 * s, 5 * s, 6 * s); ctx.fillRect(cx - 7 * s, cy + 9 * s, 14 * s, 4 * s);
+    ctx.lineWidth = 3 * s; ctx.strokeStyle = "#0b0b0b";
+    ctx.beginPath(); ctx.arc(cx - 11 * s, cy - 7 * s, 4 * s, Math.PI * 0.5, Math.PI * 1.5); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx + 11 * s, cy - 7 * s, 4 * s, -Math.PI * 0.5, Math.PI * 0.5); ctx.stroke();
+  }
+  // Gols agrupados por jogador: "Luy Hick ×3 20′ 26′ 30′"; minuto repetido aparece uma vez.
+  function axGoalLines(game, key) {
+    const groups = [];
+    for (const goal of [...(game.goals || [])].sort((a, b) => (Number(a.minute) || 0) - (Number(b.minute) || 0))) {
+      if ((goal.scoringTeam || goal.team) !== key) continue;
+      let group = groups.find((item) => item.player === goal.player && item.own === !!goal.ownGoal);
+      if (!group) groups.push((group = { player: goal.player, own: !!goal.ownGoal, minutes: [] }));
+      group.minutes.push(Number(goal.minute) || 0);
+    }
+    return groups.map((group) => ({ name: displayName(group.player || "Gol") + (group.minutes.length > 1 ? " ×" + group.minutes.length : "") + (group.own ? " (contra)" : ""), minutes: [...new Set(group.minutes)].map((m) => m + "′").join(" ") }));
+  }
+  function axDrawGoals(ctx, W, top, bottom, game, story) {
+    const pad = story ? 80 : 70, mid = W / 2, colW = mid - pad - 28;
+    ctx.textAlign = "center"; ctx.fillStyle = AX_Y; axFont(ctx, 800, story ? 26 : 22); axSpacing(ctx, 6);
+    ctx.fillText("GOLS DA PARTIDA", mid, top + 26); axSpacing(ctx, 0);
+    const home = axGoalLines(game, game.home), away = axGoalLines(game, game.away), rows = Math.max(home.length, away.length, 1),
+      areaTop = top + (story ? 62 : 54), avail = bottom - areaTop;
+    let size = Math.min(story ? 40 : 34, Math.floor(avail / rows / 1.32));
+    size = Math.max(16, size);
+    const lineH = Math.round(size * 1.32);
+    ctx.strokeStyle = "rgba(255,255,255,0.14)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(mid, areaTop - 6); ctx.lineTo(mid, areaTop + Math.min(avail, rows * lineH) - 8); ctx.stroke();
+    const draw = (lines, alignRight) => {
+      if (!lines.length) { ctx.fillStyle = "#8f8f88"; axFont(ctx, 600, size); ctx.textAlign = alignRight ? "right" : "left"; ctx.fillText("Sem gols", alignRight ? mid - 28 : mid + 28, areaTop + size); return; }
+      lines.forEach((line, index) => {
+        const y = areaTop + size + index * lineH;
+        let s = size;
+        const measure = () => { axFont(ctx, 800, s); const a = ctx.measureText(line.name + "  ").width; axFont(ctx, 600, s); return a + ctx.measureText(line.minutes).width; };
+        while (measure() > colW && s > 12) s--;
+        axFont(ctx, 800, s); const nameW = ctx.measureText(line.name + "  ").width; axFont(ctx, 600, s); const minW = ctx.measureText(line.minutes).width;
+        const x0 = alignRight ? mid - 28 - (nameW + minW) : mid + 28;
+        ctx.textAlign = "left"; ctx.fillStyle = "#ffffff"; axFont(ctx, 800, s); ctx.fillText(line.name, x0, y);
+        ctx.fillStyle = AX_Y; axFont(ctx, 600, s); ctx.fillText(line.minutes, x0 + nameW, y);
+      });
+    };
+    draw(home, true); draw(away, false);
     ctx.textAlign = "center";
-    ctx.fillStyle = "#8d8a7a";
-    ctx.font = `700 24px ${STORY_TEXT}`;
-    storySpaced(ctx, 5);
-    ctx.fillText(text, W / 2, STORY_SAFE_BOTTOM);
-    storySpaced(ctx, 0);
+    return areaTop + rows * lineH;
   }
-  function drawStoryResultArt(ctx, W, H, game) {
-    const label = (side) => game[side + "Label"] || game[side],
-      date = new Date(game.finishedAt || Date.now()).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-    storyBackground(ctx, W, H, [colorOf(game.home).color, colorOf(game.away).color]);
-    let y = storyHeader(ctx, W, [`JOGO ${game.number}`, date, state.venue]) + 50;
-    const panelX = 70,
-      panelW = W - 140,
-      panelH = 500,
-      colW = 380,
-      centers = { home: panelX + 40 + colW / 2, away: panelX + panelW - 40 - colW / 2 },
-      tie = game.homeScore === game.awayScore,
-      winnerSide = game.winner === game.home ? "home" : game.winner === game.away ? "away" : null;
-    storyPanel(ctx, panelX, y, panelW, panelH);
-    ["home", "away"].forEach((side) => {
-      drawTeamBadge(ctx, game[side], label(side).toUpperCase(), centers[side] - colW / 2, y + 44, colW, 100, 50, STORY_DISPLAY);
+  function axBestOfGame(game) {
+    return [...gamePerformance(game)].sort((a, b) => Number(b.score) - Number(a.score) || ((Number(b.goalsFor) || 0) + (Number(b.assists) || 0)) - ((Number(a.goalsFor) || 0) + (Number(a.assists) || 0)) || (Number(b.goalsFor) || 0) - (Number(a.goalsFor) || 0))[0] || null;
+  }
+  function axIsTitle(game) {
+    return typeof hxIsTitleGame === "function" ? hxIsTitleGame(game) : game.stage === "final";
+  }
+  // ---------- Arte: Resultado de jogo (modelo para as outras) ----------
+  function axDrawResult(ctx, W, H, story, game) {
+    const top = story ? 220 : 70, bottom = story ? H - 230 : H - 70;
+    let y = axBrand(ctx, W, top, story);
+    const title = axIsTitle(game), friendly = game.stage === "amistoso", pills = [{ text: game.superLigaId ? "SUPER LIGA" : "MODO LIGA", style: "white" }];
+    if (title || (game.superLigaId && game.stage === "final")) pills.push({ text: "FINAL", style: "yellow" });
+    else if (friendly) pills.push({ text: "AMISTOSO", style: "outline" });
+    const place = [axDayMonth(game.matchDate || game.finishedAt), axVenueShort()].filter(Boolean).join(" · ");
+    if (place) pills.push({ text: place, style: "outline" });
+    y = axPills(ctx, W, y + (story ? 6 : 0), pills, story) + (story ? 40 : 26);
+    // Placar em 3 colunas
+    const crest = story ? 300 : 230, colX = [W * 0.2, W / 2, W * 0.8], winSide = game.winner === game.home ? "home" : game.winner === game.away ? "away" : null,
+      crestCy = y + crest / 2;
+    for (const [side, cx] of [["home", colX[0]], ["away", colX[2]]]) {
+      const lose = winSide && winSide !== side, label = gameTeamLabel(game, side);
+      axCrest(ctx, game[side], label, cx, crestCy, crest, lose);
+      ctx.fillStyle = lose ? "#8f8f88" : "#ffffff"; ctx.textAlign = "center";
+      axFit(ctx, label.toUpperCase(), 0, story ? 50 : 40, W * 0.34, true);
+      ctx.fillText(label.toUpperCase(), cx, crestCy + crest / 2 + (story ? 66 : 54));
+    }
+    const hs = Number(game.homeScore) || 0, as = Number(game.awayScore) || 0;
+    // O placar diminui para caber entre os escudos (ex.: 10 × 4).
+    let scoreSize = story ? 190 : 150;
+    const room = colX[2] - crest / 2 - (colX[0] + crest / 2) - 36;
+    const scoreWidth = (size) => { axFont(ctx, 0, size, true); const nums = ctx.measureText(String(hs)).width + ctx.measureText(String(as)).width; axFont(ctx, 0, size * 0.45, true); return nums + ctx.measureText("×").width + 44; };
+    while (scoreWidth(scoreSize) > room && scoreSize > 70) scoreSize -= 4;
+    axFont(ctx, 0, scoreSize, true); ctx.textBaseline = "middle";
+    const sep = "×", sepW = (axFont(ctx, 0, scoreSize * 0.45, true), ctx.measureText(sep).width);
+    axFont(ctx, 0, scoreSize, true);
+    const hw = ctx.measureText(String(hs)).width, aw = ctx.measureText(String(as)).width, gap = 22, total = hw + aw + sepW + gap * 2, sx = colX[1] - total / 2;
+    ctx.textAlign = "left";
+    ctx.fillStyle = winSide === "home" ? AX_Y : winSide ? "#8f8f88" : "#ffffff"; ctx.fillText(String(hs), sx, crestCy + 8);
+    ctx.fillStyle = winSide === "away" ? AX_Y : winSide ? "#8f8f88" : "#ffffff"; ctx.fillText(String(as), sx + hw + sepW + gap * 2, crestCy + 8);
+    ctx.fillStyle = "#8f8f88"; axFont(ctx, 0, scoreSize * 0.45, true); ctx.fillText(sep, sx + hw + gap, crestCy + 8);
+    ctx.textBaseline = "alphabetic"; ctx.textAlign = "center";
+    y = crestCy + crest / 2 + (story ? 110 : 84);
+    // Faixa do resultado
+    const shoot = game.shootout && Number.isFinite(game.shootout.homeScore) ? game.shootout : null, winner = winSide ? gameTeamLabel(game, winSide).toUpperCase() : "";
+    const result = !winSide ? "EMPATE" : title ? winner + " CAMPEÃO" : hs === as && shoot ? winner + " VENCE NOS PÊNALTIS (" + shoot[winSide + "Score"] + " × " + shoot[(winSide === "home" ? "away" : "home") + "Score"] + ")" : "VITÓRIA DO " + winner;
+    y = axBand(ctx, W, y, result, story) + (story ? 50 : 36);
+    // Destaque do jogo (só no Story) e gols
+    const footerY = bottom - 6, best = story && ART.star ? axBestOfGame(game) : null, starH = best ? 168 : 0;
+    const goalsBottom = footerY - 50 - (best ? starH + 34 : 0);
+    if (ART.goals) y = axDrawGoals(ctx, W, y, goalsBottom, game, story) + 20;
+    if (best) {
+      const cardY = goalsBottom + 34, x = 110, w = W - 220;
+      axRound(ctx, x, cardY, w, starH, 28); ctx.fillStyle = "#161616"; ctx.fill(); ctx.strokeStyle = "rgba(255,196,0,0.5)"; ctx.lineWidth = 3; ctx.stroke();
+      axStar(ctx, x + 84, cardY + starH / 2, 44);
+      ctx.textAlign = "left"; ctx.fillStyle = AX_Y; axFont(ctx, 800, 22); axSpacing(ctx, 5); ctx.fillText("DESTAQUE DO JOGO", x + 150, cardY + 50); axSpacing(ctx, 0);
+      ctx.fillStyle = "#ffffff"; axFit(ctx, displayName(best.player).toUpperCase(), 0, 56, w - 190, true); ctx.fillText(displayName(best.player).toUpperCase(), x + 150, cardY + 112);
+      const parts = [Number(best.goalsFor) ? best.goalsFor + (Number(best.goalsFor) === 1 ? " gol" : " gols") : "", Number(best.assists) ? best.assists + " assist." : "", best.role === "goleiro" ? "goleiro" : "", "nota " + Number(best.score).toFixed(1).replace(".", ",").replace(",0", "")].filter(Boolean).join(" · ");
+      ctx.fillStyle = "#d6d6cd"; axFont(ctx, 600, 26); ctx.fillText(parts, x + 150, cardY + 148);
       ctx.textAlign = "center";
-      ctx.fillStyle = !tie && winnerSide === side ? STORY_YELLOW : "#f8f8f5";
-      ctx.font = `900 290px ${STORY_DISPLAY}`;
-      ctx.fillText(String(game[side + "Score"]), centers[side], y + 410);
-    });
-    ctx.fillStyle = "#5c5a4e";
-    ctx.font = `700 110px ${STORY_DISPLAY}`;
-    ctx.fillText("×", W / 2, y + 330);
-    // Faixa amarela com o resultado, sobre a borda inferior do painel.
-    const shoot = game.shootout,
-      result =
-        game.winner === "Empate"
-          ? "EMPATE"
-          : tie
-            ? `${label(winnerSide)} vence nos pênaltis` + (shoot && Number.isFinite(shoot.homeScore) ? ` (${shoot.homeScore}×${shoot.awayScore})` : "")
-            : `Vitória do ${label(winnerSide)}`;
-    fitFont(ctx, result.toUpperCase(), 800, 46, panelW - 140, STORY_DISPLAY);
-    storySpaced(ctx, 1);
-    const pillW = ctx.measureText(result.toUpperCase()).width + 90,
-      pillY = y + panelH - 36;
-    ctx.fillStyle = STORY_YELLOW;
-    ctx.beginPath();
-    ctx.roundRect((W - pillW) / 2, pillY, pillW, 72, 36);
-    ctx.fill();
-    ctx.fillStyle = "#15130a";
-    ctx.textBaseline = "middle";
-    ctx.fillText(result.toUpperCase(), W / 2, pillY + 38);
-    ctx.textBaseline = "alphabetic";
-    storySpaced(ctx, 0);
-    // Gols de cada time, em ordem de minuto.
-    y = pillY + 72 + 70;
-    ctx.fillStyle = STORY_YELLOW;
-    ctx.font = `800 22px ${STORY_TEXT}`;
-    storySpaced(ctx, 6);
-    ctx.fillText("GOLS DA PARTIDA", W / 2, y);
-    storySpaced(ctx, 0);
-    y += 58;
-    const lineH = 44,
-      maxLines = Math.max(1, Math.floor((STORY_SAFE_BOTTOM - 40 - y) / lineH) + 1),
-      allGoals = game.goals || [];
-    if (!allGoals.length) {
-      ctx.fillStyle = "#8d8a7a";
-      ctx.font = `500 30px ${STORY_TEXT}`;
-      ctx.fillText("Sem gols registrados", W / 2, y);
     }
-    ["home", "away"].forEach((side) => {
-      const list = allGoals
-          .filter((goal) => (goal.scoringTeam || goal.team) === game[side])
-          .sort((a, b) => a.minute - b.minute),
-        shown = list.length > maxLines ? list.slice(0, maxLines - 1) : list;
-      // Cada linha: bolinha da cor do time, nome e minuto. A coluna fica alinhada à esquerda
-      // e centralizada pelo nome mais largo.
-      const rows = shown.map((goal) => {
-        const name = displayName(goal.player) + (goal.ownGoal ? " (contra)" : ""),
-          minute = `  ${goal.minute}'`;
-        ctx.font = `700 30px ${STORY_TEXT}`;
-        const minuteW = ctx.measureText(minute).width;
-        fitFont(ctx, name, 500, 32, colW - minuteW - 30, STORY_TEXT);
-        return { goal, name, minute, font: ctx.font, width: 26 + ctx.measureText(name).width + minuteW };
-      });
-      const start = centers[side] - Math.max(0, ...rows.map((row) => row.width)) / 2;
-      rows.forEach(({ goal, name, minute, font }, index) => {
-        const lineY = y + index * lineH;
-        ctx.fillStyle = colorOf(game[side]).color;
-        ctx.beginPath();
-        ctx.arc(start + 8, lineY - 11, 8, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.textAlign = "left";
-        ctx.font = font;
-        const nameW = ctx.measureText(name).width;
-        ctx.fillStyle = goal.ownGoal ? "#a9a698" : "#ecebe4";
-        ctx.fillText(name, start + 26, lineY);
-        ctx.fillStyle = STORY_YELLOW;
-        ctx.font = `700 30px ${STORY_TEXT}`;
-        ctx.fillText(minute, start + 26 + nameW, lineY);
-        ctx.textAlign = "center";
-      });
-      if (shown.length < list.length) {
-        ctx.fillStyle = "#8d8a7a";
-        ctx.font = `600 28px ${STORY_TEXT}`;
-        ctx.textAlign = "left";
-        ctx.fillText(`+${list.length - shown.length} gols`, start + 26, y + shown.length * lineH);
-        ctx.textAlign = "center";
-      }
-    });
-    storyFooter(ctx, W, "#LIGASKALAMA");
+    axFooter(ctx, W, footerY);
   }
-  function drawStoryTeamsArt(ctx, W, H) {
-    const teams = state.teams || [],
-      date = state.matchDate
-        ? new Date(state.matchDate + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })
-        : "";
-    storyBackground(ctx, W, H, teams.map((team) => colorOf(team.name).color));
-    const lineups = teams.map((team) => lineupForTeam(team.name)),
-      most = Math.max(5, ...lineups.map((players) => players.length)),
-      rows = Math.ceil(teams.length / 2),
-      compact = rows > 1 && most > 6,
-      top = storyHeader(ctx, W, ["TIMES SORTEADOS", date, state.venue], compact) + (compact ? 36 : 50),
-      bottom = STORY_SAFE_BOTTOM - 60,
-      gap = compact ? 24 : 30,
-      colW = (W - 140 - gap) / 2,
-      headH = compact ? 76 : 88,
-      rowMax = (bottom - top - gap * (rows - 1)) / rows,
-      lineH = Math.min(56, (rowMax - headH - 36) / most),
-      cardH = headH + 28 + lineH * most,
-      startY = top + Math.max(0, (bottom - top - (cardH * rows + gap * (rows - 1))) / 2);
+  // ---------- Arte: Times sorteados ----------
+  function axDrawTeams(ctx, W, H, story, info) {
+    const top = story ? 220 : 70, bottom = story ? H - 230 : H - 70;
+    let y = axBrand(ctx, W, top, story);
+    const place = [axDayMonth(info.date), axVenueShort()].filter(Boolean).join(" · ");
+    y = axPills(ctx, W, y + (story ? 6 : 0), [{ text: "TIMES SORTEADOS", style: "white" }, ...(place ? [{ text: place, style: "outline" }] : [])], story) + (story ? 40 : 28);
+    const teams = info.teams, cols = 2, rows = Math.ceil(teams.length / cols), pad = story ? 70 : 70, gap = story ? 26 : 22,
+      areaBottom = bottom - 54, cardW = (W - pad * 2 - gap) / cols, cardH = Math.min(story ? 520 : 440, (areaBottom - y - gap * (rows - 1)) / rows);
     teams.forEach((team, index) => {
-      const row = Math.floor(index / 2),
-        alone = teams.length % 2 === 1 && index === teams.length - 1,
-        x = alone ? (W - colW) / 2 : 70 + (index % 2) * (colW + gap),
-        y = startY + row * (cardH + gap),
-        color = colorOf(team.name);
-      storyPanel(ctx, x, y, colW, cardH, color.color);
-      drawTeamBadge(ctx, team.name, teamLabel(team.name).toUpperCase(), x, y, colW, headH, compact ? 40 : 44, STORY_DISPLAY);
-      lineups[index].forEach((player, line) => {
-        const lineY = y + headH + 18 + lineH * (line + 0.74),
-          isKeeper = keeper(player),
-          name = displayName(player);
-        ctx.textAlign = "left";
-        ctx.fillStyle = color.color === "#334fa0" ? "#7f9be6" : color.color;
-        ctx.font = `700 ${Math.round(lineH * 0.5)}px ${STORY_TEXT}`;
-        ctx.fillText(String(line + 1).padStart(2, "0"), x + 30, lineY);
-        const tagW = isKeeper ? Math.round(lineH * 0.62) : 0;
-        fitFont(ctx, name, 500, Math.round(lineH * 0.66), colW - 110 - tagW, STORY_TEXT);
-        ctx.fillStyle = "#ecebe4";
-        ctx.fillText(name, x + 82, lineY);
-        if (isKeeper) {
-          const nameW = ctx.measureText(name).width,
-            size = tagW,
-            tx = x + 82 + nameW + 14,
-            ty = lineY - size * 0.78;
-          ctx.fillStyle = STORY_YELLOW;
-          ctx.beginPath();
-          ctx.roundRect(tx, ty, size, size, 6);
-          ctx.fill();
-          ctx.fillStyle = "#15130a";
-          ctx.textAlign = "center";
-          ctx.font = `800 ${Math.round(size * 0.62)}px ${STORY_TEXT}`;
-          ctx.fillText("G", tx + size / 2, ty + size * 0.74);
+      const row = Math.floor(index / cols), alone = teams.length % 2 === 1 && index === teams.length - 1,
+        x = alone ? (W - cardW) / 2 : pad + (index % cols) * (cardW + gap), cy = y + row * (cardH + gap);
+      axRound(ctx, x, cy, cardW, cardH, 26); ctx.fillStyle = "#151515"; ctx.fill(); ctx.strokeStyle = "rgba(255,255,255,0.12)"; ctx.lineWidth = 2; ctx.stroke();
+      ctx.fillStyle = AX_Y; ctx.fillRect(x + 24, cy + (story ? 132 : 112), cardW - 48, 4);
+      const crest = story ? 96 : 80;
+      axCrest(ctx, team.key, team.label, x + 24 + crest / 2, cy + 18 + crest / 2, crest);
+      ctx.textAlign = "left"; ctx.fillStyle = "#ffffff"; axFit(ctx, team.label.toUpperCase(), 0, story ? 46 : 38, cardW - crest - 64, true);
+      ctx.fillText(team.label.toUpperCase(), x + 40 + crest, cy + 18 + crest / 2 + 16);
+      const listTop = cy + (story ? 176 : 150), lineH = Math.min(story ? 62 : 54, (cardH - (listTop - cy) - 16) / Math.max(5, team.players.length));
+      team.players.forEach((name, i) => {
+        const ly = listTop + i * lineH;
+        ctx.fillStyle = "#8f8f88"; axFont(ctx, 800, Math.round(lineH * 0.42)); ctx.fillText(String(i + 1).padStart(2, "0"), x + 28, ly);
+        ctx.fillStyle = "#ffffff"; axFit(ctx, displayName(name), 700, Math.round(lineH * 0.52), cardW - 140, false);
+        ctx.fillText(displayName(name), x + 76, ly);
+        if (keeper(name)) {
+          const nameW = ctx.measureText(displayName(name)).width, r = Math.round(lineH * 0.26), gx = x + 76 + nameW + 14 + r, gy = ly - r * 0.8;
+          ctx.beginPath(); ctx.arc(gx, gy, r, 0, Math.PI * 2); ctx.fillStyle = AX_Y; ctx.fill();
+          ctx.fillStyle = "#0b0b0b"; axFont(ctx, 0, Math.round(r * 1.25), true); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("G", gx, gy + 1); ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
         }
-        ctx.textAlign = "center";
       });
     });
-    storyFooter(ctx, W, "#LIGASKALAMA");
-  }
-  // Desenha a arte escolhida; só redesenha quando tipo, formato ou dados mudam.
-  function drawArt(force = false) {
-    if (!state) return;
-    const type = $("artType").value,
-      game = artGames().find((item) => item.id === $("artGame").value),
-      story = $("artFormat").value === "story";
-    if (type === "result" ? !game : !state.teams?.length) return;
-    const data =
-        type === "result"
-          ? game
-          : [
-              state.teams.map((team) => [
-                team.name,
-                teamLabel(team.name),
-                lineupForTeam(team.name),
-              ]),
-              state.matchDate,
-              state.venue,
-            ],
-      key = JSON.stringify([
-        type,
-        data,
-        story,
-        artShield.complete,
-        teamLogos,
-        Object.values(logoImages).map((image) => image.complete),
-      ]);
-    if (!force && key === artKey) return;
-    artKey = key;
-    const canvas = $("artCanvas"),
-      W = 1080,
-      H = story ? 1920 : 1350,
-      ctx = canvas.getContext("2d");
-    canvas.height = H;
-    if (story) {
-      if (type === "result") drawStoryResultArt(ctx, W, H, game);
-      else drawStoryTeamsArt(ctx, W, H);
-      return;
-    }
-    ctx.fillStyle = "#0f0f0f";
-    ctx.fillRect(0, 0, W, H);
     ctx.textAlign = "center";
-    ctx.textBaseline = "alphabetic";
-    if (type === "result") drawResultArt(ctx, W, H, story, game);
-    else drawTeamsArt(ctx, W, H, story);
-    ctx.fillStyle = "#6f6f6f";
-    ctx.font = `600 30px ${ART_FONT}`;
-    ctx.fillText("#LIGASKALAMA", W / 2, H - (story ? 90 : 60));
+    axFooter(ctx, W, bottom - 6);
   }
-  function artFile() {
-    const type = $("artType").value,
-      game = artGames().find((item) => item.id === $("artGame").value),
-      name =
-        type === "result" ? `jogo-${game?.number || ""}` : "times-sorteados";
-    return new Promise((resolve) =>
-      $("artCanvas").toBlob((blob) =>
-        resolve(
-          new File(
-            [blob],
-            `liga-skalama-${name}-${$("artFormat").value}.png`,
-            { type: "image/png" },
-          ),
-        ),
-      ),
-    );
+  // ---------- Arte: Campeão ----------
+  function axDrawChampion(ctx, W, H, story, info) {
+    const top = story ? 220 : 70, bottom = story ? H - 230 : H - 70, game = info.final, champ = info.champion, side = info.side, opp = side === "home" ? "away" : "home";
+    let y = axBrand(ctx, W, top, story);
+    y = axPills(ctx, W, y + (story ? 6 : 0), [{ text: "SUPER LIGA", style: "white" }, { text: "CAMPEÃO", style: "yellow" }, ...(axDayMonth(game.finishedAt) ? [{ text: [axDayMonth(game.finishedAt), axVenueShort()].filter(Boolean).join(" · "), style: "outline" }] : [])], story) + (story ? 30 : 16);
+    const crest = story ? 400 : 250, cy = y + crest / 2;
+    axCrest(ctx, champ, teamLabel(champ), W / 2, cy, crest);
+    axTrophy(ctx, W / 2 + crest * 0.36, cy + crest * 0.36, story ? 52 : 38);
+    y = cy + crest / 2 + (story ? 70 : 52);
+    ctx.textAlign = "center"; ctx.fillStyle = AX_Y; axFont(ctx, 800, story ? 30 : 24); axSpacing(ctx, 8); ctx.fillText("CAMPEÃO DA SUPER LIGA", W / 2, y); axSpacing(ctx, 0);
+    y += story ? 182 : 126;
+    ctx.fillStyle = "#ffffff"; axFit(ctx, teamLabel(champ).toUpperCase(), 0, story ? 170 : 116, W - 160, true); ctx.fillText(teamLabel(champ).toUpperCase(), W / 2, y);
+    y += story ? 46 : 30;
+    const shoot = game.shootout && Number.isFinite(game.shootout.homeScore) ? game.shootout : null,
+      line = "FINAL · " + teamLabel(game[side]).toUpperCase() + " " + game[side + "Score"] + " × " + game[opp + "Score"] + " " + teamLabel(game[opp]).toUpperCase() + (shoot ? " (PÊN. " + shoot[side + "Score"] + " × " + shoot[opp + "Score"] + ")" : "");
+    y = axBand(ctx, W, y, line, story) + (story ? 54 : 36);
+    ctx.fillStyle = "#d6d6cd"; axFont(ctx, 800, story ? 24 : 20); axSpacing(ctx, 6); ctx.fillText("QUEM JOGOU A FINAL", W / 2, y); axSpacing(ctx, 0);
+    y += story ? 26 : 20;
+    // Nomes em linhas centralizadas
+    const names = info.played.map((name) => displayName(name) + (name === info.keeperName || keeper(name) ? " (G)" : "")), size = story ? 34 : 28, rowH = size * 1.55, maxW = W - 160;
+    axFont(ctx, 700, size);
+    const rowsList = [[]];
+    names.forEach((name) => { const row = rowsList[rowsList.length - 1], test = [...row, name].join("  ·  "); if (ctx.measureText(test).width > maxW && row.length) rowsList.push([name]); else row.push(name); });
+    ctx.fillStyle = "#ffffff";
+    rowsList.forEach((row, index) => ctx.fillText(row.join("  ·  "), W / 2, y + size + index * rowH));
+    axFooter(ctx, W, bottom - 6);
+  }
+  // ---------- Arte: Destaques da noite ----------
+  function axDrawNight(ctx, W, H, story, info) {
+    const top = story ? 220 : 70, bottom = story ? H - 230 : H - 70;
+    let y = axBrand(ctx, W, top, story);
+    y = axPills(ctx, W, y + (story ? 6 : 0), [{ text: "DESTAQUES DA NOITE", style: "white" }, ...(axDayMonth(state.matchDate) ? [{ text: [axDayMonth(state.matchDate), axVenueShort()].filter(Boolean).join(" · "), style: "outline" }] : [])], story) + (story ? 50 : 34);
+    const cards = [["JOGADOR DA NOITE", info.player, "linha"], ["GOLEIRO DA NOITE", info.keeper, "goleiro"]], pad = 70, gap = story ? 34 : 26;
+    const areaBottom = bottom - 54, cardH = story ? (areaBottom - y - gap) / 2 : areaBottom - y, cardW = story ? W - pad * 2 : (W - pad * 2 - gap) / 2;
+    cards.forEach(([label, row, role], index) => {
+      const x = story ? pad : pad + index * (cardW + gap), cy = story ? y + index * (cardH + gap) : y;
+      axRound(ctx, x, cy, cardW, cardH, 30); ctx.fillStyle = "#151515"; ctx.fill(); ctx.strokeStyle = index ? "rgba(255,255,255,0.18)" : "rgba(255,196,0,0.55)"; ctx.lineWidth = 3; ctx.stroke();
+      const cx = x + cardW / 2;
+      axStar(ctx, cx, cy + (story ? 90 : 80), story ? 46 : 38, index ? "#d9d9d4" : AX_Y);
+      ctx.textAlign = "center"; ctx.fillStyle = index ? "#d9d9d4" : AX_Y; axFont(ctx, 800, story ? 26 : 22); axSpacing(ctx, 6); ctx.fillText(label, cx, cy + (story ? 180 : 160)); axSpacing(ctx, 0);
+      if (!row) { ctx.fillStyle = "#c9c9c1"; axFont(ctx, 600, story ? 30 : 24); ctx.fillText("Ainda sem goleiro com " + MIN_KEEPER_GAMES + " jogos no gol", cx, cy + cardH / 2 + 30); return; }
+      ctx.fillStyle = "#ffffff"; axFit(ctx, displayName(row.player).toUpperCase(), 0, story ? 96 : 70, cardW - 80, true); ctx.fillText(displayName(row.player).toUpperCase(), cx, cy + (story ? 300 : 260));
+      ctx.fillStyle = "#c9c9c1"; axFont(ctx, 700, story ? 28 : 22); ctx.fillText(row.teamLabel.toUpperCase(), cx, cy + (story ? 350 : 302));
+      const stats = ["nota " + row.average.toFixed(1).replace(".", ","), row.games + (row.games === 1 ? " jogo" : " jogos"), role === "goleiro" ? row.conceded + (row.conceded === 1 ? " gol sofrido" : " gols sofridos") : row.goals + (row.goals === 1 ? " gol" : " gols")].join(" · ");
+      ctx.fillStyle = AX_Y; axFit(ctx, stats, 800, story ? 34 : 26, cardW - 60, false); ctx.fillText(stats, cx, cy + (story ? 410 : 360));
+    });
+    axFooter(ctx, W, bottom - 6);
+  }
+  // ---------- Arte: Artilharia ----------
+  function axDrawScorers(ctx, W, H, story, info) {
+    const top = story ? 220 : 70, bottom = story ? H - 230 : H - 70;
+    let y = axBrand(ctx, W, top, story);
+    y = axPills(ctx, W, y + (story ? 6 : 0), [{ text: "ARTILHARIA", style: "white" }, { text: (AX_SCOPES.find(([key]) => key === info.scope)?.[1] || "").toUpperCase().replace(" (MODO LIGA)", ""), style: "outline" }], story) + (story ? 50 : 34);
+    const pad = 70, rowGap = story ? 22 : 16, areaBottom = bottom - 54, rowH = Math.min(story ? 170 : 150, (areaBottom - y - rowGap * 4) / 5);
+    info.rows.forEach((row, index) => {
+      const ry = y + index * (rowH + rowGap), first = index === 0;
+      axRound(ctx, pad, ry, W - pad * 2, rowH, 26); ctx.fillStyle = first ? AX_Y : "#151515"; ctx.fill();
+      if (!first) { ctx.strokeStyle = "rgba(255,255,255,0.12)"; ctx.lineWidth = 2; ctx.stroke(); }
+      const ink = first ? "#0b0b0b" : "#ffffff", cyRow = ry + rowH / 2;
+      ctx.beginPath(); ctx.arc(pad + 64, cyRow, rowH * 0.27, 0, Math.PI * 2); ctx.fillStyle = first ? "#0b0b0b" : index === 1 ? "#d9d9d4" : index === 2 ? "#e8c9a8" : "#2a2a2a"; ctx.fill();
+      ctx.fillStyle = first ? AX_Y : index <= 2 ? "#0b0b0b" : "#ffffff"; axFont(ctx, 0, Math.round(rowH * 0.3), true); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(index + 1), pad + 64, cyRow + 2);
+      axCrest(ctx, row.team, row.teamLabel, pad + 168, cyRow, rowH * 0.56);
+      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = ink; axFit(ctx, displayName(row.name).toUpperCase(), 0, Math.round(rowH * (first ? 0.36 : 0.32)), W - pad * 2 - 420, true);
+      ctx.fillText(displayName(row.name).toUpperCase(), pad + 230, cyRow + 4);
+      ctx.fillStyle = first ? "#2d2d29" : "#b5b5ad"; axFont(ctx, 700, Math.round(rowH * 0.15)); ctx.fillText(row.teamLabel.toUpperCase(), pad + 232, cyRow + rowH * 0.3);
+      ctx.textAlign = "right"; ctx.fillStyle = first ? "#0b0b0b" : AX_Y; axFont(ctx, 0, Math.round(rowH * 0.5), true); ctx.fillText(String(row.goals), W - pad - 120, cyRow + rowH * 0.18);
+      ctx.fillStyle = ink; axFont(ctx, 800, Math.round(rowH * 0.15)); ctx.fillText(row.goals === 1 ? "GOL" : "GOLS", W - pad - 34, cyRow + rowH * 0.12);
+    });
+    ctx.textAlign = "center";
+    axFooter(ctx, W, bottom - 6);
+  }
+  // ---------- Arte: Próximo jogo ----------
+  function axDrawNext(ctx, W, H, story, info) {
+    const top = story ? 220 : 70, bottom = story ? H - 230 : H - 70, date = axDate(info.date);
+    let y = axBrand(ctx, W, top, story);
+    y = axPills(ctx, W, y + (story ? 6 : 0), [{ text: "PRÓXIMO JOGO", style: "yellow" }], story) + (story ? 40 : 24);
+    const weekday = date ? date.toLocaleDateString("pt-BR", { weekday: "long" }).split("-")[0].toUpperCase() : "";
+    ctx.textAlign = "center"; ctx.fillStyle = "#ffffff"; axFit(ctx, weekday, 0, story ? 220 : 150, W - 140, true);
+    y += story ? 200 : 136; ctx.fillText(weekday, W / 2, y);
+    y += story ? 128 : 90; ctx.fillStyle = AX_Y; axFont(ctx, 0, story ? 96 : 70, true); ctx.fillText(axDayMonth(info.date), W / 2, y);
+    const time = /^\d{2}:\d{2}/.test(info.time) ? info.time.slice(0, 5).replace(":00", "H").replace(":", "H") : "", line = [time, String(info.venue || "").toUpperCase()].filter(Boolean).join(" · ");
+    if (line) { y += story ? 74 : 56; ctx.fillStyle = "#d6d6cd"; axFit(ctx, line, 800, story ? 40 : 32, W - 160, false); ctx.fillText(line, W / 2, y); }
+    y += story ? 70 : 46;
+    if (info.teams.length) {
+      ctx.fillStyle = "#c9c9c1"; axFont(ctx, 800, story ? 24 : 20); axSpacing(ctx, 6); ctx.fillText("TIMES CONFIRMADOS", W / 2, y); axSpacing(ctx, 0);
+      const n = info.teams.length, crest = story ? 150 : 112, slot = Math.min(240, (W - 140) / n);
+      info.teams.forEach((team, index) => {
+        const cx = W / 2 - (slot * (n - 1)) / 2 + index * slot, cy = y + 36 + crest / 2;
+        axCrest(ctx, team.key, team.label, cx, cy, crest);
+        ctx.fillStyle = "#ffffff"; axFit(ctx, team.label.toUpperCase(), 0, story ? 32 : 26, slot - 16, true); ctx.fillText(team.label.toUpperCase(), cx, cy + crest / 2 + (story ? 44 : 36));
+      });
+      y += 36 + crest + (story ? 80 : 60);
+    }
+    if (info.spots > 0 || !info.teams.length) {
+      const text = "COLOQUE SEU NOME NA LISTA" + (info.spots > 0 ? " · " + info.spots + (info.spots === 1 ? " VAGA" : " VAGAS") : "");
+      axBand(ctx, W, Math.min(y, bottom - 160), text, story);
+    }
+    axFooter(ctx, W, bottom - 6);
+  }
+  function axPaint(info) {
+    const canvas = $("artCanvas"), story = ART.format === "story", W = 1080, H = story ? 1920 : 1350, ctx = canvas.getContext("2d");
+    canvas.width = W; canvas.height = H;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    axBackground(ctx, W, H);
+    if (info.type === "result") axDrawResult(ctx, W, H, story, info.game);
+    else if (info.type === "teams") axDrawTeams(ctx, W, H, story, info);
+    else if (info.type === "champion") axDrawChampion(ctx, W, H, story, info);
+    else if (info.type === "night") axDrawNight(ctx, W, H, story, info);
+    else if (info.type === "scorers") axDrawScorers(ctx, W, H, story, info);
+    else if (info.type === "next") axDrawNext(ctx, W, H, story, info);
+    canvas.dataset.drawn = JSON.stringify([ART.type, ART.format]);
+  }
+  // Desenha só depois das fontes e dos escudos; descarta desenhos antigos se a escolha mudar no meio.
+  function drawArt(force = false) {
+    if (!state || !$("artCanvas")) return artDone;
+    const info = axData();
+    if (info.warn) return artDone;
+    const key = JSON.stringify([ART, info, Object.keys(teamLogos)]);
+    if (!force && key === artKey) return artDone;
+    artKey = key;
+    const token = ++artToken;
+    artDone = (async () => {
+      await axFontsReady();
+      await Promise.all(axImagesFor(info).map(axLoadImage));
+      if (token === artToken) axPaint(info);
+    })().catch((error) => console.warn("Arte:", error));
+    return artDone;
+  }
+  // ---------- Painel ----------
+  function axTypeNeedsGame() { return ART.type === "result"; }
+  function renderArt() {
+    if (!$("artStudio") || !state) return;
+    if (!ART.scope) ART.scope = ["rodada", "temporada", "superliga"].find((scope) => axScorerRows(scope).length) || "rodada";
+    const info = axData(), games = artGames();
+    if (ART.type === "result" && games.length && !games.some((game) => game.id === ART.gameId)) ART.gameId = games[0].id;
+    $("axTypes").innerHTML = AX_TYPES.map(([key, label]) => '<button type="button" class="ax-type' + (ART.type === key ? " is-on" : "") + '" data-ax-type="' + key + '" aria-pressed="' + (ART.type === key) + '"><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" focusable="false">' + AX_ICONS[key] + "</svg><span>" + label + "</span></button>").join("");
+    // Passo 2: jogo (resultado) ou período (artilharia)
+    const step2 = $("axStep2"), needsGame = axTypeNeedsGame(), needsScope = ART.type === "scorers";
+    step2.hidden = !needsGame && !needsScope;
+    $("axStep2Title").textContent = needsScope ? "QUAL PERÍODO?" : "QUAL JOGO?";
+    $("axStep3Num").textContent = step2.hidden ? "2" : "3";
+    if (needsGame) {
+      const markup = games.length ? games.map((game) => {
+        const tag = axIsTitle(game) || (game.superLigaId && game.stage === "final") ? '<span class="ax-tag ax-tag-final">FINAL</span>' : game.stage === "amistoso" ? '<span class="ax-tag ax-tag-line">AMISTOSO</span>' : "",
+          end = game.finishedAt ? new Date(game.finishedAt) : null, when = [axDayMonth(game.finishedAt), end ? end.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""].filter(Boolean).join(" · ");
+        return '<button type="button" class="ax-game' + (ART.gameId === game.id ? " is-on" : "") + '" data-ax-game="' + escapeHtml(game.id) + '" aria-pressed="' + (ART.gameId === game.id) + '"><span class="ax-game-crests">' + axHtmlCrest(game.home, gameTeamLabel(game, "home")) + axHtmlCrest(game.away, gameTeamLabel(game, "away")) + '</span><span class="ax-game-info"><strong>' + escapeHtml(gameTeamLabel(game, "home") + " × " + gameTeamLabel(game, "away")) + "</strong><small>" + escapeHtml("Jogo " + game.number + (when ? " · " + when : "")) + "</small>" + tag + '</span><b class="ax-game-score">' + (Number(game.homeScore) || 0) + " × " + (Number(game.awayScore) || 0) + "</b></button>";
+      }).join("") : '<p class="ax-empty">Nenhum jogo encerrado ainda.</p>';
+      if ($("axGames").innerHTML !== markup) $("axGames").innerHTML = markup;
+    } else if (needsScope) {
+      $("axGames").innerHTML = '<div class="ax-seg">' + AX_SCOPES.map(([key, label]) => '<button type="button" class="ax-segbtn' + (ART.scope === key ? " is-on" : "") + '" data-ax-scope="' + key + '" aria-pressed="' + (ART.scope === key) + '">' + label + "</button>").join("") + "</div>";
+    } else $("axGames").innerHTML = "";
+    // Passo 3
+    $("axFormats").innerHTML = [["story", "Story", "1080 × 1920"], ["feed", "Feed", "1080 × 1350"]].map(([key, label, size]) => '<button type="button" class="ax-segbtn ax-format' + (ART.format === key ? " is-on" : "") + '" data-ax-format="' + key + '" aria-pressed="' + (ART.format === key) + '"><strong>' + label + "</strong><small>" + size + "</small></button>").join("");
+    const checks = [["goals", "Mostrar gols da partida", ART.type === "result"], ["star", "Mostrar destaque do jogo", ART.type === "result" && ART.format === "story"], ["stripe", "Fundo com faixa amarela", true]];
+    $("axChecks").innerHTML = checks.filter(([, , show]) => show).map(([key, label]) => '<label class="ax-check"><input type="checkbox" data-ax-check="' + key + '"' + (ART[key] ? " checked" : "") + "><span>" + label + "</span></label>").join("") + (ART.type === "result" && ART.format === "feed" ? '<p class="ax-note">O destaque do jogo aparece só no Story.</p>' : "");
+    // Escudos: oficiais automáticos; upload só para time sem escudo oficial.
+    const teamsInArt = axTeamsOf(info), missing = teamsInArt.filter((team) => !fixedCrest(team.key, team.label));
+    $("axCrests").innerHTML = teamsInArt.length
+      ? '<div class="ax-crest-row">' + teamsInArt.map((team) => axHtmlCrest(team.key, team.label)).join("") + "<span>" + (missing.some((team) => !teamLogos[team.key]) ? "Escudos oficiais carregados automaticamente. Time sem escudo aparece com as iniciais." : "Escudos oficiais carregados automaticamente") + "</span></div>" +
+        missing.map((team) => '<div class="ax-upload"><span>' + escapeHtml(team.label) + (teamLogos[team.key] ? " · escudo deste aparelho" : " não tem escudo oficial") + '</span><label class="ax-btn ax-white ax-small">' + (teamLogos[team.key] ? "Trocar escudo" : "Subir escudo") + '<input type="file" accept="image/*" hidden data-logo-team="' + escapeHtml(team.key) + '"></label>' + (teamLogos[team.key] ? '<button type="button" class="ax-btn ax-white ax-small" data-logo-remove="' + escapeHtml(team.key) + '">Remover</button>' : "") + "</div>").join("")
+      : "";
+    // Aviso, prévia e ações
+    const warn = $("axWarn");
+    warn.hidden = !info.warn;
+    warn.textContent = info.warn || "";
+    const ready = !info.warn;
+    $("axCanvasWrap").hidden = !ready;
+    $("axCanvasWrap").classList.toggle("is-feed", ART.format === "feed");
+    for (const id of ["artDownload", "artShare", "artWhats"]) $(id).disabled = !ready;
+    $("artFormatHelp").textContent = ART.format === "story" ? "Story com placar, escudos e gols longe das bordas que o Instagram cobre com o perfil e a caixa de resposta." : "Feed 1080 × 1350 (4:5), o formato que ocupa mais espaço no feed do Instagram.";
+    if (ready) drawArt();
+  }
+  function axHtmlCrest(key, label) {
+    const src = axCrestSrc(key, label), initials = String(label || "").replace(/^time\s+/i, "").split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+    return '<span class="ax-crest' + (src ? "" : " ax-initials") + '" aria-hidden="true">' + (src ? '<img src="' + escapeHtml(src) + '" alt="">' : escapeHtml(initials || "?")) + "</span>";
+  }
+  function axTeamsOf(info) {
+    const list = [];
+    const add = (key, label) => { if (key && !list.some((item) => item.key === key)) list.push({ key, label }); };
+    if (info.game) { add(info.game.home, gameTeamLabel(info.game, "home")); add(info.game.away, gameTeamLabel(info.game, "away")); }
+    if (info.final) { add(info.final.home, gameTeamLabel(info.final, "home")); add(info.final.away, gameTeamLabel(info.final, "away")); }
+    (info.teams || []).forEach((team) => add(team.key, team.label));
+    (info.rows || []).forEach((row) => add(row.team, row.teamLabel));
+    if (info.player) add(info.player.team, info.player.teamLabel);
+    if (info.keeper) add(info.keeper.team, info.keeper.teamLabel);
+    return list;
+  }
+  function axFileName() {
+    const info = axData(), part = info.type === "result" ? "jogo-" + (info.game?.number || "") : info.type;
+    return "liga-skalama-" + part + "-" + ART.format + ".png";
+  }
+  async function artFile() {
+    await drawArt();
+    await artDone;
+    return new Promise((resolve) => $("artCanvas").toBlob((blob) => resolve(new File([blob], axFileName(), { type: "image/png" })), "image/png"));
   }
   async function downloadArt() {
-    const file = await artFile(),
-      url = URL.createObjectURL(file),
-      link = Object.assign(document.createElement("a"), {
-        href: url,
-        download: file.name,
-      });
-    link.click();
+    const file = await artFile(), url = URL.createObjectURL(file), link = Object.assign(document.createElement("a"), { href: url, download: file.name });
+    document.body.appendChild(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   async function shareArt() {
@@ -4235,12 +4207,40 @@
       notify("Este navegador não compartilha imagens; a arte foi baixada.");
       return downloadArt();
     }
-    try {
-      await navigator.share({ files: [file], title: "Liga Skalama" });
-    } catch (error) {
-      if (error.name !== "AbortError")
-        notify("Não foi possível compartilhar: " + error.message, true);
+    try { await navigator.share({ files: [file], title: "Liga Skalama" }); }
+    catch (error) { if (error.name !== "AbortError") notify("Não foi possível compartilhar: " + error.message, true); }
+  }
+  // WhatsApp: no celular, o compartilhamento nativo leva a imagem; sem ele, baixa a imagem e abre o wa.me com o texto.
+  async function shareArtWhatsApp() {
+    const file = await artFile(), text = "LIGA SKALAMA · skalama.com.br";
+    if (navigator.canShare?.({ files: [file] })) {
+      try { await navigator.share({ files: [file], text }); return; }
+      catch (error) { if (error.name === "AbortError") return; }
     }
+    await downloadArt();
+    window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank", "noopener");
+    notify("A imagem foi baixada: anexe no WhatsApp que abriu.");
+  }
+  function bindArt() {
+    const box = $("artStudio");
+    box.addEventListener("click", (event) => {
+      const target = event.target.closest("button");
+      if (!target || target.disabled) return;
+      const data = target.dataset;
+      if (data.axType) { ART.type = data.axType; renderArt(); }
+      else if (data.axGame) { ART.gameId = data.axGame; renderArt(); }
+      else if (data.axScope) { ART.scope = data.axScope; renderArt(); }
+      else if (data.axFormat) { ART.format = data.axFormat; renderArt(); }
+      else if (data.logoRemove) removeTeamLogo(data.logoRemove);
+      else if (target.id === "artDownload") downloadArt();
+      else if (target.id === "artShare") shareArt();
+      else if (target.id === "artWhats") shareArtWhatsApp();
+    });
+    box.addEventListener("change", (event) => {
+      const target = event.target;
+      if (target.dataset.axCheck) { ART[target.dataset.axCheck] = target.checked; renderArt(); }
+      else if (target.dataset.logoTeam) { uploadTeamLogo(target.dataset.logoTeam, target.files?.[0]); target.value = ""; }
+    });
   }
   function setView(view) {
     const locked = (shared && !canManageShared) || (!shared && window.LIGA_CONFIG?.publicReadOnly === true);
@@ -5526,21 +5526,7 @@
     });
     $("addPlayer").addEventListener("click", addPlayer);
     $("drawTeams").addEventListener("click", drawTeams);
-    $("artType").addEventListener("change", renderArt);
-    $("artLogos").addEventListener("change", (event) => {
-      const team = event.target.dataset?.logoTeam;
-      if (team) uploadTeamLogo(team, event.target.files?.[0]);
-      event.target.value = "";
-    });
-    $("artLogos").addEventListener("click", (event) => {
-      const team = event.target.dataset?.logoRemove;
-      if (team) removeTeamLogo(team);
-    });
-    $("artGame").addEventListener("change", () => drawArt());
-    $("artFormat").addEventListener("change", () => {
-      $("artFormatHelp").hidden = $("artFormat").value !== "story";
-      drawArt();
-    });
+    bindArt();
     bindSuperLiga();
     bindNews();
     bindNewsPush();
