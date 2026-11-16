@@ -1795,3 +1795,20 @@ body:not(.light-theme) .pt-card.is-on-field{box-shadow:0 0 0 2px #ffc400}
 .lv-card .lv-field-cols{padding-top:4px}
 .lv-card .lv-field-cols .lv-ofield2{margin-top:0}
 .lv-card .lv-fhead{color:#fff}
+/* Autores dos gols ao lado do cronômetro (organizador) */
+.lv-clock{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;column-gap:14px;justify-items:stretch}
+.lv-clock-mid{display:grid;justify-items:center;gap:6px}
+.lv-goals{display:grid;align-content:center;gap:6px;min-width:0;margin:0;padding:0;list-style:none}
+.lv-goals.is-home{justify-items:end}
+.lv-goals.is-away{justify-items:start}
+.lv-goals:empty{visibility:hidden}
+.lv-gpill{display:flex;align-items:center;gap:6px;max-width:100%;min-height:32px;padding:4px 12px;border-radius:999px;background:var(--tb);color:var(--ti);font-weight:800;box-shadow:0 1px 3px #0003}
+.lv-gname{min-width:0;white-space:nowrap;font-size:14px}
+.lv-gpill small{flex:none;font-size:12px;font-weight:800;opacity:1}
+@media(max-width:760px){
+  .lv-clock{grid-template-columns:1fr 1fr;row-gap:10px}
+  .lv-clock-mid{grid-column:1/-1;grid-row:1}
+  .lv-goals.is-home{grid-column:1;grid-row:2;justify-items:start}
+  .lv-goals.is-away{grid-column:2;grid-row:2;justify-items:end}
+  .lv-goals:empty{display:none}
+}

@@ -5233,14 +5233,14 @@
   }
   // Nomes sempre numa linha só: diminui a fonte até caber (mesmo ajuste da Escalação dos times).
   function lvFit(root) {
-    root?.querySelectorAll(".lv-fp-name, .lv-kname, .lv-oname").forEach((el) => {
+    root?.querySelectorAll(".lv-fp-name, .lv-kname, .lv-oname, .lv-gname").forEach((el) => {
       el.style.fontSize = "";
       let size = parseFloat(getComputedStyle(el).fontSize), guard = 0;
       const floor = el.classList.contains("lv-oname") ? 6 : 9;
       while (el.scrollWidth > el.clientWidth + 0.5 && size > floor && guard++ < 40) { size -= 0.5; el.style.fontSize = size + "px"; }
     });
   }
-  window.addEventListener("resize", () => { lvFit($("lvBoard")); lvFit($("lvKeepers")); lvFit($("lvSpectator")); });
+  window.addEventListener("resize", () => { lvFit($("lvBoard")); lvFit($("lvKeepers")); lvFit($("lvSpectator")); lvFit($("lvGoalsHome")); lvFit($("lvGoalsAway")); });
   // Goleiros: duas colunas de botões que escolhem no mesmo select de antes (#keeperHome / #keeperAway).
   function lvKeeperColumns() {
     const { home, away } = lvMatchTeams();
@@ -5488,6 +5488,16 @@
       ? '<div class="lv-oboard" style="' + (() => { const h = lvColors(home), a = lvColors(away); return "--hb:" + h.bg + ";--hi:" + h.ink + ";--hl:" + h.light + ";--ab:" + a.bg + ";--ai:" + a.ink + ";--al:" + a.light; })() + '"><div class="lv-oteam">' + lvCrest(home, "b") + '<strong class="lv-oname">' + escapeHtml(teamLabel(home)) + '</strong></div><div class="lv-onums" aria-label="Placar ' + hs + " a " + as + '"><b class="is-home">' + hs + '</b><i aria-hidden="true">×</i><b class="is-away">' + as + '</b></div><div class="lv-oteam is-away">' + lvCrest(away, "b") + '<strong class="lv-oname">' + escapeHtml(teamLabel(away)) + "</strong></div></div>"
       : '<p class="lv-muted lv-center">Escolha os times para ver o placar.</p>');
     if (lvUI.marks.lvBoardFit !== lvUI.marks.lvBoard) { lvUI.marks.lvBoardFit = lvUI.marks.lvBoard; lvFit($("lvBoard")); }
+    // Autores dos gols ao lado do cronômetro: pílulas na cor do time que ganhou o gol (casa à esquerda, visitante à direita).
+    const goalPills = (team) => {
+      if (!game) return "";
+      const c = lvColors(team);
+      return goals.filter((goal) => goal.game_id === game.id && scoreTeam(goal, game) === team).sort((a, b) => (Number(a.minute) || 0) - (Number(b.minute) || 0))
+        .map((goal) => '<li class="lv-gpill" style="--tb:' + c.bg + ";--ti:" + c.ink + '"><span class="lv-gname">⚽ ' + escapeHtml(displayName(goal.player_name || "Gol")) + (goal.own_goal ? " (contra)" : "") + "</span><small>" + (Number(goal.minute) || 0) + "′</small></li>").join("");
+    };
+    const gh = goalPills(game?.home), ga = goalPills(game?.away), gChanged = lvUI.marks.lvGoalsHome !== gh || lvUI.marks.lvGoalsAway !== ga;
+    lvSet("lvGoalsHome", gh); lvSet("lvGoalsAway", ga);
+    if (gChanged) { lvFit($("lvGoalsHome")); lvFit($("lvGoalsAway")); }
     // Cronômetro e estado
     const timer = state.timer || {}, remaining = game ? timerRemaining(timer) : minutes * 60, paused = !!game && isPauseActive(timer),
       used = pauseBudgetUsed({ ...timer, mode: game ? timer.mode || "liga" : state.timerMode || "liga" }), limitText = (game ? timer.mode : state.timerMode) === "coca" ? "02:00" : "01:00";
