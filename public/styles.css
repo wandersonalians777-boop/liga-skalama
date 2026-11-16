@@ -1648,3 +1648,8 @@ body:not(.light-theme) .el-block.is-first small{color:#ffc400}
 }
 @media(max-width:480px){.el-teams{grid-template-columns:minmax(0,1fr)}}
 #drawTeams[hidden]{display:none}
+/* Espectador · partida preparada (aguardando o início): detalhes em amarelo da marca; o cronômetro é o destaque */
+.lv-spec .lv-card.is-next .lv-vs{color:#e6b300}
+.lv-spec .lv-card.is-next .lv-idle-clock{color:#ffc400}
+.lv-spec .lv-card.is-next .lv-mid small{color:#e6b300}
+.lv-spec .lv-card.is-next .lv-vsline{color:#ffc400}
