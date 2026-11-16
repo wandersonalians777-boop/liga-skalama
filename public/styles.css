@@ -1677,3 +1677,44 @@ body:not(.light-theme) .pt-card.is-on-field{box-shadow:0 0 0 2px #ffc400}
 .pt-head.is-tight .pt-name{flex-basis:calc(100% - 50px)}
 .pt-head.is-tight .pt-live{margin-left:50px}
 @container (max-width:240px){.pt-head{gap:8px;padding:10px}.pt-list{padding:4px 10px 8px}.pt-list li{gap:6px}}
+/* Painel do organizador · cores dos times (mesma fonte do Elenco). --tc borda/faixa, --tb fundo do selecionado, --ti texto sobre --tb */
+.lv-crest-xs{width:20px;height:20px}
+.lv-crest-xs.lv-initials{font-size:9px;border-width:1px}
+.lv-g{border:1px solid #0d0d0d}
+/* Em campo: duas colunas alinhadas com o placar */
+.lv-ofield2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-top:10px}
+.lv-fcol2{container-type:inline-size;min-width:0;display:grid;align-content:start;gap:6px}
+.lv-fhead{display:flex;align-items:center;gap:6px;margin:0;min-width:0;color:var(--ink);font:900 13px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.4px}
+.lv-fhead span{min-width:0;white-space:nowrap;overflow:hidden}
+.lv-fcol2.is-away .lv-fhead{justify-content:flex-end;text-align:right}
+.lv-fplist{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.lv-fp{display:flex;align-items:center;gap:6px;min-height:44px;padding:4px 10px;border:2px solid var(--tc);border-left-width:7px;border-radius:10px;background:#fff;color:#1b1b1b;font-weight:800}
+.lv-fcol2.is-away .lv-fp{flex-direction:row-reverse;border-left-width:2px;border-right-width:7px;text-align:right}
+.lv-fp-name{flex:0 1 auto;min-width:0;white-space:nowrap;font-size:clamp(12px,6.4cqi,15px)}
+.lv-fp .lv-g{flex:none}
+.lv-fp small{flex:none;color:#9b1c13;font-size:11px;font-weight:900}
+.lv-fp.is-out{background:#f3f3f0}
+@media(max-width:620px){.lv-ofield2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important}.lv-fp{padding:4px 7px}}
+/* Botões de time (Ajustar jogadores e Trocar jogador) */
+.lv-choice.lv-tchoice{border-color:var(--tc)}
+.lv-choice.lv-tchoice.is-on,body:not(.light-theme) .lv-choice.lv-tchoice.is-on{border-color:var(--tc);background:var(--tb);color:var(--ti)}
+.lv-choice.lv-tchoice.is-on small{color:var(--ti)}
+/* Jogador com a cor do time: borda 2px e faixa 6px à esquerda */
+.lv-choice.lv-pchoice{border:2px solid var(--tc);border-left:8px solid var(--tc)}
+.lv-choice.lv-pchoice.is-out,body:not(.light-theme) .lv-choice.lv-pchoice.is-out{border-color:#b42318;border-left-color:var(--tc);background:#b42318;color:#fff}
+.lv-choice.lv-pchoice.is-in,body:not(.light-theme) .lv-choice.lv-pchoice.is-in{border-color:#1e7a3c;border-left-color:var(--tc);background:#1e7a3c;color:#fff}
+.lv-choice.lv-pchoice.is-out small,.lv-choice.lv-pchoice.is-in small{color:#fff}
+.lv-tgroup,body.light-theme .lv-tgroup,.lv-tgroup.is-back,body.light-theme .lv-tgroup.is-back{border:1px solid var(--line)}
+.lv-tgroup.is-back,body.light-theme .lv-tgroup.is-back{border:2px solid var(--tc)}
+.lv-tgroup-title{display:flex;align-items:center;gap:8px;padding-bottom:6px;border-bottom:3px solid var(--tc)}
+.lv-tgroup>.lv-tgroup-title{color:var(--ink)}
+/* Ajustar jogadores: card com a cor do time atual */
+.lv-adjust-list li.lv-acard,body.light-theme .lv-adjust-list li.lv-acard{border:2px solid var(--tc);border-left:8px solid var(--tc);background:#fff;color:#1b1b1b}
+.lv-adjust-list li.lv-acard small{color:#4a4a45}
+.lv-adjust-list li.lv-acard.is-absent,body.light-theme .lv-adjust-list li.lv-acard.is-absent{opacity:1;background:#ecece8;color:#55554f;border-color:color-mix(in srgb,var(--tc) 45%,#fff)}
+.lv-adjust-list li.lv-acard.is-absent small{color:#55554f}
+.lv-from{display:inline-flex;align-items:center;gap:5px}
+.lv-dot{display:inline-block;flex:none;width:10px;height:10px;border-radius:50%;background:var(--tc)}
+.lv-mini.lv-mini-origin{border-color:var(--tc)}
+/* Confirmar troca: cinza até escolher quem sai e quem entra */
+[data-lv-confirm-sub]:disabled,body:not(.light-theme) [data-lv-confirm-sub]:disabled{opacity:1;border-color:#d4d4cf;background:#d4d4cf;color:#55554f}
