@@ -462,7 +462,7 @@
     const current = select.value;
     select.innerHTML =
       '<option value="">' + escapeHtml(placeholder) + '</option>' +
-      names.map((name) => '<option value="' + escapeHtml(name) + '">' + escapeHtml(labelFor(name)) + (keeper(name) ? " · 🧤 Goleiro" : "") + "</option>").join("");
+      names.map((name) => '<option value="' + escapeHtml(name) + '">' + escapeHtml(labelFor(name)) + (keeper(name) ? " · Goleiro" : "") + "</option>").join("");
     if (names.includes(current)) select.value = current;
     select.disabled = names.length === 0;
   }
@@ -1955,7 +1955,7 @@
         wasKeeper = toGoal && sideSpells.some((spell) => spell.player === goalie && spell.minute < (Number(sub.minute) || 0)),
         goalText = toGoal ? (wasKeeper ? " volta pro gol" : " vai pro gol") : "",
         inText = displayName(sub.in) + (goalie === sub.in ? goalText : "");
-      return { ...item, html: '<span class="hx-ev hx-ev-sub">' + HX_SWAP + '<span><span class="sr-only">Substituição: </span><strong class="hx-in"><span aria-hidden="true">↑ </span><span class="sr-only">entra </span>' + escapeHtml(inText) + '</strong><strong class="hx-out"><span aria-hidden="true">↓ </span><span class="sr-only">sai </span>' + escapeHtml(displayName(sub.out)) + "</strong>" + (goalie !== sub.in && toGoal ? "<small>🧤 " + escapeHtml(displayName(goalie)) + goalText + "</small>" : "") + "</span></span>" };
+      return { ...item, html: '<span class="hx-ev hx-ev-sub">' + HX_SWAP + '<span><span class="sr-only">Substituição: </span><strong class="hx-in"><span aria-hidden="true">↑ </span><span class="sr-only">entra </span>' + escapeHtml(inText) + '</strong><strong class="hx-out"><span aria-hidden="true">↓ </span><span class="sr-only">sai </span>' + escapeHtml(displayName(sub.out)) + "</strong>" + (goalie !== sub.in && toGoal ? "<small><b class=\"hx-g\" title=\"Goleiro\" aria-label=\"Goleiro\">G</b> " + escapeHtml(displayName(goalie)) + goalText + "</small>" : "") + "</span></span>" };
     });
   }
   function hxPanel(game, key, title, html) {
@@ -4695,7 +4695,7 @@
       const bench = game[side + "Bench"] || [], groups = [];
       if (bench.length) groups.push({ label: game.timerMode === "coca" ? "Banco do time" : "Já jogaram · podem voltar", players: bench });
       if (game.timerMode !== "coca") groups.push(...substitutionPool(game, bench).map((group) => ({ label: teamLabel(group.team), players: group.players })));
-      inSel.innerHTML = '<option value="">' + (groups.length ? "Quem entra" : "Sem jogadores disponíveis") + '</option>' + groups.map((group) => '<optgroup label="' + escapeHtml(group.label) + '">' + group.players.map((player) => '<option value="' + escapeHtml(player) + '">' + escapeHtml(displayName(player)) + (keeper(player) ? " · 🧤 Goleiro" : "") + '</option>').join("") + '</optgroup>').join("");
+      inSel.innerHTML = '<option value="">' + (groups.length ? "Quem entra" : "Sem jogadores disponíveis") + '</option>' + groups.map((group) => '<optgroup label="' + escapeHtml(group.label) + '">' + group.players.map((player) => '<option value="' + escapeHtml(player) + '">' + escapeHtml(displayName(player)) + (keeper(player) ? " · Goleiro" : "") + '</option>').join("") + '</optgroup>').join("");
       inSel.disabled = !groups.length;
     } else namesForSelect(inSel, [], "Comece um jogo primeiro");
     if (keepIn && [...inSel.options].some((option) => option.value === keepIn)) inSel.value = keepIn;
@@ -5145,13 +5145,28 @@
   }
   // Nomes sempre numa linha só: diminui a fonte até caber (mesmo ajuste da Escalação dos times).
   function lvFit(root) {
-    root?.querySelectorAll(".lv-fp-name").forEach((el) => {
+    root?.querySelectorAll(".lv-fp-name, .lv-kname").forEach((el) => {
       el.style.fontSize = "";
       let size = parseFloat(getComputedStyle(el).fontSize), guard = 0;
       while (el.scrollWidth > el.clientWidth + 0.5 && size > 9 && guard++ < 24) { size -= 0.5; el.style.fontSize = size + "px"; }
     });
   }
-  window.addEventListener("resize", () => lvFit($("lvBoard")));
+  window.addEventListener("resize", () => { lvFit($("lvBoard")); lvFit($("lvKeepers")); });
+  // Goleiros: duas colunas de botões que escolhem no mesmo select de antes (#keeperHome / #keeperAway).
+  function lvKeeperColumns() {
+    const { home, away } = lvMatchTeams();
+    return [["home", home, "keeperHome"], ["away", away, "keeperAway"]].map(([side, team, id]) => {
+      const select = $(id), chosen = select.value, off = select.disabled,
+        names = [...select.options].map((option) => option.value).filter(Boolean).sort((a, b) => keeper(b) - keeper(a));
+      if (!team) return "";
+      const label = teamLabel(team);
+      return '<div class="lv-kcol" style="' + lvTeamVars(team) + '"><div class="lv-khead">' + lvCrest(team, "k") + '<strong id="lvK-' + side + '">' + escapeHtml(label) + "</strong>" +
+        (chosen ? '<span class="lv-kstate is-ok">✓ ESCOLHIDO</span>' : '<span class="lv-kstate">FALTA ESCOLHER</span>') + "</div>" +
+        '<div class="lv-klist" role="radiogroup" aria-labelledby="lvKeepersTitle lvK-' + side + '">' +
+        (names.length ? names.map((name) => '<button type="button" class="lv-kbtn' + (chosen === name ? " is-on" : "") + '" role="radio" aria-checked="' + (chosen === name) + '" data-lv-keeper="' + side + '" data-name="' + escapeHtml(name) + '"' + (off ? " disabled" : "") + '><span class="lv-kname">' + escapeHtml(displayName(name)) + "</span>" + (chosen === name ? '<b class="lv-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "</button>").join("") : '<p class="lv-muted">Sem jogadores.</p>') +
+        "</div></div>";
+    }).join("");
+  }
   function lvFieldColumn(game, s) {
     const team = game[s], keeperName = game[s + "Keeper"], players = [...lineupForTeam(team, game)].sort((a, b) => (b === keeperName) - (a === keeperName)),
       title = s === "home" ? lvCrest(team, "xs") + "<span>" + escapeHtml(teamLabel(team).toUpperCase()) + " · EM CAMPO</span>" : "<span>EM CAMPO · " + escapeHtml(teamLabel(team).toUpperCase()) + "</span>" + lvCrest(team, "xs");
@@ -5296,7 +5311,8 @@
       const count = lvConvocados(team, side).length;
       if (count < 4) return teamLabel(team) + " tem só " + count + (count === 1 ? " jogador" : " jogadores") + ": toque em Ajustar jogadores.";
     }
-    if (!$("keeperHome").value || !$("keeperAway").value) return "Escolha o goleiro de cada time em GOLEIROS.";
+    const noKeeper = [[home, "keeperHome"], [away, "keeperAway"]].filter(([, id]) => !$(id).value).map(([team]) => teamLabel(team));
+    if (noKeeper.length) return "Escolha o goleiro do " + noKeeper.join(" e do ") + " para liberar Partida preparada.";
     if (!pending.prepared) return "Tudo certo: toque em ✓ Partida preparada.";
     return "";
   }
@@ -5313,7 +5329,7 @@
         html: "⚽ <strong>" + (goal.own_goal ? "Gol contra de " : "Gol de ") + escapeHtml(displayName(goal.player_name)) + "</strong> · " + escapeHtml(teamLabel(scoreTeam(goal, game))) + (goal.assisted_by ? " <small>assist. " + escapeHtml(displayName(goal.assisted_by)) + "</small>" : "") });
     for (const sub of game.substitutions || [])
       items.push({ minute: Number(sub.minute) || 0, at: subMoment(game, sub), kind: "sub", id: sub.id,
-        html: "⇄ " + escapeHtml(teamLabel(sub.team)) + ': <b class="lv-in">↑ ' + escapeHtml(displayName(sub.in)) + '</b> <b class="lv-out">↓ ' + escapeHtml(displayName(sub.out)) + "</b>" + (sub.keeper ? " <small>🧤 " + escapeHtml(displayName(sub.keeperIn || sub.in)) + " vai pro gol</small>" : "") });
+        html: "⇄ " + escapeHtml(teamLabel(sub.team)) + ': <b class="lv-in">↑ ' + escapeHtml(displayName(sub.in)) + '</b> <b class="lv-out">↓ ' + escapeHtml(displayName(sub.out)) + "</b>" + (sub.keeper ? ' <small><b class="lv-g" title="Goleiro" aria-label="Goleiro">G</b> ' + escapeHtml(displayName(sub.keeperIn || sub.in)) + " vai pro gol</small>" : "") });
     for (const item of (state.incidents || []).filter((entry) => entry.gameId === game.id && entry.type !== "sub"))
       items.push({ minute: Number(item.minute) || 0, at: item.createdAt, kind: "incident", id: item.id,
         html: "⚠ <strong>" + escapeHtml(item.type === "warning" ? item.warningType || "Advertência" : incidentLabels[item.type] || item.type) + "</strong> · " + escapeHtml(displayName(item.player || "")) + (item.note ? " <small>" + escapeHtml(item.note) + "</small>" : "") });
@@ -5355,6 +5371,9 @@
     lvSet("lvDurations", [6, 8, 10].map((value) => '<button type="button" class="lv-seg' + (!custom && minutes === value ? " is-on" : "") + '" data-lv-duration="' + value + '" aria-pressed="' + (!custom && minutes === value) + '"' + (game ? " disabled" : "") + ">" + value + " min</button>").join("") +
       '<button type="button" class="lv-seg' + (custom ? " is-on" : "") + '" data-lv-duration="outro" aria-pressed="' + custom + '"' + (game ? " disabled" : "") + ">Outro</button>" +
       (custom ? '<label class="lv-other">Minutos<input type="number" inputmode="numeric" min="1" max="180" step="1" id="lvDurationOther" value="' + minutes + '"' + (game ? " disabled" : "") + "></label>" : ""));
+    // Goleiros
+    const keepersHtml = lvKeeperColumns();
+    if (lvUI.marks.lvKeepers !== keepersHtml) { lvSet("lvKeepers", keepersHtml); lvFit($("lvKeepers")); }
     // Preparada
     const prepared = !!pending?.prepared && !game, preparedBtn = $("lvPrepared");
     preparedBtn.hidden = prepared;
@@ -5460,7 +5479,7 @@
         '<div class="lv-sheet-body"><p class="lv-step-title">1. DE QUAL TIME?</p>' + lvTeamToggle(game, team, "data-lv-sub-team", true) +
         '<p class="lv-step-title">2. QUEM SAI?</p><div class="lv-grid2">' + onField.map((name) => '<button type="button" class="lv-choice lv-pchoice' + (out === name ? " is-out" : "") + '" style="' + lvTeamVars(team) + '" aria-pressed="' + (out === name) + '" data-lv-sub-out="' + escapeHtml(name) + '">' + (out === name ? "↓ " : "") + escapeHtml(displayName(name)) + (name === game[side + "Keeper"] ? ' <b class="lv-g">G</b>' : "") + "</button>").join("") + "</div>" +
         '<p class="lv-step-title">3. QUEM ENTRA?</p>' + (groups.length ? groups.map((group) => '<div class="lv-group lv-tgroup' + (group.back ? " is-back" : "") + '" style="' + lvTeamVars(group.team) + '"><p class="lv-tgroup-title">' + lvCrest(group.team, "xs") + "<span>" + escapeHtml(group.label) + '</span></p><div class="lv-grid2">' + group.players.map((name) => '<button type="button" class="lv-choice lv-pchoice' + (inn === name ? " is-in" : "") + '" style="' + lvTeamVars(fromTeam(group, name)) + '" aria-pressed="' + (inn === name) + '" data-lv-sub-in="' + escapeHtml(name) + '">' + (inn === name ? "↑ " : group.back ? "↺ " : "") + escapeHtml(displayName(name)) + (group.back && leftMinute(name) ? " <small>(saiu " + leftMinute(name) + "′)</small>" : "") + "</button>").join("") + "</div></div>").join("") : '<p class="lv-muted">Sem jogadores disponíveis para entrar.</p>') +
-        (keeperOut ? '<div class="lv-group is-keeper"><p>QUEM VAI PRO GOL? <small>(o goleiro está saindo)</small></p>' + (inn ? '<div class="lv-grid2">' + keeperOptions.map((name) => '<button type="button" class="lv-choice' + (keeperTo === name ? " is-on" : "") + '" aria-pressed="' + (keeperTo === name) + '" data-lv-keeper-to="' + escapeHtml(name) + '">🧤 ' + escapeHtml(displayName(name)) + (name === inn ? " <small>(entra)</small>" : "") + "</button>").join("") + "</div>" : '<p class="lv-muted">Escolha antes quem entra.</p>') + "</div>" : "") +
+        (keeperOut ? '<div class="lv-group is-keeper"><p>QUEM VAI PRO GOL? <small>(o goleiro está saindo)</small></p>' + (inn ? '<div class="lv-grid2">' + keeperOptions.map((name) => '<button type="button" class="lv-choice' + (keeperTo === name ? " is-on" : "") + '" aria-pressed="' + (keeperTo === name) + '" data-lv-keeper-to="' + escapeHtml(name) + '">' + escapeHtml(displayName(name)) + (name === inn ? " <small>(entra)</small>" : "") + (keeperTo === name ? ' <b class="lv-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "</button>").join("") + "</div>" : '<p class="lv-muted">Escolha antes quem entra.</p>') + "</div>" : "") +
         '</div><footer class="lv-sheet-foot"><button type="button" class="lv-btn lv-black lv-big" data-lv-confirm-sub' + (out && inn && !substituting ? "" : " disabled") + ">" + (out && inn ? "⇄ Confirmar: sai " + escapeHtml(displayName(out)) + ", entra " + escapeHtml(displayName(inn)) : "⇄ Confirmar troca") + '</button><button type="button" class="lv-btn lv-white" data-lv-close>Cancelar</button></footer>';
       sheet.keeperResolved = keeperOut ? keeperTo : null;
     } else if (sheet.kind === "warn" && game) {
@@ -5655,6 +5674,14 @@
         lvUI.customDuration = false;
         $("durationMinutes").value = data.lvDuration;
         $("durationMinutes").dispatchEvent(new Event("change"));
+      }
+      else if (data.lvKeeper) {
+        const select = $(data.lvKeeper === "home" ? "keeperHome" : "keeperAway");
+        if (select.disabled || select.value === data.name) return;
+        select.value = data.name;
+        select.dispatchEvent(new Event("change"));
+        renderOrganizer();
+        org.querySelector('[data-lv-keeper="' + data.lvKeeper + '"][data-name="' + CSS.escape(data.name) + '"]')?.focus();
       }
       else if (target.id === "lvPrepared") lvTrigger("preparedBtn");
       else if ("lvUnprepare" in data) lvTrigger("preparedBtn");

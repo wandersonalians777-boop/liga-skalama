@@ -1718,3 +1718,19 @@ body:not(.light-theme) .pt-card.is-on-field{box-shadow:0 0 0 2px #ffc400}
 .lv-mini.lv-mini-origin{border-color:var(--tc)}
 /* Confirmar troca: cinza até escolher quem sai e quem entra */
 [data-lv-confirm-sub]:disabled,body:not(.light-theme) [data-lv-confirm-sub]:disabled{opacity:1;border-color:#d4d4cf;background:#d4d4cf;color:#55554f}
+/* Goleiros (Preparar): duas colunas de botões, uma por time */
+.lv-crest-k{width:24px;height:24px}
+.lv-crest-k.lv-initials{font-size:10px;border-width:1px}
+.lv-kcols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.lv-kcol{container-type:inline-size;min-width:0;display:grid;align-content:start;gap:8px}
+.lv-khead{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding-bottom:6px;border-bottom:3px solid var(--tc);color:var(--ink)}
+.lv-khead strong{flex:1 1 auto;min-width:0;font:900 15px/1.1 'Barlow Condensed',sans-serif;text-transform:uppercase;white-space:nowrap;overflow:hidden}
+.lv-kstate{flex:none;margin-left:auto;padding:3px 7px;border-radius:999px;background:#b42318;color:#fff;font-size:10px;font-weight:900;letter-spacing:.3px;white-space:nowrap}
+.lv-kstate.is-ok{background:#1e7a3c}
+.lv-klist{display:grid;gap:6px}
+.lv-kbtn{display:flex;align-items:center;gap:6px;width:100%;min-height:48px;padding:4px 10px;border:2px solid var(--tc);border-left:8px solid var(--tc);border-radius:12px;background:#fff;color:#1b1b1b;font-weight:800;text-align:left;cursor:pointer}
+.lv-kbtn.is-on{background:var(--tb);color:var(--ti)}
+.lv-kbtn:disabled{cursor:not-allowed;opacity:.6}
+.lv-kbtn:focus-visible{outline:3px solid #6f8fe8;outline-offset:2px}
+.lv-kname{flex:0 1 auto;min-width:0;white-space:nowrap;font-size:clamp(12px,6.4cqi,15px)}
+.lv-kbtn .lv-g{flex:none;margin-left:auto}
