@@ -1017,8 +1017,10 @@
         elUI.menu = null;
         if (!name) return;
         const extra = state.teams?.length ? " Os times sorteados serão desfeitos." : "";
-        if (!confirm("Remover " + displayName(name) + " do cadastro? Essa ação não pode ser desfeita." + extra)) { renderRoster(); return; }
-        removePlayer(index, true);
+        askConfirm({ title: "Remover jogador?", message: "Remover " + displayName(name) + " do cadastro? Essa ação não pode ser desfeita." + extra, confirmText: "Remover", tone: "red" }).then((yes) => {
+          if (!yes || (state.roster || [])[index] !== name) { renderRoster(); return; }
+          removePlayer(index, true);
+        });
       }
     });
     quem.addEventListener("submit", (event) => {
@@ -1039,10 +1041,10 @@
       if (event.key === "Escape" && elUI.menu !== null) { const index = elUI.menu; elUI.menu = null; renderRoster(); $("rosterList").querySelector('[data-el-menu="' + index + '"]')?.focus(); }
     });
     // Sortear de novo, dar nome ao time
-    $("elRedraw").addEventListener("click", (event) => {
+    $("elRedraw").addEventListener("click", async (event) => {
       if (!event.target.closest("[data-el-redraw]")) return;
       const manual = (state.teams || []).some((team) => JSON.stringify(lineupForTeam(team.name)) !== JSON.stringify(team.players));
-      if (manual && !confirm("Sortear de novo? As trocas feitas à mão serão perdidas.")) return;
+      if (manual && !(await askConfirm({ title: "Sortear de novo?", message: "As trocas feitas à mão serão perdidas.", confirmText: "Sortear de novo", tone: "red" }))) return;
       drawTeams();
     });
     $("teamsGrid").addEventListener("click", (event) => {
@@ -2256,7 +2258,7 @@
     let teams = [...sl.teams];
     if (count < teams.length) {
       const removed = teams.slice(count).filter((team) => team.players.length);
-      if (removed.length && !confirm("Remover " + removed.map((team) => team.name).join(", ") + "? Os jogadores desses times saem da Super Liga.")) { superMarkup = ""; renderSuperLiga(); return; }
+      if (removed.length && !(await askConfirm({ title: "Remover times?", message: "Remover " + removed.map((team) => team.name).join(", ") + "? Os jogadores desses times saem da Super Liga.", confirmText: "Remover", tone: "red" }))) { superMarkup = ""; renderSuperLiga(); return; }
       teams = teams.slice(0, count);
     }
     while (teams.length < count) teams.push(superNewTeam(teams));
@@ -2411,7 +2413,8 @@
     const sl = state.superLiga;
     if (!sl) return;
     if (state.currentGame?.superLigaId) { notify("Encerre a partida em andamento antes de começar uma nova Super Liga.", true); return; }
-    if (!confirm("Começar uma nova Super Liga? A tabela de jogos e a classificação atuais são apagadas. Os times, os jogadores e os rankings da Super Liga continuam, e os jogos já disputados ficam no Histórico.")) return;
+    if (!(await askConfirm({ title: "Nova Super Liga?", message: "Começar uma nova Super Liga? A tabela de jogos e a classificação atuais são apagadas. Os times, os jogadores e os rankings da Super Liga continuam, e os jogos já disputados ficam no Histórico.", confirmText: "Começar nova Super Liga", tone: "red" }))) return;
+    if (state.currentGame?.superLigaId || state.superLiga?.id !== sl.id) return;
     await saveState({ superLiga: { ...sl, id: crypto.randomUUID(), status: "setup", fixtures: [], pending: null, champion: null, createdAt: new Date().toISOString() } }, "Nova Super Liga: ajuste os times e sorteie a ordem dos jogos.");
   }
   function superChip(key) {
@@ -3516,7 +3519,7 @@
   }
   async function deleteNews() {
     if (!newsDraft || newsDraft.isNew) return;
-    if (!confirm("Apagar esta notícia? Ela some do SKALAMA News para todo mundo.")) return;
+    if (!(await askConfirm({ title: "Apagar notícia?", message: "Ela some do SKALAMA News para todo mundo.", confirmText: "Apagar", tone: "red" }))) return;
     await saveNews({ deleted_at: new Date().toISOString() }, "Notícia apagada.");
     closeNewsPost();
   }
@@ -4532,9 +4535,7 @@
       hasDraw = !!state.teams?.length;
     if (
       hasDraw && !confirmed &&
-      !confirm(
-        `Remover ${displayName(removed)}? A escalação será encerrada e os times precisarão ser sorteados novamente. O histórico e a artilharia permanecem.`,
-      )
+      !(await askConfirm({ title: "Remover jogador?", message: `Remover ${displayName(removed)}? A escalação será encerrada e os times precisarão ser sorteados novamente. O histórico e a artilharia permanecem.`, confirmText: "Remover", tone: "red" }))
     )
       return;
     roster.splice(index, 1);
@@ -4591,9 +4592,7 @@
     }
     if (
       state.currentGame &&
-      !confirm(
-        "Sortear novamente vai encerrar a partida em andamento sem adicioná-la ao histórico. Continuar?",
-      )
+      !(await askConfirm({ title: "Sortear de novo?", message: "Sortear novamente vai encerrar a partida em andamento sem adicioná-la ao histórico.", confirmText: "Sortear e encerrar a partida", tone: "red" }))
     )
       return;
     swapPick = null;
@@ -4814,8 +4813,11 @@
     const message = !kicks.length ? "Nenhum pênalti foi batido. Encerrar a partida como empate?"
       : sc.home === sc.away ? "Os pênaltis estão empatados (" + sc.home + " × " + sc.away + "). Encerrar a partida como empate?"
       : "Encerrar os pênaltis? " + teamLabel(sc.home > sc.away ? game.home : game.away) + " vence por " + Math.max(sc.home, sc.away) + " × " + Math.min(sc.home, sc.away) + ".";
-    if (!confirm(message)) return;
-    shootoutBusy = true;
+    shootoutBusy = true; renderShootout();
+    let yes = false;
+    try { yes = await askConfirm({ title: kicks.length && sc.home !== sc.away ? "Encerrar os pênaltis?" : "Encerrar como empate?", message, confirmText: "Encerrar pênaltis e partida", tone: "red" }); }
+    finally { if (!yes) { shootoutBusy = false; renderShootout(); } }
+    if (!yes || state.currentGame?.id !== game.id) { shootoutBusy = false; renderShootout(); return; }
     try {
       const saved = await saveState({ shootout: { ...shoot, finished: true } }, "Pênaltis encerrados.");
       if (!saved) return;
@@ -5123,6 +5125,50 @@
     moon: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M20.7 14.6A8.6 8.6 0 0 1 9.4 3.3a.8.8 0 0 0-1-1A10 10 0 1 0 21.7 15.6a.8.8 0 0 0-1-1Z"/></svg>',
     sun: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4.6" fill="currentColor"/><path d="M12 1.8v2.6M12 19.6v2.6M4.8 4.8l1.8 1.8M17.4 17.4l1.8 1.8M1.8 12h2.6M19.6 12h2.6M4.8 19.2l1.8-1.8M17.4 6.6l1.8-1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
   };
+  // ---------- Confirmação dentro do site (substitui a janela de confirmação padrão do navegador) ----------
+  // Navegadores dentro de apps (Instagram, WhatsApp) e páginas incorporadas bloqueiam essa janela e respondem "Cancelar" sozinhos.
+  // askConfirm abre uma janela do próprio site e devolve uma Promise<boolean>; só uma de cada vez (um segundo pedido recebe false).
+  const askUI = { dialog: null, resolve: null, openedAt: 0, returnFocus: null };
+  function askConfirm({ title = "Confirmar", message = "", confirmText = "Confirmar", tone = "green" } = {}) {
+    if (askUI.resolve) return Promise.resolve(false);
+    let dialog = askUI.dialog;
+    if (!dialog) {
+      dialog = document.createElement("dialog");
+      dialog.id = "askDialog";
+      dialog.className = "lv-sheet ask-sheet";
+      dialog.setAttribute("role", "dialog");
+      dialog.setAttribute("aria-modal", "true");
+      dialog.setAttribute("aria-labelledby", "askTitle");
+      dialog.setAttribute("aria-describedby", "askMessage");
+      document.body.appendChild(dialog);
+      dialog.addEventListener("click", (event) => {
+        // Toque duplo rápido: o segundo toque não pode responder a janela que acabou de abrir.
+        if (Date.now() - askUI.openedAt < 450) { dialog.querySelector('[data-ask="yes"]')?.focus(); return; }
+        if (event.target === dialog) { askFinish(false); return; }
+        const button = event.target.closest("[data-ask]");
+        if (button) askFinish(button.dataset.ask === "yes");
+      });
+      dialog.addEventListener("cancel", (event) => { event.preventDefault(); askFinish(false); });
+      askUI.dialog = dialog;
+    }
+    askUI.returnFocus = document.activeElement;
+    dialog.innerHTML = '<header class="lv-sheet-head"><h2 id="askTitle">' + escapeHtml(title) + '</h2></header><div class="lv-sheet-body"><p id="askMessage" class="ask-message">' + escapeHtml(message) + '</p></div>' +
+      '<footer class="lv-sheet-foot"><button type="button" class="lv-btn lv-big ' + (tone === "red" ? "lv-red" : "lv-green") + '" data-ask="yes">' + escapeHtml(confirmText) + '</button><button type="button" class="lv-btn lv-white" data-ask="no">Cancelar</button></footer>';
+    askUI.openedAt = Date.now();
+    return new Promise((resolve) => {
+      askUI.resolve = resolve;
+      try { dialog.showModal(); } catch { dialog.setAttribute("open", ""); }
+      dialog.querySelector('[data-ask="yes"]').focus();
+    });
+  }
+  function askFinish(answer) {
+    const resolve = askUI.resolve, dialog = askUI.dialog, back = askUI.returnFocus;
+    if (!resolve) return;
+    askUI.resolve = null;
+    if (dialog.open) dialog.close();
+    if (back && document.contains(back) && typeof back.focus === "function") back.focus();
+    resolve(answer);
+  }
   // ---------- Jogo ao vivo: placar do espectador e painel do organizador ----------
   // Os controles antigos (#liveEngine, escondidos) continuam sendo o "motor": a tela nova só preenche e aciona esses controles,
   // então as regras (duração, pausa, pênaltis, ajustes, substituições, histórico) não mudam.
@@ -5641,7 +5687,8 @@
     if (subs.slice(index + 1).some((item) => item.team === sub.team && [item.in, item.out, item.keeperIn].some((name) => name && [sub.in, sub.out].includes(name)))) { notify("Desfaça antes a troca mais recente que envolve " + displayName(sub.in) + " ou " + displayName(sub.out) + ".", true); return; }
     const side = sub.team === game.home ? "home" : "away", players = [...(game[side + "Players"] || [])];
     if (!players.includes(sub.in)) { notify(displayName(sub.in) + " não está mais em campo.", true); return; }
-    if (!confirm("Desfazer a troca? Volta " + displayName(sub.out) + " e sai " + displayName(sub.in) + ".")) return;
+    if (!(await askConfirm({ title: "Desfazer a troca?", message: "Volta " + displayName(sub.out) + " e sai " + displayName(sub.in) + ".", confirmText: "Desfazer troca", tone: "green" }))) return;
+    if (!(state.currentGame?.substitutions || []).some((item) => item.id === id)) return;
     players[players.indexOf(sub.in)] = sub.out;
     const loanIndex = (game.loans || []).findIndex((loan) => loan.substitution && loan.player === sub.in && loan.toTeam === sub.team),
       bench = (game[side + "Bench"] || []).filter((name) => name !== sub.out),
@@ -5655,12 +5702,14 @@
     if (!game) return;
     if (kind === "goal") {
       const goal = goals.find((item) => item.id === id);
-      if (!goal || !confirm("Desfazer o gol de " + displayName(goal.player_name) + " (" + goal.minute + "′)? O placar volta sozinho.")) return;
+      if (!goal || !(await askConfirm({ title: "Desfazer o gol?", message: "Desfazer o gol de " + displayName(goal.player_name) + " (" + goal.minute + "′)? O placar volta sozinho.", confirmText: "Desfazer gol", tone: "green" }))) return;
+      if (!goals.some((item) => item.id === id)) return;
       await deleteGoal(id, false);
     } else if (kind === "sub") await lvUndoSub(id);
     else if (kind === "incident") {
       const item = (state.incidents || []).find((entry) => entry.id === id);
-      if (!item || !confirm("Desfazer esta ocorrência de " + displayName(item.player || "") + "?")) return;
+      if (!item || !(await askConfirm({ title: "Desfazer ocorrência?", message: "Desfazer esta ocorrência de " + displayName(item.player || "") + "?", confirmText: "Desfazer", tone: "green" }))) return;
+      if (!(state.incidents || []).some((entry) => entry.id === id)) return;
       await saveState({ incidents: (state.incidents || []).filter((entry) => entry.id !== id) }, "Ocorrência desfeita.");
     }
   }
@@ -5705,8 +5754,8 @@
       else if ("lvUnprepare" in data) lvTrigger("preparedBtn");
       else if (target.id === "lvBegin") { lvUI.prepOpen = false; lvTrigger("beginGame"); }
       else if ("lvAlter" in data) {
-        if (!lvUI.prepOpen && !confirm("O jogo já está rolando. Abrir a preparação? Times e duração só mudam depois do fim do jogo.")) return;
-        lvUI.prepOpen = !lvUI.prepOpen; renderOrganizer();
+        if (lvUI.prepOpen) { lvUI.prepOpen = false; renderOrganizer(); return; }
+        askConfirm({ title: "Abrir a preparação?", message: "O jogo já está rolando. Times e duração só mudam depois do fim do jogo.", confirmText: "Abrir preparação", tone: "green" }).then((yes) => { if (yes) { lvUI.prepOpen = true; renderOrganizer(); } });
       }
       else if (target.id === "lvGoal") lvOpenSheet({ kind: "goal", team: state.currentGame?.home });
       else if (target.id === "lvPause") lvTrigger("pauseTimer");
@@ -5773,7 +5822,14 @@
         if (!shoot && sheet.customRounds && !(raw >= 1 && raw <= 20)) { notify("Escolha de 1 a 20 cobranças para cada time.", true); $("lvRoundsOther")?.focus(); return; }
         lvPenalties(shoot ? shoot.rounds || 3 : Math.min(20, Math.max(1, Math.floor(raw) || 3))); return;
       }
-      else if ("lvDraw" in data) { if (confirm("Encerrar o jogo empatado?")) { lvCloseSheet(); finishGame(); } return; }
+      else if ("lvDraw" in data) {
+        const gameId = state.currentGame?.id;
+        askConfirm({ title: "Encerrar com empate?", message: "Encerrar o jogo empatado?", confirmText: "Encerrar com empate", tone: "red" }).then((yes) => {
+          if (!yes || !gameId || state.currentGame?.id !== gameId) return;
+          lvCloseSheet(); finishGame();
+        });
+        return;
+      }
       else if ("lvFinish" in data) { lvCloseSheet(); finishGame(); return; }
       lvRenderSheet();
     });

@@ -1758,3 +1758,8 @@ body:not(.light-theme) .pt-card.is-on-field{box-shadow:0 0 0 2px #ffc400}
 .lv-choice.lv-pickteam.is-taken{background:#ecece8;color:#55554f;border-color:color-mix(in srgb,var(--tc) 45%,#fff);cursor:not-allowed}
 .lv-choice.lv-pickteam.is-taken small{color:#55554f}
 .lv-choice.lv-pickteam.is-taken .lv-crest{filter:grayscale(1);opacity:.6}
+/* Confirmação dentro do site (askConfirm) */
+.ask-sheet{width:min(460px,100vw)}
+.ask-sheet .lv-sheet-head{padding-right:18px}
+.ask-message{margin:0;color:var(--ink);font-size:16px;line-height:1.45}
+.ask-sheet::backdrop{background:#000a}
