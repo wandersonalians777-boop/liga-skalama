@@ -1907,3 +1907,11 @@ body.light-theme .hx-nv.is-away{color:var(--a-l)}
   .lv-clock.has-goals .lv-timer{font-size:60px}
   .lv-gpill{overflow:hidden;padding:3px 6px;gap:2px}
 }
+/* Contraste (acessibilidade): só o tom do texto muda, para passar 4,5:1 (3:1 em texto grande) */
+.home-next .hx-day{color:#3a3a35}
+.nm-sub-in{color:#3dba6e}.nm-sub-out{color:#f07a2e}
+body.light-theme .nm-sub-in{color:#1e7a3c}body.light-theme .nm-sub-out{color:#c2410c}
+body.light-theme .brand-lockup h1 span,body.light-theme .score-rules summary,body.light-theme .weekly-publication header strong,body.light-theme .weekly-publication>div>p b{color:#7a5c00}
+body.light-theme .ranking-row.top-rank-1 .rank{color:#19150a}
+body.light-theme .ranking-row.top-rank-2 .rank{color:#1b1d1e}
+body.light-theme .lv-muted{color:#5a5a54!important}
