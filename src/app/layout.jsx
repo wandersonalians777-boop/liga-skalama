@@ -1,3 +1,5 @@
+import { preconnect, preload } from 'react-dom';
+
 export const metadata = {
   title: 'LIGA SKALAMA — Dia de Fut',
   description: 'Organização da Liga Skalama: sorteio, partidas, placares e estatísticas.',
@@ -30,6 +32,15 @@ const ligaConfig = {
 };
 
 export default function RootLayout({ children }) {
+  // Conexões e arquivos que a página vai precisar: o navegador começa a buscar tudo logo no início
+  // (antes, cada arquivo só era pedido depois do anterior chegar).
+  preconnect('https://cdn.jsdelivr.net', { crossOrigin: 'anonymous' });
+  if (ligaConfig.supabaseUrl) preconnect(ligaConfig.supabaseUrl, { crossOrigin: 'anonymous' });
+  preload(`/app-markup.html?v=${assetVersion}`, { as: 'fetch', crossOrigin: 'anonymous' });
+  preload('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js', { as: 'script' });
+  preload(`/app-live.js?v=${assetVersion}`, { as: 'script' });
+  preload('/assets/fonts/barlow-condensed-900.woff2', { as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' });
+  preload('/assets/fonts/dm-sans-latin.woff2', { as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' });
   return (
     <html lang="pt-BR">
       <head>

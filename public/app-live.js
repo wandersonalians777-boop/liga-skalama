@@ -554,12 +554,6 @@
     return game.roundId && game.roundId === state.roundId ? teamLabel(name) : (game[side + "Label"] || teamLabel(name));
   }
   // Converte o nome interno do time ("Time Sol") no apelido exibido daquela partida.
-  function goalTeamLabel(game, name) {
-    if (!name) return "";
-    if (game && name === game.home) return gameTeamLabel(game, "home");
-    if (game && name === game.away) return gameTeamLabel(game, "away");
-    return teamLabel(name);
-  }
   function renderLoanControls() {
     const home = $("matchHome").value, away = $("matchAway").value, superMode = isSuperMode(), teams = superMode ? [] : state.teams || [];
     for (const side of ["home", "away"]) {
@@ -3934,9 +3928,6 @@
     markActiveTab();
     applyEditLock();
   }
-  const artShield = new Image();
-  artShield.src = "./assets/escudo-skalama-oficial.png";
-  artShield.onload = () => drawArt(true);
   const TEAM_NAMES = ["Time Águia", "Time Sol", "Time Verde", "Time Azul"];
   const LOGO_KEY = "liga-skalama-team-logos";
   // Logos dos times ficam só neste aparelho (localStorage), por escolha do organizador.
@@ -3946,22 +3937,7 @@
   } catch {
     teamLogos = {};
   }
-  const logoImages = {};
-  function logoImage(name) {
-    const src = fixedCrest(name) || teamLogos[name];
-    if (!src) return null;
-    // Compara com o endereço pedido (image.src vira endereço completo e nunca bateria com "./assets/...").
-    if (logoImages[name]?.dataset.source !== src) {
-      const image = new Image();
-      image.dataset.source = src;
-      image.onload = () => drawArt(true);
-      image.src = src;
-      logoImages[name] = image;
-    }
-    return logoImages[name].complete && logoImages[name].naturalWidth
-      ? logoImages[name]
-      : null;
-  }
+
   function saveTeamLogos() {
     try {
       localStorage.setItem(LOGO_KEY, JSON.stringify(teamLogos));
@@ -5441,17 +5417,6 @@
     const timer = state.timer || {};
     return game ? Math.round((timer.duration || (game.durationMinutes || 8) * 60) / 60) : Math.min(180, Math.max(1, Number(state.durationMinutes) || 8));
   }
-  function lvKeeperOf(game, side) {
-    return game ? game[side + "Keeper"] : $(side === "home" ? "keeperHome" : "keeperAway")?.value;
-  }
-  function lvChips(players, keeperName, game) {
-    return players.length
-      ? players.map((name) => {
-          const suspension = game && (state.incidents || []).find((item) => item.type === "hand" && item.gameId === game.id && item.player === name && Number(item.expiresAt) > nowMs());
-          return '<li class="lv-chip' + (suspension ? " is-out" : "") + '">' + escapeHtml(displayName(name)) + (name === keeperName ? ' <b class="lv-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + (suspension ? ' <small>fora</small>' : "") + "</li>";
-        }).join("")
-      : '<li class="lv-muted">Sem jogadores</li>';
-  }
   function lvScorers(game, team) {
     const list = goals.filter((goal) => goal.game_id === game.id && scoreTeam(goal, game) === team).sort((a, b) => (Number(a.minute) || 0) - (Number(b.minute) || 0));
     return list.length
@@ -5520,9 +5485,12 @@
     if (!root || !game) return;
     const timer = state.timer || {}, remaining = timerRemaining(timer), duration = timer.duration || 480;
     const clock = root.querySelector("[data-lv-clock]"), bar = root.querySelector("[data-lv-bar]"), label = root.querySelector("[data-lv-clock-label]");
-    if (clock) clock.textContent = clockText(remaining);
-    if (bar) bar.style.width = Math.max(0, Math.min(100, (remaining / duration) * 100)) + "%";
-    if (label) label.textContent = remaining === 0 ? "fim do tempo" : isPauseActive(timer) ? "⏸ pausado" : "tempo restante";
+    // Só escreve quando muda (o relógio troca 1 vez por segundo; o intervalo roda 4 vezes por segundo).
+    const clockValue = clockText(remaining), barValue = Math.max(0, Math.min(100, (remaining / duration) * 100)) + "%",
+      labelValue = remaining === 0 ? "fim do tempo" : isPauseActive(timer) ? "⏸ pausado" : "tempo restante";
+    if (clock && clock.textContent !== clockValue) clock.textContent = clockValue;
+    if (bar && bar.style.width !== barValue) bar.style.width = barValue;
+    if (label && label.textContent !== labelValue) label.textContent = labelValue;
   }
   function renderSpectator() {
     const box = $("lvSpectator");

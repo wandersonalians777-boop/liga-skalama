@@ -1,4 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=DM+Sans:wght@400;500;600;700;800&display=swap');
+/* Fontes hospedadas no próprio site (antes vinham do Google por @import, que atrasava o carregamento) */
+@font-face{font-family:"Barlow Condensed";font-style:normal;font-weight:600;font-display:swap;src:url("./assets/fonts/barlow-condensed-600.woff2") format("woff2");unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
+@font-face{font-family:"Barlow Condensed";font-style:normal;font-weight:700;font-display:swap;src:url("./assets/fonts/barlow-condensed-700.woff2") format("woff2");unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
+@font-face{font-family:"Barlow Condensed";font-style:normal;font-weight:800;font-display:swap;src:url("./assets/fonts/barlow-condensed-800.woff2") format("woff2");unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
+@font-face{font-family:"Barlow Condensed";font-style:normal;font-weight:900;font-display:swap;src:url("./assets/fonts/barlow-condensed-900.woff2") format("woff2");unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
+@font-face{font-family:"DM Sans";font-style:normal;font-weight:400 800;font-display:swap;src:url("./assets/fonts/dm-sans-latin.woff2") format("woff2");unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
 @font-face{font-family:"Anton";font-style:normal;font-weight:400;font-display:swap;src:url("./assets/fonts/anton-400.woff2") format("woff2")}
 @font-face{font-family:"Inter";font-style:normal;font-weight:600;font-display:swap;src:url("./assets/fonts/inter-600.woff2") format("woff2")}
 @font-face{font-family:"Inter";font-style:normal;font-weight:700;font-display:swap;src:url("./assets/fonts/inter-700.woff2") format("woff2")}
@@ -678,9 +683,8 @@ body .theme-toggle:hover{background:#262626}
 body.light-theme .theme-toggle{background:#fff;color:#202020!important;border-color:#c7c7bf!important}
 body.light-theme .theme-toggle:hover{background:#f0efe9}
 .live-badge{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;border-radius:999px;background:#c8102e;color:#fff;font-size:12px;font-weight:900;letter-spacing:1px;text-decoration:none;white-space:nowrap}
-.live-badge i{width:8px;height:8px;border-radius:50%;background:#fff;animation:newsPulse 1.8s infinite}
+.live-badge i{width:8px;height:8px;border-radius:50%;background:#fff}
 .live-badge:hover{background:#a90d27}
-@media(prefers-reduced-motion:reduce){.live-badge i{animation:none}}
 /* Organizador: as abas vão para uma segunda linha (o cabeçalho tem o status e o botão de sair) */
 body:not(.visitor-header) .site-header{grid-template-columns:auto minmax(0,1fr);grid-template-areas:"brand actions" "tabs tabs"}
 body:not(.visitor-header) .site-header .view-tabs{justify-self:center}
@@ -1175,8 +1179,7 @@ body .live-card#jogo>*{grid-column:1/-1}
 .lv-strip{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;color:#d6d6cd;font-size:13px;font-weight:700}
 .lv-strip-right{margin-left:auto}
 .lv-live{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:999px;background:#c8102e;color:#fff;font-size:12px;font-weight:900;letter-spacing:1px}
-.lv-live i{width:8px;height:8px;border-radius:50%;background:#fff;animation:newsPulse 1.6s infinite}
-@media(prefers-reduced-motion:reduce){.lv-live i{animation:none}}
+.lv-live i{width:8px;height:8px;border-radius:50%;background:#fff}
 .lv-tag{padding:5px 11px;border-radius:999px;background:#ffc400;color:#0d0d0d;font-size:12px;font-weight:900;letter-spacing:1px}
 .lv-score{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:14px}
 .lv-side{display:grid;justify-items:center;gap:10px;min-width:0;text-align:center}
