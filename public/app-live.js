@@ -3202,7 +3202,7 @@
       "Jogo " + game.number,
       Number.isFinite(finished.getTime()) ? finished.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }) + " · " + finished.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "",
       game.durationSeconds ? Math.round(game.durationSeconds / 60) + " min de bola rolando" : "",
-      state.venue || "",
+      game.venue || state.venue || "",
     ].filter(Boolean);
     // Números por time
     const stat = (name, home, away, format = (v) => v) => {
@@ -3603,7 +3603,7 @@
       shoot = game.shootout && Number.isFinite(game.shootout.homeScore) ? game.shootout : null,
       winnerSide = game.winner === game.home ? "home" : game.winner === game.away ? "away" : null,
       winner = winnerSide ? gameTeamLabel(game, winnerSide) : "", loser = winnerSide === "home" ? away : winnerSide === "away" ? home : "",
-      where = state.venue || "na quadra", mode = game.superLigaId ? (game.stage === "final" ? "na final da Super Liga" : game.stage === "amistoso" ? "no amistoso da Super Liga" : "pela Super Liga") : "na Liga",
+      where = game.venue || state.venue || "na quadra", mode = game.superLigaId ? (game.stage === "final" ? "na final da Super Liga" : game.stage === "amistoso" ? "no amistoso da Super Liga" : "pela Super Liga") : "na Liga",
       goalsList = (game.goals || []).filter((goal) => goal.player && !goal.ownGoal),
       byPlayer = new Map();
     for (const goal of goalsList) byPlayer.set(goal.player, (byPlayer.get(goal.player) || 0) + 1);
@@ -5046,7 +5046,7 @@
     if ((!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 180)) { notify("A duração deve ser de 1 a 180 minutos.", true); return; }
     const now = nowMs(), duration = durationMinutes * 60;
     const fixture = superMode ? superFixture(pending.fixtureId) : null;
-    const currentGame = { id: crypto.randomUUID(), roundId: (fixture ? sl.id : state.roundId) || null, ...(fixture ? { superLigaId: sl.id, fixtureId: fixture.id, stage: fixture.stage, round: fixture.round } : {}), number: (state.gameHistory || []).length + 1, home, away, homePlayers, awayPlayers, homeStart: [...homePlayers], awayStart: [...awayPlayers], homeBench, awayBench, onCourt, substitutions: [], homeKeeper, awayKeeper, homeKeeperStart: homeKeeper, awayKeeperStart: awayKeeper, loans, timerMode: mode, durationMinutes: mode === "coca" ? null : durationMinutes, startedAt: now };
+    const currentGame = { id: crypto.randomUUID(), roundId: (fixture ? sl.id : state.roundId) || null, venue: String(state.venue || "").trim() || undefined, ...(fixture ? { superLigaId: sl.id, fixtureId: fixture.id, stage: fixture.stage, round: fixture.round } : {}), number: (state.gameHistory || []).length + 1, home, away, homePlayers, awayPlayers, homeStart: [...homePlayers], awayStart: [...awayPlayers], homeBench, awayBench, onCourt, substitutions: [], homeKeeper, awayKeeper, homeKeeperStart: homeKeeper, awayKeeperStart: awayKeeper, loans, timerMode: mode, durationMinutes: mode === "coca" ? null : durationMinutes, startedAt: now };
     const order = [...(state.challengeQueue || []), pending.home, pending.away, ...teams.map((team) => team.name)].filter((name,index,all) => name && name !== home && name !== away && all.indexOf(name) === index);
     const nextQueue = order;
     const nextPending = { home, away };
