@@ -12,7 +12,7 @@
   const ROSTER_MAX = 80,
     ACTIVE_MAX = 32;
   const SCORE_RULES = Object.freeze({ assist: 0.5 });
-  // Mínimo de jogos no gol para entrar nos destaques de goleiro (mês e noite).
+  // Mínimo de jogos no gol para entrar em qualquer estatística de goleiro (rankings, mês, noite e Super Liga).
   const MIN_KEEPER_GAMES = 3;
   const startersFor = (total) => total >= 16 ? Math.min(20, total) : Math.floor(Math.max(total, MIN_PLAYERS) / 5) * 5;
   // O nome interno ("Time Águia") segue como chave; o apelido é só exibição.
@@ -1587,8 +1587,8 @@
     );
     paint(
       "keeperRanking",
-      averageRows(keepers),
-      "O score aparece após os jogos.",
+      averageRows(keepers).filter((r) => r.games >= MIN_KEEPER_GAMES),
+      keepers.length ? "Entra no ranking quem tiver " + MIN_KEEPER_GAMES + " jogos ou mais no gol." : "O score aparece após os jogos.",
     );
     const conceded = new Map();
     for (const p of keepers) {
@@ -1599,6 +1599,7 @@
     }
     const rows = [...conceded.entries()]
       .map(([name, x]) => ({ name, ...x }))
+      .filter((r) => r.games >= MIN_KEEPER_GAMES)
       .sort(
         (a, b) => a.goals - b.goals || a.name.localeCompare(b.name, "pt-BR"),
       );
@@ -1624,7 +1625,7 @@
               "</strong></div>",
           )
           .join("")
-      : '<p class="empty-state">Os gols sofridos aparecem após os jogos.</p>';
+      : '<p class="empty-state">' + (keepers.length ? "Entra no ranking quem tiver " + MIN_KEEPER_GAMES + " jogos ou mais no gol." : "Os gols sofridos aparecem após os jogos.") + "</p>";
   }
   function renderNightHighlights() {
     const roundId = state.roundId || state.currentGame?.roundId,
@@ -2685,7 +2686,7 @@
       return [...map.entries()].map(([name, row]) => ({ name, ...row, average: row.sum / row.games }));
     };
     const scorerRows = [...scorers.entries()].map(([name, row]) => ({ name, ...row })).sort((a, b) => b.goals - a.goals || a.name.localeCompare(b.name, "pt-BR")).slice(0, 10),
-      keeperRows = average("goleiro").sort((a, b) => b.average - a.average || a.against - b.against || a.name.localeCompare(b.name, "pt-BR")).slice(0, 10),
+      keeperRows = average("goleiro").filter((r) => r.games >= MIN_KEEPER_GAMES).sort((a, b) => b.average - a.average || a.against - b.against || a.name.localeCompare(b.name, "pt-BR")).slice(0, 10),
       playerRows = average("linha").sort((a, b) => b.average - a.average || a.name.localeCompare(b.name, "pt-BR")).slice(0, 10);
     return { scorerRows, keeperRows, playerRows, teamOf, plural };
   }
@@ -2695,7 +2696,7 @@
       score = (value) => value.toFixed(1).replace(".", ",");
     return '<div class="sl-rankings-head"><h3>Rankings da Super Liga</h3><p class="help-text">Somam todas as Super Ligas já disputadas. Não zeram com "Nova Super Liga".</p></div><div class="sl-rankings">' +
       '<div class="sl-block"><h3>Artilheiros</h3>' + (scorerRows.map((r, i) => superRankingRow(i, r.name, teamOf(r.team), plural(r.goals, "gol", "gols"))).join("") || empty) + "</div>" +
-      '<div class="sl-block"><h3>Melhores goleiros</h3>' + (keeperRows.map((r, i) => superRankingRow(i, r.name, teamOf(r.team) + " · " + plural(r.games, "jogo", "jogos") + " · " + plural(r.against, "gol sofrido", "gols sofridos"), score(r.average))).join("") || empty) + "</div>" +
+      '<div class="sl-block"><h3>Melhores goleiros</h3>' + (keeperRows.map((r, i) => superRankingRow(i, r.name, teamOf(r.team) + " · " + plural(r.games, "jogo", "jogos") + " · " + plural(r.against, "gol sofrido", "gols sofridos"), score(r.average))).join("") || ((state.gameHistory || []).some((game) => game.superLigaId) ? '<p class="empty-state">' + "Entra no ranking quem tiver " + MIN_KEEPER_GAMES + " jogos ou mais no gol." + "</p>" : empty)) + "</div>" +
       '<div class="sl-block"><h3>Score dos jogadores</h3>' + (playerRows.map((r, i) => superRankingRow(i, r.name, teamOf(r.team) + " · " + plural(r.games, "jogo", "jogos"), score(r.average))).join("") || empty) + "</div>" +
       "</div>";
   }
@@ -2757,8 +2758,8 @@
       (lineup.bench.length ? '<p class="slx-sec">RESERVAS</p><ul class="slx-plist">' + lineup.bench.map((name) => slxPlayerRow(name, "reserva", lineup)).join("") + "</ul>" : "") +
       '<footer>' + lineup.start.length + (lineup.start.length === 1 ? " titular" : " titulares") + " · " + lineup.bench.length + (lineup.bench.length === 1 ? " reserva" : " reservas") + " · " + escapeHtml(subsText) + "</footer></article>";
   }
-  function slxRankCard(title, rows, detail, value) {
-    if (!rows.length) return '<article class="slx-rank-card"><h4>' + title + '</h4><p class="empty-state">Aparece depois do primeiro jogo da Super Liga.</p></article>';
+  function slxRankCard(title, rows, detail, value, emptyText) {
+    if (!rows.length) return '<article class="slx-rank-card"><h4>' + title + '</h4><p class="empty-state">' + escapeHtml(emptyText || "Aparece depois do primeiro jogo da Super Liga.") + '</p></article>';
     return '<article class="slx-rank-card"><h4>' + title + '</h4><ol class="slx-rank-list">' + rows.map((row, index) =>
       '<li class="slx-rank-' + (index < 3 ? index + 1 : "n") + '"><span class="slx-pos">' + (index + 1) + '</span><span class="slx-who"><strong>' + escapeHtml(displayName(row.name)) + "</strong><small>" + escapeHtml(detail(row)) + '</small></span><b class="slx-val">' + value(row) + "</b></li>").join("") + "</ol></article>";
   }
@@ -2801,7 +2802,7 @@
     const { scorerRows, keeperRows, playerRows, teamOf, plural } = superRankingData(), score = (value) => value.toFixed(1).replace(".", ",");
     html += '<section class="slx-ranks" aria-labelledby="slxRanksTitle"><div class="slx-sec-head"><h3 id="slxRanksTitle">RANKINGS DA SUPER LIGA</h3><p>Somam todas as Super Ligas, inclusive os amistosos.</p></div><div class="slx-rank-grid">' +
       slxRankCard("Artilheiros", scorerRows, (row) => teamOf(row.team), (row) => row.goals + '<small>' + (row.goals === 1 ? "gol" : "gols") + "</small>") +
-      slxRankCard("Melhores goleiros", keeperRows, (row) => teamOf(row.team) + " · " + plural(row.games, "jogo", "jogos") + " · " + plural(row.against, "gol sofrido", "gols sofridos"), (row) => score(row.average)) +
+      slxRankCard("Melhores goleiros", keeperRows, (row) => teamOf(row.team) + " · " + plural(row.games, "jogo", "jogos") + " · " + plural(row.against, "gol sofrido", "gols sofridos"), (row) => score(row.average), (state.gameHistory || []).some((game) => game.superLigaId) ? "Entra no ranking quem tiver " + MIN_KEEPER_GAMES + " jogos ou mais no gol." : "") +
       slxRankCard("Score dos jogadores", playerRows, (row) => teamOf(row.team) + " · " + plural(row.games, "jogo", "jogos"), (row) => score(row.average)) +
       "</div></section>";
     if (final && champion) {
