@@ -1503,7 +1503,7 @@
   }
   function standingsTable(rows, emptyText) {
     if (!rows.length) return '<p class="empty-state">' + emptyText + '</p>';
-    return '<div class="table-scroll"><table class="standings-table"><thead><tr><th>#</th><th>Time</th><th>Pts</th><th>V</th><th>E</th><th>D</th><th>J</th><th>SG</th></tr></thead><tbody>' + rows.map((row,index) => '<tr class="' + (index < 3 ? 'standings-top standings-top-' + (index+1) : '') + '"><td>' + (index+1) + '</td><th>' + escapeHtml(row.label) + '</th><td>' + row.points + '</td><td>' + row.wins + '</td><td>' + row.draws + '</td><td>' + row.losses + '</td><td>' + row.played + '</td><td>' + (row.gd > 0 ? '+' : '') + row.gd + '</td></tr>').join('') + '</tbody></table></div>';
+    return '<div class="table-scroll"><table class="standings-table"><thead><tr><th>#</th><th>Time</th><th>Pts</th><th>V</th><th>E</th><th>D</th><th>J</th><th>SG</th></tr></thead><tbody>' + rows.map((row,index) => '<tr class="' + (index < 3 ? 'standings-top standings-top-' + (index+1) : '') + '"><td>' + (index+1) + '</td><th><span class="st-team">' + hxCrest(row.name, row.label, "sm") + '<span>' + escapeHtml(row.label) + '</span></span></th><td>' + row.points + '</td><td>' + row.wins + '</td><td>' + row.draws + '</td><td>' + row.losses + '</td><td>' + row.played + '</td><td>' + (row.gd > 0 ? '+' : '') + row.gd + '</td></tr>').join('') + '</tbody></table></div>';
   }
   function renderStandings() {
     const roundId = state.roundId || state.currentGame?.roundId;

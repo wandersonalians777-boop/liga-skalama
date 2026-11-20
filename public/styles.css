@@ -1915,3 +1915,6 @@ body.light-theme .brand-lockup h1 span,body.light-theme .score-rules summary,bod
 body.light-theme .ranking-row.top-rank-1 .rank{color:#19150a}
 body.light-theme .ranking-row.top-rank-2 .rank{color:#1b1d1e}
 body.light-theme .lv-muted{color:#5a5a54!important}
+/* Escudo do time na tabela de classificação */
+.standings-table .st-team{display:inline-flex;align-items:center;gap:10px;min-width:0;vertical-align:middle}
+@media(max-width:620px){.standings-table .st-team{gap:6px}.standings-table .st-team .hx-crest-sm{width:20px;height:20px}}
