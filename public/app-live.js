@@ -3961,8 +3961,404 @@
       if (!openNewsFromHash() && newsOpenSlug) { newsOpenSlug = null; renderNews(); }
     });
   }
+  // ---------- Presença pelo link (#presenca) e Craque da noite (#votacao) ----------
+  // Tudo passa por funções do Supabase (RPC): o navegador nunca lê as tabelas nem o hash do PIN.
+  // O PIN nunca é guardado no aparelho; só o nome escolhido (comodidade).
+  const PV_ME_KEY = "skalama-me";
+  const PZ = { data: null, msg: "", tone: "", busy: false, formSig: "", timer: null };
+  const PZA = { data: null, key: "", busy: false, timer: null, at: 0 };
+  const VT = { data: null, msg: "", tone: "", busy: false, cand: "", mine: "", formSig: "", timer: null };
+  const VTA = { data: null, key: "", at: 0 };
+  const VOTE = { winners: [], homeData: null, homeKey: "", homeAt: 0 };
+  const PV_ERRORS = {
+    pin_wrong: (r) => "PIN errado." + (r.remaining ? " Restam " + r.remaining + (r.remaining === 1 ? " tentativa" : " tentativas") + " antes de bloquear por 15 minutos." : ""),
+    locked: (r) => "Muitas tentativas erradas. Esse nome fica bloqueado até " + (r.locked_until ? new Date(r.locked_until).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "daqui a 15 minutos") + ". Se esqueceu o PIN, fale com o organizador.",
+    pin_format: () => "O PIN tem 4 números.",
+    not_in_roster: () => "Esse nome não está no elenco. Fale com o organizador.",
+    closed: () => "A lista já fechou. Só o organizador pode mudar agora.",
+    no_round: () => "Ainda não tem lista aberta.",
+    not_player: () => "Só vota quem jogou pelo menos um jogo oficial nessa noite.",
+    self_vote: () => "Não dá para votar em você mesmo.",
+    bad_candidate: () => "Escolha alguém que jogou nessa noite.",
+    forbidden: () => "Só o organizador pode fazer isso.",
+    offline: () => "Precisa de internet e do banco compartilhado.",
+    net: (r) => "Não deu para falar com o servidor agora. " + (r.message || ""),
+  };
+  const pvError = (r) => (PV_ERRORS[r?.error] || (() => "Não deu certo agora. Tente de novo."))(r || {});
+  async function pvRpc(name, params = {}) {
+    if (!shared || !client) return { ok: false, error: "offline" };
+    try {
+      const { data, error } = await client.rpc(name, params);
+      if (error) return { ok: false, error: "net", message: error.message };
+      return data || {};
+    } catch (error) { return { ok: false, error: "net", message: error.message }; }
+  }
+  const pvNorm = (name) => displayName(name).toLocaleUpperCase("pt-BR");
+  const pvMe = () => { try { return localStorage.getItem(PV_ME_KEY) || ""; } catch { return ""; } };
+  const pvSetMe = (name) => { try { localStorage.setItem(PV_ME_KEY, name); } catch {} };
+  function pvDate(key) { const d = key ? new Date(key + "T12:00:00") : null; return d && Number.isFinite(d.getTime()) ? d : null; }
+  function pvWeekday(key) { const d = pvDate(key); return d ? d.toLocaleDateString("pt-BR", { weekday: "long" }).split("-")[0].toUpperCase() : ""; }
+  function pvDayMonth(key) { const d = pvDate(key); return d ? d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : ""; }
+  // Noite de um jogo: data em Brasília, contando até 6 h da manhã como a noite anterior (igual ao banco).
+  function nightKeyOf(game) {
+    const at = hxTime(game?.finishedAt);
+    return at ? new Date(at.getTime() - 6 * 3600 * 1000).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : "";
+  }
+  function pvPinHtml(id) {
+    return '<div class="pv-pin" id="' + id + '" role="group" aria-label="PIN de 4 números">' + [0, 1, 2, 3].map((i) => '<input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="off" aria-label="Número ' + (i + 1) + ' do PIN" data-pin="' + i + '">').join("") + "</div>";
+  }
+  function pvPinValue(id) { return [...document.querySelectorAll("#" + id + " input")].map((input) => input.value).join(""); }
+  function pvPinClear(id) { document.querySelectorAll("#" + id + " input").forEach((input) => { input.value = ""; }); }
+  // Caixas do PIN: só números, pula para a próxima, apaga voltando, colar distribui.
+  document.addEventListener("input", (event) => {
+    const input = event.target.closest?.(".pv-pin input");
+    if (!input) return;
+    const digits = input.value.replace(/\D/g, "");
+    const boxes = [...input.parentElement.querySelectorAll("input")], index = boxes.indexOf(input);
+    if (digits.length > 1) { digits.slice(0, 4 - index).split("").forEach((d, k) => { boxes[index + k].value = d; }); boxes[Math.min(3, index + digits.length - 1)].focus(); return; }
+    input.value = digits;
+    if (digits && index < 3) boxes[index + 1].focus();
+  });
+  document.addEventListener("keydown", (event) => {
+    const input = event.target.closest?.(".pv-pin input");
+    if (!input || event.key !== "Backspace" || input.value) return;
+    const boxes = [...input.parentElement.querySelectorAll("input")], index = boxes.indexOf(input);
+    if (index > 0) { boxes[index - 1].value = ""; boxes[index - 1].focus(); event.preventDefault(); }
+  });
+  function pvNameField(id, names, selected, label = "Quem é você?") {
+    const search = names.length > 12 ? '<input type="search" class="pv-search" id="' + id + 'Search" placeholder="Buscar nome" aria-label="Buscar nome no elenco" autocomplete="off">' : "";
+    return '<label class="pv-label" for="' + id + '">' + label + "</label>" + search +
+      '<select id="' + id + '" class="pv-select"><option value="">Escolha seu nome</option>' + names.map((n) => '<option value="' + escapeHtml(n.name) + '"' + (pvNorm(n.name) === pvNorm(selected) ? " selected" : "") + ">" + escapeHtml(displayName(n.name)) + (n.keeper ? " · goleiro" : "") + "</option>").join("") + "</select>";
+  }
+  document.addEventListener("input", (event) => {
+    const search = event.target.closest?.(".pv-search");
+    if (!search) return;
+    const select = $(search.id.replace(/Search$/, "")), term = search.value.trim().toLocaleUpperCase("pt-BR").normalize("NFD").replace(/[̀-ͯ]/g, "");
+    [...select.options].forEach((option, i) => { if (i) option.hidden = !!term && !option.textContent.toLocaleUpperCase("pt-BR").normalize("NFD").replace(/[̀-ͯ]/g, "").includes(term); });
+    const first = [...select.options].find((option, i) => i && !option.hidden);
+    if (term && first && select.selectedOptions[0]?.hidden !== false) select.value = first.value;
+  });
+  function pvKeeperBadge(keeper) { return keeper ? ' <b class="pv-g" title="Goleiro" aria-label="goleiro">G</b>' : ""; }
+  function pvInviteText(round) {
+    if (!round) return "";
+    const counts = PZ.data?.counts || PZA.data?.counts || {}, left = Math.max(0, round.slots - (counts.in || 0));
+    return "⚽ *CONVOCAÇÃO SKALAMA*\n" + pvWeekday(round.round_key).toLowerCase().replace(/^./, (c) => c.toUpperCase()) + ", " + pvDayMonth(round.round_key) +
+      (round.start_time ? " às " + round.start_time.replace(":", "h") : "") + (round.venue ? "\n📍 " + round.venue : "") +
+      "\n👥 " + round.slots + " vagas" + (counts.in ? " · " + left + (left === 1 ? " sobrando" : " sobrando") : "") +
+      "\n\nConfirme com seu nome e PIN:\n" + location.origin + "/#presenca";
+  }
+  // ----- Tela do jogador: lista de presença -----
+  async function pzLoad(silent = false) {
+    const data = await pvRpc("presence_get", {});
+    if (data && data.round !== undefined) PZ.data = data;
+    else if (!silent) { PZ.msg = pvError(data); PZ.tone = "bad"; }
+    renderPresence();
+  }
+  function renderPresence() {
+    const box = $("presenca");
+    if (!box) return;
+    if (!shared || !client) { box.innerHTML = '<div class="pv-wrap"><a class="pv-back" href="./">← Ir para o site</a><article class="pv-card"><p class="pv-kicker">CONVOCAÇÃO SKALAMA</p><p class="pv-empty">A lista de presença precisa de internet e do banco compartilhado.</p></article></div>'; return; }
+    const data = PZ.data, round = data?.round, roster = data?.roster || [];
+    if (!box.querySelector(".pv-wrap")) box.innerHTML = '<div class="pv-wrap"><a class="pv-back" href="./">← Ir para o site</a><article class="pv-card" id="pzCard" aria-live="polite"></article><section class="pv-panel" id="pzForm" aria-labelledby="pzFormTitle"></section><section class="pv-panel" id="pzLists" aria-label="Lista de presença"></section></div>';
+    const counts = data?.counts || { in: 0, wait: 0 }, left = round ? Math.max(0, round.slots - counts.in) : 0;
+    $("pzCard").innerHTML = '<p class="pv-kicker">CONVOCAÇÃO SKALAMA</p>' + (!data ? '<p class="pv-empty">Carregando…</p>' : !round ? '<p class="pv-empty">Ainda não tem lista aberta. Quando o organizador abrir, ela aparece aqui.</p>' :
+      '<p class="pv-day">' + escapeHtml(pvWeekday(round.round_key)) + '</p><p class="pv-date">' + escapeHtml(pvDayMonth(round.round_key)) + "</p>" +
+      '<p class="pv-where">' + escapeHtml([round.start_time ? round.start_time.replace(":", "h") : "", round.venue || ""].filter(Boolean).join(" · ")) + "</p>" +
+      '<p class="pv-count"><strong>' + counts.in + " de " + round.slots + "</strong> confirmados · " + (left ? left + (left === 1 ? " vaga" : " vagas") : "lista cheia") + (counts.wait ? " · " + counts.wait + " na espera" : "") + "</p>" +
+      '<div class="pv-bar" role="progressbar" aria-label="Vagas preenchidas" aria-valuemin="0" aria-valuemax="' + round.slots + '" aria-valuenow="' + counts.in + '"><i style="width:' + Math.min(100, (counts.in / round.slots) * 100) + '%"></i></div>' +
+      '<p class="pv-state ' + (round.open ? "is-open" : "is-closed") + '">' + (round.open ? "Lista aberta até o horário do jogo" : "Lista fechada") + "</p>");
+    // Formulário: só redesenha quando o elenco ou a lista mudam de aberta/fechada (não apaga o PIN digitado).
+    const sig = JSON.stringify([roster.map((r) => r.name), !!round, round?.open, round?.round_key]);
+    if (PZ.formSig !== sig) {
+      PZ.formSig = sig;
+      $("pzForm").innerHTML = !round ? "" : '<h2 class="pv-h" id="pzFormTitle">' + (round.open ? "Confirme sua presença" : "Lista fechada") + "</h2>" +
+        (round.open ? pvNameField("pzName", roster, pvMe()) + '<p class="pv-label" id="pzPinLabel">PIN (4 números)</p>' + pvPinHtml("pzPin") +
+          '<p class="pv-hint">Primeira vez? O PIN que você digitar agora vira o seu. Nas próximas, use o mesmo.</p>' +
+          '<div class="pv-actions"><button type="button" class="pv-btn pv-green" data-pz-go="1">✓ Vou jogar</button><button type="button" class="pv-btn pv-white" data-pz-go="0">Não vou desta vez</button></div>' : '<p class="pv-hint">Só o organizador pode mudar a lista agora.</p>') +
+        '<p class="pv-msg" id="pzMsg" role="status" aria-live="polite"></p>' +
+        '<div class="pv-share"><a class="pv-btn pv-wa" id="pzWa" target="_blank" rel="noopener">Compartilhar no WhatsApp</a></div>';
+    }
+    if ($("pzWa")) $("pzWa").href = "https://wa.me/?text=" + encodeURIComponent(pvInviteText(round));
+    if ($("pzMsg")) { $("pzMsg").textContent = PZ.msg; $("pzMsg").className = "pv-msg" + (PZ.tone ? " is-" + PZ.tone : ""); }
+    box.querySelectorAll("[data-pz-go]").forEach((button) => { button.disabled = PZ.busy; });
+    const me = pvNorm($("pzName")?.value || pvMe()), players = data?.players || [];
+    const row = (p, i) => '<li class="' + (pvNorm(p.name) === me && me ? "is-me" : "") + '"><span class="pv-n">' + (i + 1) + '</span><span class="pv-name">' + escapeHtml(displayName(p.name)) + pvKeeperBadge(p.keeper) + (pvNorm(p.name) === me && me ? ' <em class="pv-you">você</em>' : "") + "</span></li>";
+    const confirmed = players.filter((p) => p.status === "in"), waiting = players.filter((p) => p.status === "wait");
+    $("pzLists").innerHTML = !round ? "" : '<h2 class="pv-h">CONFIRMADOS (' + confirmed.length + "/" + round.slots + ")</h2>" + (confirmed.length ? '<ol class="pv-list">' + confirmed.map(row).join("") + "</ol>" : '<p class="pv-hint">Ninguém confirmou ainda. Seja o primeiro!</p>') +
+      (waiting.length ? '<h2 class="pv-h pv-wait-h">LISTA DE ESPERA</h2><p class="pv-hint">Se alguém confirmado desistir, o primeiro da espera entra sozinho.</p><ol class="pv-list pv-wait">' + waiting.map(row).join("") + "</ol>" : "");
+  }
+  async function pzSubmit(going) {
+    const round = PZ.data?.round, name = $("pzName")?.value || "", pin = pvPinValue("pzPin");
+    if (!round) return;
+    if (!name) { PZ.msg = "Escolha seu nome na lista."; PZ.tone = "bad"; renderPresence(); $("pzName")?.focus(); return; }
+    if (!/^\d{4}$/.test(pin)) { PZ.msg = "Digite os 4 números do PIN."; PZ.tone = "bad"; renderPresence(); document.querySelector("#pzPin input")?.focus(); return; }
+    PZ.busy = true; renderPresence();
+    const r = await pvRpc("presence_set", { p_round: round.round_key, p_name: name, p_pin: pin, p_going: going });
+    PZ.busy = false;
+    if (r.ok) {
+      pvSetMe(name); pvPinClear("pzPin");
+      PZ.data = r.view || PZ.data;
+      const st = r.me?.status;
+      PZ.msg = (r.created ? "PIN criado! Guarde esses 4 números. " : "") + (st === "in" ? "✓ Você está confirmado. Bom jogo!" : st === "wait" ? "A lista está cheia: você entrou na lista de espera. Se abrir vaga, você sobe sozinho." : "Tudo bem! Você não vai desta vez.");
+      PZ.tone = st === "out" ? "" : "good";
+    } else { PZ.msg = pvError(r); PZ.tone = "bad"; if (r.error === "pin_wrong" || r.error === "locked") pvPinClear("pzPin"); }
+    renderPresence();
+  }
+  // ----- Tela do jogador: votação do craque da noite -----
+  function vtNightStats(key) {
+    const stats = new Map();
+    for (const game of officialGames().filter((g) => nightKeyOf(g) === key))
+      for (const p of gamePerformance(game)) {
+        const k = pvNorm(p.player), row = stats.get(k) || { goals: 0, conceded: 0, keeper: false, games: 0 };
+        row.games++; row.goals += Number(p.goalsFor) || 0;
+        if (p.role === "goleiro") { row.keeper = true; row.conceded += Number(p.goalsAgainst) || 0; }
+        stats.set(k, row);
+      }
+    return stats;
+  }
+  function vtSummary(row) {
+    if (!row) return "";
+    const parts = [];
+    if (row.goals) parts.push(row.goals + (row.goals === 1 ? " gol" : " gols"));
+    if (row.keeper) parts.push("goleiro · " + row.conceded + (row.conceded === 1 ? " sofrido" : " sofridos"));
+    if (!parts.length) parts.push(row.games + (row.games === 1 ? " jogo" : " jogos"));
+    return parts.join(" · ");
+  }
+  async function vtLoad(silent = false) {
+    const data = await pvRpc("vote_get", {});
+    if (data && data.round !== undefined) VT.data = data;
+    else if (!silent) { VT.msg = pvError(data); VT.tone = "bad"; }
+    renderVoting();
+  }
+  function renderVoting() {
+    const box = $("votacao");
+    if (!box) return;
+    if (!shared || !client) { box.innerHTML = '<div class="pv-wrap"><a class="pv-back" href="./">← Ir para o site</a><article class="pv-card"><p class="pv-kicker">CRAQUE DA NOITE</p><p class="pv-empty">A votação precisa de internet e do banco compartilhado.</p></article></div>'; return; }
+    const data = VT.data, round = data?.round;
+    if (!box.querySelector(".pv-wrap")) box.innerHTML = '<div class="pv-wrap"><a class="pv-back" href="./">← Ir para o site</a><article class="pv-card vt-card" id="vtCard" aria-live="polite"></article><section class="pv-panel" id="vtForm" aria-labelledby="vtFormTitle"></section></div>';
+    if (!data) { $("vtCard").innerHTML = '<p class="pv-kicker">⭐ CRAQUE DA NOITE</p><p class="pv-empty">Carregando…</p>'; return; }
+    if (!round) { $("vtCard").innerHTML = '<p class="pv-kicker">⭐ CRAQUE DA NOITE</p><p class="pv-empty">Nenhuma votação aberta agora. Ela abre quando o organizador encerra a noite.</p>'; $("vtForm").innerHTML = ""; return; }
+    const parts = round.participants || [], stats = vtNightStats(round.round_key);
+    if (!round.open) {
+      const results = data.results || [], max = Math.max(1, ...results.map((r) => r.votes)), winner = data.winner?.name;
+      $("vtCard").innerHTML = '<p class="pv-kicker">⭐ CRAQUE DA NOITE · ' + escapeHtml(pvDayMonth(round.round_key)) + "</p>" + (winner ? '<p class="vt-winner">' + escapeHtml(displayName(winner)) + '</p><p class="pv-where">' + data.winner.votes + (data.winner.votes === 1 ? " voto" : " votos") + " de " + data.winner.total + (data.winner.total === 1 ? " votante" : " votantes") + "</p>" : '<p class="pv-empty">Votação encerrada sem votos.</p>');
+      VT.formSig = "closed:" + round.round_key;
+      $("vtForm").innerHTML = '<h2 class="pv-h" id="vtFormTitle">RESULTADO</h2><ol class="vt-bars">' + results.filter((r) => r.votes > 0).map((r) => {
+        const c = lvColors(r.team);
+        return '<li style="--tb:' + c.bg + ";--tl:" + c.line + '"><span class="vt-bname">' + escapeHtml(displayName(r.name)) + (r.name === winner ? " ⭐" : "") + '</span><span class="vt-btrack"><i style="width:' + (r.votes / max) * 100 + '%"></i></span><b>' + r.votes + "</b></li>";
+      }).join("") + "</ol>" + (results.some((r) => r.votes > 0) ? '<p class="pv-hint">Empate: vence quem teve a maior nota média na noite.</p>' : "");
+      return;
+    }
+    const closes = new Date(round.closes_at);
+    $("vtCard").innerHTML = '<p class="pv-kicker">⭐ CRAQUE DA NOITE</p><p class="pv-day">' + escapeHtml(pvWeekday(round.round_key)) + '</p><p class="pv-date">' + escapeHtml(pvDayMonth(round.round_key)) + "</p>" +
+      '<p class="pv-count"><strong>' + round.voted + " de " + round.eligible + "</strong> já votaram</p>" +
+      '<p class="pv-state is-open">Votação aberta até ' + escapeHtml(closes.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " às " + closes.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })) + ". Os votos só aparecem quando fechar.</p>";
+    const sig = "open:" + round.round_key + ":" + parts.map((p) => p.name).join("|");
+    if (VT.formSig !== sig) {
+      VT.formSig = sig;
+      const meName = parts.find((p) => pvNorm(p.name) === pvNorm(pvMe()))?.name || "";
+      $("vtForm").innerHTML = '<h2 class="pv-h" id="vtFormTitle">Vote no craque da noite</h2><p class="pv-hint">Só vota quem jogou nessa noite. Você pode trocar o voto até a votação fechar.</p>' +
+        pvNameField("vtName", parts.map((p) => ({ name: p.name, keeper: false })), meName) +
+        '<p class="pv-label">PIN (4 números)</p>' + pvPinHtml("vtPin") + '<p class="pv-hint">Primeira vez? O PIN que você digitar agora vira o seu.</p>' +
+        '<p class="pv-label" id="vtCandLabel">Quem foi o craque?</p><div class="vt-cands" id="vtCands" role="radiogroup" aria-labelledby="vtCandLabel"></div>' +
+        '<button type="button" class="pv-btn pv-green vt-submit" id="vtSubmit" disabled>Escolha um jogador</button><p class="pv-msg" id="vtMsg" role="status" aria-live="polite"></p>' +
+        '<div class="pv-share"><a class="pv-btn pv-wa" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent("⭐ Votação do *CRAQUE DA NOITE* da Skalama aberta! Vote com seu nome e PIN:\n" + location.origin + "/#votacao") + '">Compartilhar no WhatsApp</a></div>';
+    }
+    const voter = pvNorm($("vtName")?.value || "");
+    if (VT.cand && pvNorm(VT.cand) === voter) VT.cand = "";
+    $("vtCands").innerHTML = parts.filter((p) => pvNorm(p.name) !== voter).map((p) => {
+      const c = lvColors(p.team), on = VT.cand === p.name, crest = crestFor(p.team, p.label);
+      return '<button type="button" class="vt-cand' + (on ? " is-on" : "") + '" role="radio" aria-checked="' + on + '" data-vt-cand="' + escapeHtml(p.name) + '" style="--tb:' + c.bg + ";--ti:" + c.ink + ";--tl:" + c.line + '">' +
+        '<span class="vt-crest">' + (crest ? '<img src="' + escapeHtml(crest) + '" alt="">' : "") + '</span><span class="vt-ctext"><strong>' + escapeHtml(displayName(p.name)) + "</strong><small>" + escapeHtml([p.label || teamLabel(p.team), vtSummary(stats.get(pvNorm(p.name)))].filter(Boolean).join(" · ")) + "</small></span>" + (on ? '<span class="vt-check" aria-hidden="true">✓</span>' : "") + "</button>";
+    }).join("");
+    const submit = $("vtSubmit");
+    submit.disabled = !VT.cand || VT.busy;
+    submit.textContent = VT.cand ? "✓ Votar em " + displayName(VT.cand) : "Escolha um jogador";
+    $("vtMsg").textContent = VT.msg; $("vtMsg").className = "pv-msg" + (VT.tone ? " is-" + VT.tone : "");
+  }
+  async function vtSubmit() {
+    const round = VT.data?.round, name = $("vtName")?.value || "", pin = pvPinValue("vtPin");
+    if (!round || !VT.cand) return;
+    if (!name) { VT.msg = "Escolha seu nome."; VT.tone = "bad"; renderVoting(); $("vtName")?.focus(); return; }
+    if (!/^\d{4}$/.test(pin)) { VT.msg = "Digite os 4 números do PIN."; VT.tone = "bad"; renderVoting(); document.querySelector("#vtPin input")?.focus(); return; }
+    VT.busy = true; renderVoting();
+    const r = await pvRpc("vote_cast", { p_key: round.round_key, p_voter: name, p_pin: pin, p_candidate: VT.cand });
+    VT.busy = false;
+    if (r.ok) { pvSetMe(name); pvPinClear("vtPin"); VT.data = r.view || VT.data; VT.msg = (r.created ? "PIN criado! Guarde esses 4 números. " : "") + "✓ Voto registrado em " + displayName(r.mine) + ". Dá para trocar até a votação fechar."; VT.tone = "good"; }
+    else { VT.msg = pvError(r); VT.tone = "bad"; if (r.error === "pin_wrong" || r.error === "locked") pvPinClear("vtPin"); }
+    renderVoting();
+  }
+  document.addEventListener("click", (event) => {
+    const go = event.target.closest?.("[data-pz-go]");
+    if (go && !go.disabled) { pzSubmit(go.dataset.pzGo === "1"); return; }
+    const cand = event.target.closest?.("[data-vt-cand]");
+    if (cand) { VT.cand = cand.dataset.vtCand; renderVoting(); $("vtCands")?.querySelector('[data-vt-cand="' + CSS.escape(VT.cand) + '"]')?.focus(); return; }
+    if (event.target.closest?.("#vtSubmit")) vtSubmit();
+  });
+  document.addEventListener("change", (event) => {
+    if (event.target.id === "pzName") { renderPresence(); }
+    if (event.target.id === "vtName") { renderVoting(); }
+  });
+  // ----- Rotas próprias: #presenca e #votacao abrem só essa tela -----
+  const PV_VIEWS = { "#presenca": "presenca", "#votacao": "votacao" };
+  function pvRoute() {
+    const view = PV_VIEWS[location.hash];
+    document.body.classList.toggle("pv-standalone", !!view);
+    clearInterval(PZ.timer); clearInterval(VT.timer);
+    if (!view) return false;
+    setView(view);
+    window.scrollTo(0, 0);
+    if (view === "presenca") { renderPresence(); pzLoad(); PZ.timer = setInterval(() => { if (!document.hidden) pzLoad(true); }, 10000); }
+    else { renderVoting(); vtLoad(); VT.timer = setInterval(() => { if (!document.hidden) vtLoad(true); }, 10000); }
+    return true;
+  }
+  window.addEventListener("hashchange", () => {
+    const was = document.body.classList.contains("pv-standalone");
+    if (!pvRoute() && was) setView("home");
+  });
+  // ----- Organizador: lista de presença no passo "Quem vai jogar" -----
+  async function pzaLoad() {
+    const key = state.matchDate || "";
+    if (!key || !shared || !canManageShared) return;
+    PZA.key = key; PZA.at = Date.now();
+    const data = await pvRpc("presence_get", { p_round: key });
+    if (data && data.round !== undefined) PZA.data = data;
+    renderElPresence();
+  }
+  function renderElPresence() {
+    const box = $("elPresence");
+    if (!box) return;
+    if (!shared || !canManageShared) { box.innerHTML = '<p class="pv-hint">A lista de presença pelo link funciona com o banco compartilhado (entre como organizador).</p>'; return; }
+    const key = state.matchDate;
+    if (!key) { box.innerHTML = '<p class="pv-hint">Defina a data do jogo em <b>Dados do jogo</b> para abrir a lista de presença pelo link.</p>'; return; }
+    if (PZA.key !== key || Date.now() - PZA.at > 10000) { if (!PZA.busy) { PZA.busy = true; pzaLoad().finally(() => { PZA.busy = false; }); } }
+    const data = PZA.key === key ? PZA.data : null, round = data?.round && data.round.round_key === key ? data.round : null, players = round ? data.players : [], roster = data?.roster || [];
+    const confirmed = players.filter((p) => p.status === "in"), waiting = players.filter((p) => p.status === "wait"), listed = new Set(players.map((p) => p.name));
+    const item = (p) => '<li><span class="pv-name">' + escapeHtml(displayName(p.name)) + pvKeeperBadge(p.keeper) + '</span><button type="button" class="pza-x" data-pza-remove="' + escapeHtml(p.name) + '" aria-label="Tirar ' + escapeHtml(displayName(p.name)) + ' da lista">✕</button></li>';
+    const sig = JSON.stringify([key, round, players, roster.length]);
+    if (box.dataset.sig === sig) return;
+    box.dataset.sig = sig;
+    box.innerHTML = '<div class="pza"><div class="pza-head"><h4 class="pza-title">📋 LISTA DE PRESENÇA PELO LINK</h4>' + (round ? '<span class="pza-state ' + (round.open ? "is-open" : "is-closed") + '">' + (round.open ? "ABERTA" : "FECHADA") + "</span>" : "") + "</div>" +
+      (!data ? '<p class="pv-hint">Carregando…</p>' : !round
+        ? '<p class="pv-hint">Os jogadores confirmam pelo link <b>' + escapeHtml(location.origin) + '/#presenca</b> com nome e PIN. A lista fecha sozinha no horário do jogo.</p><div class="pza-row"><label>Vagas<input type="number" id="pzaSlots" min="2" max="60" value="20" inputmode="numeric"></label><button type="button" class="button button-primary" data-pza="open">Abrir lista</button></div>'
+        : '<p class="pza-count"><strong>' + confirmed.length + " de " + round.slots + "</strong> confirmados" + (waiting.length ? " · " + waiting.length + " na espera" : "") + "</p>" +
+          '<div class="pza-row"><label>Vagas<input type="number" id="pzaSlots" min="2" max="60" value="' + round.slots + '" inputmode="numeric"></label><button type="button" class="button button-outline" data-pza="slots">Salvar vagas</button>' +
+          '<button type="button" class="button button-outline" data-pza="' + (round.open ? "close" : "reopen") + '">' + (round.open ? "Fechar lista" : "Reabrir lista") + "</button></div>" +
+          '<div class="pza-row"><button type="button" class="button button-outline" data-pza="invite">Copiar convite</button><button type="button" class="button button-outline" data-pza="link">Copiar link</button></div>' +
+          '<div class="pza-cols"><div><h5>CONFIRMADOS</h5>' + (confirmed.length ? '<ol class="pza-list">' + confirmed.map(item).join("") + "</ol>" : '<p class="pv-hint">Ninguém ainda.</p>') + "</div>" +
+          (waiting.length ? '<div><h5>LISTA DE ESPERA</h5><ol class="pza-list">' + waiting.map(item).join("") + "</ol></div>" : "") + "</div>" +
+          '<div class="pza-row"><label class="pza-grow">Confirmar alguém sem celular<select id="pzaAdd"><option value="">Escolha</option>' + roster.filter((r) => !listed.has(r.name)).map((r) => '<option value="' + escapeHtml(r.name) + '">' + escapeHtml(displayName(r.name)) + "</option>").join("") + '</select></label><button type="button" class="button button-outline" data-pza="add">Confirmar</button></div>' +
+          '<div class="pza-row"><label class="pza-grow">Trocar PIN de<select id="pzaPinName"><option value="">Escolha</option>' + roster.map((r) => '<option value="' + escapeHtml(r.name) + '">' + escapeHtml(displayName(r.name)) + "</option>").join("") + '</select></label><label>Novo PIN<input type="text" id="pzaPin" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" autocomplete="off"></label><button type="button" class="button button-outline" data-pza="pin">Salvar PIN</button></div>' +
+          '<button type="button" class="pv-btn pv-green pza-use" data-pza="use"' + (confirmed.length ? "" : " disabled") + ">✓ Usar a lista no Elenco (" + confirmed.length + " vão jogar)</button>") +
+      '<p class="pv-msg" id="pzaMsg" role="status" aria-live="polite"></p></div>';
+  }
+  function pzaMsg(text, tone = "") { const el = $("pzaMsg"); if (el) { el.textContent = text; el.className = "pv-msg" + (tone ? " is-" + tone : ""); } if (text) notify(text, tone === "bad"); }
+  async function pzaAction(kind) {
+    const key = state.matchDate, round = PZA.data?.round;
+    const after = (r, ok) => { if (r.ok) { if (r.view) { PZA.data = r.view; PZA.at = Date.now(); } $("elPresence").dataset.sig = ""; renderElPresence(); pzaMsg(ok); } else pzaMsg(pvError(r), "bad"); };
+    if (kind === "open" || kind === "slots" || kind === "close" || kind === "reopen") {
+      const slots = Math.round(Number($("pzaSlots")?.value || round?.slots || 20));
+      if (!(slots >= 2 && slots <= 60)) { pzaMsg("Vagas: de 2 a 60.", "bad"); return; }
+      const open = kind === "close" ? false : kind === "reopen" || kind === "open" ? true : round.open;
+      const r = await pvRpc("presence_admin_round", { p_round: key, p_start: /^\d{2}:\d{2}$/.test(state.startTime || "") ? state.startTime : null, p_venue: String(state.venue || "").slice(0, 120) || null, p_slots: slots, p_open: open });
+      after(r, kind === "open" ? "Lista aberta. Mande o convite no grupo." : kind === "close" ? "Lista fechada." : kind === "reopen" ? "Lista reaberta." : "Vagas atualizadas.");
+    } else if (kind === "add") {
+      const name = $("pzaAdd")?.value; if (!name) { pzaMsg("Escolha quem confirmar.", "bad"); return; }
+      after(await pvRpc("presence_admin_set", { p_round: key, p_name: name, p_going: true }), displayName(name) + " confirmado.");
+    } else if (kind === "pin") {
+      const name = $("pzaPinName")?.value, pin = $("pzaPin")?.value || "";
+      if (!name || !/^\d{4}$/.test(pin)) { pzaMsg("Escolha o jogador e digite 4 números.", "bad"); return; }
+      const r = await pvRpc("player_pin_admin_set", { p_name: name, p_pin: pin });
+      if (r.ok) { $("pzaPin").value = ""; pzaMsg("PIN de " + displayName(name) + " trocado. Avise o jogador."); } else pzaMsg(pvError(r), "bad");
+    } else if (kind === "invite" || kind === "link") {
+      const text = kind === "invite" ? pvInviteText(round) : location.origin + "/#presenca";
+      try { await navigator.clipboard.writeText(text); pzaMsg(kind === "invite" ? "Convite copiado. Cole no grupo do WhatsApp." : "Link copiado."); } catch { pzaMsg("Não deu para copiar. Link: " + location.origin + "/#presenca", "bad"); }
+    } else if (kind === "use") {
+      const confirmed = new Set((PZA.data?.players || []).filter((p) => p.status === "in").map((p) => pvNorm(p.name)));
+      const ok = await askConfirm({ title: "Usar a lista no Elenco?", message: confirmed.size + " jogadores confirmados ficam ativos para o sorteio. Todo o resto do elenco fica inativo.", confirmText: "Usar a lista (" + confirmed.size + ")", tone: "green" });
+      if (!ok) return;
+      const inactivePlayers = (state.roster || []).filter((name) => !confirmed.has(pvNorm(name)));
+      await saveState({ inactivePlayers }, "Lista aplicada: " + confirmed.size + " jogadores ativos para o sorteio.");
+    }
+  }
+  async function pzaRemove(name) {
+    const ok = await askConfirm({ title: "Tirar " + displayName(name) + " da lista?", message: "Se ele estava confirmado, o primeiro da espera entra no lugar.", confirmText: "Tirar da lista", tone: "red" });
+    if (!ok) return;
+    const r = await pvRpc("presence_admin_set", { p_round: state.matchDate, p_name: name, p_going: false });
+    if (r.ok) { PZA.data = r.view; PZA.at = Date.now(); $("elPresence").dataset.sig = ""; renderElPresence(); pzaMsg(displayName(name) + " saiu da lista."); } else pzaMsg(pvError(r), "bad");
+  }
+  document.addEventListener("click", (event) => {
+    const a = event.target.closest?.("#elPresence [data-pza]");
+    if (a && !a.disabled) { pzaAction(a.dataset.pza); return; }
+    const x = event.target.closest?.("#elPresence [data-pza-remove]");
+    if (x) pzaRemove(x.dataset.pzaRemove);
+  });
+  // ----- Organizador: abrir/fechar a votação no painel do jogo -----
+  function lvVoteKey() {
+    const games = officialGames().filter((g) => g.finishedAt).sort((a, b) => (hxTime(a.finishedAt)?.getTime() || 0) - (hxTime(b.finishedAt)?.getTime() || 0));
+    return games.length ? nightKeyOf(games[games.length - 1]) : "";
+  }
+  async function vtaLoad(key) {
+    VTA.key = key; VTA.at = Date.now();
+    const data = await pvRpc("vote_get", { p_key: key });
+    if (data && data.round !== undefined) VTA.data = data;
+    lvUI.marks.lvVote = ""; renderOrganizer();
+  }
+  function lvVoteHtml() {
+    if (!shared || !canManageShared || state.currentGame) return "";
+    const key = lvVoteKey();
+    if (!key) return "";
+    if (VTA.key !== key || Date.now() - VTA.at > 30000) { VTA.key = key; VTA.at = Date.now(); vtaLoad(key); }
+    const round = VTA.data?.round && VTA.data.round.round_key === key ? VTA.data.round : null;
+    const head = '<h3 class="lv-label">⭐ CRAQUE DA NOITE · ' + escapeHtml(pvDayMonth(key)) + "</h3>";
+    if (!round) return head + '<p class="lv-vote-text">Depois do último jogo, abra a votação: quem jogou vota pelo link com nome e PIN, por 24 horas.</p><button type="button" class="lv-btn lv-green" data-lv-vote="open">⭐ Abrir votação do craque da noite</button>';
+    if (round.open) return head + '<p class="lv-vote-text">Votação aberta · <b>' + round.voted + " de " + round.eligible + "</b> já votaram · fecha " + escapeHtml(new Date(round.closes_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })) + '</p><div class="lv-vote-row"><button type="button" class="lv-btn lv-white" data-lv-vote="link">Copiar link</button><button type="button" class="lv-btn lv-white" data-lv-vote="close">Fechar votação agora</button></div>';
+    const w = VTA.data?.winner;
+    return head + '<p class="lv-vote-text">' + (w?.name ? "Craque da noite: <b>" + escapeHtml(displayName(w.name)) + "</b> (" + w.votes + (w.votes === 1 ? " voto" : " votos") + ")" : "Votação encerrada sem votos.") + '</p><a class="lv-btn lv-white" href="#votacao">Ver resultado</a>';
+  }
+  async function lvVoteAction(kind) {
+    const key = lvVoteKey();
+    if (kind === "link") { try { await navigator.clipboard.writeText(location.origin + "/#votacao"); notify("Link da votação copiado."); } catch { notify("Link: " + location.origin + "/#votacao"); } return; }
+    if (kind === "open") {
+      if (!(await askConfirm({ title: "Abrir a votação do craque da noite?", message: "Fica aberta por 24 horas. Só vota quem jogou pelo menos um jogo oficial nessa noite, com nome e PIN.", confirmText: "Abrir votação", tone: "green" }))) return;
+      const r = await pvRpc("vote_admin_open", { p_key: key });
+      if (r.ok) { VTA.data = r.view; VTA.at = Date.now(); VOTE.homeAt = 0; renderNightVoteCard(); notify("Votação aberta! Mande o link no grupo."); } else notify(r.error === "no_games" ? "Não há jogos oficiais suficientes nessa noite para votar." : pvError(r), true);
+    } else if (kind === "close") {
+      if (!(await askConfirm({ title: "Fechar a votação agora?", message: "O resultado aparece na hora e ninguém mais vota.", confirmText: "Fechar votação", tone: "red" }))) return;
+      const r = await pvRpc("vote_admin_close", { p_key: key });
+      if (r.ok) { VTA.data = r.view; VTA.at = Date.now(); VOTE.homeAt = 0; renderNightVoteCard(); loadVoteWinners(); notify("Votação fechada."); } else notify(pvError(r), true);
+    }
+    lvUI.marks.lvVote = ""; renderOrganizer();
+  }
+  document.addEventListener("click", (event) => {
+    const b = event.target.closest?.("[data-lv-vote]");
+    if (b) lvVoteAction(b.dataset.lvVote);
+  });
+  // ----- Tela principal: Craque da noite (votação) nos Destaques da noite -----
+  async function loadVoteWinners() {
+    const r = await pvRpc("vote_winners", { p_limit: 5 });
+    if (Array.isArray(r)) { VOTE.winners = r; if (ART && ART.type === "craque") drawArt?.(); }
+  }
+  function renderNightVoteCard() {
+    const card = $("nightVoteCard");
+    if (!card) return;
+    const key = lvVoteKey();
+    if (!shared || !client || !key) { card.hidden = true; return; }
+    if (VOTE.homeKey !== key || Date.now() - VOTE.homeAt > 60000) {
+      VOTE.homeKey = key; VOTE.homeAt = Date.now();
+      pvRpc("vote_get", { p_key: key }).then((data) => { if (data && data.round !== undefined) { VOTE.homeData = data; renderNightVoteCard(); } });
+    }
+    const data = VOTE.homeData, round = data?.round && data.round.round_key === key ? data.round : null;
+    if (!round) { card.hidden = true; return; }
+    card.hidden = false;
+    card.innerHTML = '<span class="season-kicker">CRAQUE DA NOITE (VOTAÇÃO)</span>' + (round.open
+      ? '<strong>Votação aberta</strong><small>' + round.voted + " de " + round.eligible + ' já votaram · <a href="#votacao">Votar</a></small>'
+      : data.winner?.name ? "<strong>" + escapeHtml(displayName(data.winner.name)) + "</strong><small>" + data.winner.votes + (data.winner.votes === 1 ? " voto" : " votos") + " de " + data.winner.total + ' · <a href="#votacao">ver votação</a></small>' : "<strong>Sem votos</strong><small>A votação fechou sem votos.</small>");
+  }
   function renderAll() {
     if (!state) return;
+    renderElPresence();
+    renderNightVoteCard();
     if (document.activeElement !== $("venue"))
       $("venue").value = state.venue || "";
     if (document.activeElement !== $("matchDate"))
@@ -4060,10 +4456,11 @@
     teams: '<circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="16" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M2.5 19c.5-3 2.7-5 5.5-5s5 2 5.5 5M10.5 19c.5-3 2.7-5 5.5-5s5 2 5.5 5" fill="none" stroke="currentColor" stroke-width="2"/>',
     champion: '<path d="M7 4h10v3a5 5 0 0 1-10 0V4Zm-3 1h3v3a3 3 0 0 1-3-3Zm16 0h-3v3a3 3 0 0 0 3-3ZM12 12v4m-4 4h8m-6-4h4v4h-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
     night: '<path d="m12 3 2.6 5.6 6.1.6-4.6 4.1 1.3 6-5.4-3.1-5.4 3.1 1.3-6-4.6-4.1 6.1-.6Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
+    craque: '<circle cx="12" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="m12 6 1 2.1 2.3.3-1.7 1.6.4 2.3-2-1.1-2 1.1.4-2.3-1.7-1.6 2.3-.3Z" fill="currentColor"/><path d="m8.5 14-1.5 7 5-2.5 5 2.5-1.5-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
     scorers: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path fill="currentColor" d="m12 7.5 3.2 2.3-1.2 3.8h-4l-1.2-3.8Z"/>',
     next: '<rect x="3.5" y="5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3.5 10h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="2"/>',
   };
-  const AX_TYPES = [["result", "Resultado de jogo"], ["teams", "Times sorteados"], ["champion", "Campeão"], ["night", "Destaques da noite"], ["scorers", "Artilharia"], ["next", "Próximo jogo"]];
+  const AX_TYPES = [["result", "Resultado de jogo"], ["teams", "Times sorteados"], ["champion", "Campeão"], ["night", "Destaques da noite"], ["craque", "Craque da noite"], ["scorers", "Artilharia"], ["next", "Próximo jogo"]];
   let artKey = "", artToken = 0, artDone = Promise.resolve(), axFontsPromise = null;
   const axImages = new Map();
   function colorOf(name) {
@@ -4165,6 +4562,10 @@
       const side = final.home === champion ? "home" : "away";
       return { type, final, champion, side, played: slxLineup(final, side).played, keeperName: slxLineup(final, side).keeperName };
     }
+    if (type === "craque") {
+      const w = (VOTE.winners || [])[0];
+      return w && w.name ? { type, winner: w } : { warn: shared ? "A arte do Craque da noite aparece quando a votação da noite fechar." : "A votação do Craque da noite precisa do banco compartilhado." };
+    }
     if (type === "night") {
       const night = axNight();
       return night && night.player ? { type, ...night } : { warn: "Os destaques da noite aparecem depois do primeiro jogo da rodada (Modo Liga)." };
@@ -4190,6 +4591,7 @@
     (info.rows || []).forEach((row) => add(row.team, row.teamLabel));
     if (info.player) add(info.player.team, info.player.teamLabel);
     if (info.keeper) add(info.keeper.team, info.keeper.teamLabel);
+    if (info.winner) add(info.winner.team, info.winner.label);
     return [...new Set(list.filter(Boolean))];
   }
   // ---------- Desenho: peças comuns ----------
@@ -4488,6 +4890,22 @@
     });
     axFooter(ctx, W, bottom - 6);
   }
+  // ---------- Arte: Craque da noite (votação) ----------
+  function axDrawCraque(ctx, W, H, story, info) {
+    const top = story ? 220 : 70, bottom = story ? H - 230 : H - 70, w = info.winner;
+    let y = axBrand(ctx, W, top, story);
+    y = axPills(ctx, W, y + (story ? 6 : 0), [{ text: "CRAQUE DA NOITE", style: "yellow" }, ...(pvDayMonth(w.round_key) ? [{ text: "VOTAÇÃO · " + pvDayMonth(w.round_key), style: "outline" }] : [])], story) + (story ? 60 : 30);
+    const pad = 70, cardH = bottom - 54 - y, cx = W / 2;
+    axRound(ctx, pad, y, W - pad * 2, cardH, 34); ctx.fillStyle = "#151515"; ctx.fill(); ctx.strokeStyle = "rgba(255,196,0,0.6)"; ctx.lineWidth = 4; ctx.stroke();
+    axStar(ctx, cx, y + cardH * 0.17, story ? 74 : 54, AX_Y);
+    axCrest(ctx, w.team, w.label, cx, y + cardH * 0.42, story ? 260 : 190);
+    const name = displayName(w.name).toUpperCase();
+    ctx.textAlign = "center"; ctx.fillStyle = "#ffffff"; axFit(ctx, name, 0, story ? 120 : 90, W - pad * 2 - 80, true); ctx.fillText(name, cx, y + cardH * (story ? 0.7 : 0.72));
+    ctx.fillStyle = "#c9c9c1"; axFont(ctx, 700, story ? 32 : 26); ctx.fillText(String(w.label || teamLabel(w.team) || "").toUpperCase(), cx, y + cardH * (story ? 0.77 : 0.8));
+    const votes = w.votes + (w.votes === 1 ? " VOTO" : " VOTOS") + " DE " + w.total + (w.total === 1 ? " VOTANTE" : " VOTANTES");
+    ctx.fillStyle = AX_Y; axFit(ctx, votes, 800, story ? 38 : 30, W - pad * 2 - 80, false); ctx.fillText(votes, cx, y + cardH * (story ? 0.86 : 0.9));
+    axFooter(ctx, W, bottom - 6);
+  }
   // ---------- Arte: Artilharia ----------
   function axDrawScorers(ctx, W, H, story, info) {
     const top = story ? 220 : 70, bottom = story ? H - 230 : H - 70;
@@ -4548,6 +4966,7 @@
     else if (info.type === "teams") axDrawTeams(ctx, W, H, story, info);
     else if (info.type === "champion") axDrawChampion(ctx, W, H, story, info);
     else if (info.type === "night") axDrawNight(ctx, W, H, story, info);
+    else if (info.type === "craque") axDrawCraque(ctx, W, H, story, info);
     else if (info.type === "scorers") axDrawScorers(ctx, W, H, story, info);
     else if (info.type === "next") axDrawNext(ctx, W, H, story, info);
     canvas.dataset.drawn = JSON.stringify([ART.type, ART.format]);
@@ -4691,8 +5110,9 @@
         element.classList.toggle("view-hidden", element.dataset.view !== view),
       );
     markActiveTab(view);
-    localStorage.setItem("liga-skalama-view", view);
+    if (view !== "presenca" && view !== "votacao") localStorage.setItem("liga-skalama-view", view);
     if (view === "news") { renderNews(); loadNews(); }
+    if (view === "home") renderNightVoteCard();
   }
   // Visitantes podem olhar qualquer uma das duas abas, sem mudar o modo escolhido pelo organizador.
   let viewerMode = null;
@@ -5692,6 +6112,7 @@
   function renderOrganizer() {
     const org = $("lvOrg");
     if (!org || isEditLocked()) return;
+    lvSet("lvVote", lvVoteHtml());
     const trainHtml = lvTrainHtml();
     if (lvUI.marks.lvTrain !== trainHtml) { lvUI.marks.lvTrain = trainHtml; $("lvTrain").innerHTML = trainHtml; }
     $("lvTrainStripe").hidden = !state.trainingMode;
@@ -6394,7 +6815,8 @@
     renderAll();
     setView(localStorage.getItem("liga-skalama-view") || "home");
     // Link direto de notícia (#noticia-slug) abre o SKALAMA News; senão, carrega a manchete da Tela principal.
-    if (!openNewsFromHash()) loadNews();
+    if (!pvRoute() && !openNewsFromHash()) loadNews();
+    loadVoteWinners();
     initPush();
     setTheme(localStorage.getItem("liga-skalama-theme-v2") || "light");
     syncServerClock();

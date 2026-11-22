@@ -230,3 +230,6 @@ grant execute on function public.news_register_view(uuid), public.news_register_
 revoke all on function public.news_is_admin() from public;
 grant execute on function public.news_is_admin() to anon, authenticated;
 
+
+-- Presença pelo link, PIN do jogador e votação do Craque da noite: ver supabase/migrations/20261123_presenca_votacao.sql
+-- (tabelas sem acesso direto; funções com privilégio no schema skalama_private; portas security invoker no public).
