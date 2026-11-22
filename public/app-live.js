@@ -80,6 +80,7 @@
       pendingMatch: null,
       challengeQueue: [],
       gameHistory: [],
+      trainingMode: false,
       keeperRatings: [],
       superLiga: null,
       inactivePlayers: [],
@@ -102,6 +103,14 @@
     if (!target) return false;
     const players = [...(source?.roster || []), ...(source?.teams || []).flatMap((team) => team.players || []), ...Object.values(source?.lineups || {}).flat()];
     return players.some((name) => norm(name) === target);
+  }
+  // Visitante: nunca recebe jogo de treino (a view já filtra; aqui é a segunda trava).
+  function publicState(raw) {
+    const next = normalizeState(raw);
+    next.gameHistory = (next.gameHistory || []).filter((game) => !game.training);
+    if (next.currentGame?.training) { next.currentGame = null; next.shootout = null; next.incidents = []; next.timer = freshTimer(next.timerMode); }
+    delete next.trainingMode;
+    return next;
   }
   function normalizeState(raw) {
     const next = { ...initialState(), ...(raw || {}) };
@@ -237,7 +246,7 @@
     const { data, error } = await client.from(table).select("state").eq("id", 1).maybeSingle();
     if (error) throw error;
     if (!data) throw new Error("O registro da rodada ainda não foi criado no banco.");
-    const next = normalizeState(data.state);
+    const next = canManageShared ? normalizeState(data.state) : publicState(data.state);
     if (JSON.stringify(next) !== JSON.stringify(state)) { state = next; renderAll(); }
   }
   async function refreshAdminAccess(session) {
@@ -379,8 +388,24 @@
       away: awayName ? { players: lineupForTeam(awayName, game) } : null,
     };
   }
+  // Modo treino: jogos com training: true não contam em nada e não vão para visitantes.
+  // officialGames() é a fonte única dos jogos que valem (histórico, rankings, Super Liga, Divulgação, News...).
+  function officialGames() {
+    return (state?.gameHistory || []).filter((game) => !game.training);
+  }
+  function trainingGames() {
+    return (state?.gameHistory || []).filter((game) => game.training);
+  }
+  function trainingGameIds() {
+    const ids = new Set(trainingGames().map((game) => game.id));
+    if (state?.currentGame?.training) ids.add(state.currentGame.id);
+    return ids;
+  }
+  function isTrainingGoal(goal) {
+    return !!goal.training || trainingGameIds().has(goal.game_id);
+  }
   function gameNumber() {
-    return state.currentGame?.number || (state.gameHistory || []).length + 1;
+    return state.currentGame?.number || (state.trainingMode ? trainingGames() : officialGames()).length + 1;
   }
   async function saveState(patch, successMessage = "Alteração salva.") {
     if ((shared && !canManageShared) || (!shared && window.LIGA_CONFIG?.publicReadOnly === true)) {
@@ -434,7 +459,7 @@
     const source = canManageShared ? "league_night" : "league_public";
     let { data, error } = await client.from(source).select("state").eq("id", 1).maybeSingle();
     if (error) throw error;
-    if (data) state = normalizeState(data.state);
+    if (data) state = canManageShared ? normalizeState(data.state) : publicState(data.state);
     else if (canManageShared) {
       const { error: insertError } = await client.from("league_night").insert({ id: 1, state: initialState() });
       if (insertError && insertError.code !== "23505") throw insertError;
@@ -1507,7 +1532,7 @@
   }
   function renderStandings() {
     const roundId = state.roundId || state.currentGame?.roundId;
-    const games = roundId ? (state.gameHistory || []).filter((game) => game.roundId === roundId) : [];
+    const games = roundId ? officialGames().filter((game) => game.roundId === roundId) : [];
     const rows = standingsForGames(games, new Map((state.teams || []).map((team) => [team.name, teamLabel(team.name)])));
     $("roundStandings").innerHTML = standingsTable(rows, "A classificação será atualizada após a primeira partida concluída.");
   }
@@ -1515,7 +1540,7 @@
     const host = $("pastRoundStandings");
     if (!host) return;
     const groups = new Map();
-    for (const game of state.gameHistory || []) {
+    for (const game of officialGames()) {
       const key = game.roundId || 'legacy-' + (game.matchDate || 'sem-data');
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(game);
@@ -1529,7 +1554,7 @@
   }
   // Rankings da Tela principal: só jogos do Modo Liga (a Super Liga tem os seus na própria aba).
   function ligaGames() {
-    return (state.gameHistory || []).filter((game) => !game.superLigaId);
+    return officialGames().filter((game) => !game.superLigaId);
   }
   function renderScoreRankings() {
     const all = ligaGames().flatMap(
@@ -1630,7 +1655,7 @@
   function renderNightHighlights() {
     const roundId = state.roundId || state.currentGame?.roundId,
       games = roundId
-        ? (state.gameHistory || []).filter((game) => game.roundId === roundId)
+        ? officialGames().filter((game) => game.roundId === roundId)
         : [];
     const status = $("nightHighlightsStatus");
     if (!roundId)
@@ -1838,7 +1863,7 @@
   }
   function renderIndividualStats() {
     const totals = new Map();
-    const games = [...(state.gameHistory || [])].sort((a, b) => (hxTime(a.finishedAt)?.getTime() || 0) - (hxTime(b.finishedAt)?.getTime() || 0));
+    const games = [...officialGames()].sort((a, b) => (hxTime(a.finishedAt)?.getTime() || 0) - (hxTime(b.finishedAt)?.getTime() || 0));
     for (const game of games) for (const p of gamePerformance(game)) {
       const row = totals.get(p.player) || { player: p.player, role: p.role, keeperGames: 0, score: 0, games: 0, goals: 0, assists: 0, goalsAgainst: 0, wins: 0, draws: 0, losses: 0 };
       if (p.role === "goleiro") row.keeperGames++;
@@ -1882,7 +1907,7 @@
   }
   function renderWeeklyPublications() {
     const weeks = new Map();
-    for (const game of state.gameHistory || []) {
+    for (const game of officialGames()) {
       const date = new Date(game.finishedAt);
       if (!Number.isFinite(date.getTime())) continue;
       const monday = weekStart(date),
@@ -1961,7 +1986,7 @@
   // Jogo que decide a Super Liga daquele jogo (o primeiro com stage "final").
   function hxIsTitleGame(game) {
     if (!game.superLigaId || game.stage !== "final") return false;
-    const finals = (state.gameHistory || []).filter((item) => item.superLigaId === game.superLigaId && item.stage === "final").sort((a, b) => (hxTime(a.finishedAt)?.getTime() || 0) - (hxTime(b.finishedAt)?.getTime() || 0));
+    const finals = officialGames().filter((item) => item.superLigaId === game.superLigaId && item.stage === "final").sort((a, b) => (hxTime(a.finishedAt)?.getTime() || 0) - (hxTime(b.finishedAt)?.getTime() || 0));
     return finals[0]?.id === game.id;
   }
   // Lances do jogo: gols e substituições juntos, por minuto e, no mesmo minuto, pela ordem em que foram registrados.
@@ -2252,7 +2277,7 @@
   }
   function renderHistory() {
     const list = $("gameHistory"),
-      history = [...(state.gameHistory || [])].sort((a, b) => (hxTime(b.finishedAt)?.getTime() || 0) - (hxTime(a.finishedAt)?.getTime() || 0)),
+      history = [...officialGames()].sort((a, b) => (hxTime(b.finishedAt)?.getTime() || 0) - (hxTime(a.finishedAt)?.getTime() || 0)),
       night = $("historyNight");
     if (!history.length) {
       if (night) night.textContent = "";
@@ -2273,11 +2298,11 @@
   function renderGoals() {
     const totals = new Map(),
       superGameIds = new Set([
-        ...(state.gameHistory || []).filter((game) => game.superLigaId).map((game) => game.id),
+        ...officialGames().filter((game) => game.superLigaId).map((game) => game.id),
         ...(state.currentGame?.superLigaId ? [state.currentGame.id] : []),
       ]);
     goals
-      .filter((goal) => !goal.own_goal && !superGameIds.has(goal.game_id))
+      .filter((goal) => !goal.own_goal && !superGameIds.has(goal.game_id) && !isTrainingGoal(goal))
       .forEach((goal) =>
         totals.set(goal.player_name, (totals.get(goal.player_name) || 0) + 1),
       );
@@ -2297,6 +2322,7 @@
             const teams = selectedTeams(),
               current =
                 state.currentGame &&
+                !state.currentGame.training &&
                 !state.currentGame.superLigaId &&
                 [
                   ...(teams.home?.players || []),
@@ -2358,7 +2384,7 @@
   }
 
   // ---------- Painel da Super Liga ----------
-  function superStandings(sl = state.superLiga, history = state.gameHistory || []) {
+  function superStandings(sl = state.superLiga, history = officialGames()) {
     if (!sl) return [];
     const ids = new Set((sl.fixtures || []).filter((fixture) => fixture.stage === "group" && fixture.gameId).map((fixture) => fixture.gameId));
     const rows = standingsForGames(history.filter((game) => ids.has(game.id)), new Map(sl.teams.map((team) => [team.key, team.name])));
@@ -2609,7 +2635,7 @@
     return '<i class="sl-chip" style="--team-color:' + color.color + '" aria-hidden="true"></i>';
   }
   function superFixtureRow(fixture, next, locked) {
-    const game = fixture.gameId ? (state.gameHistory || []).find((item) => item.id === fixture.gameId) : null,
+    const game = fixture.gameId ? officialGames().find((item) => item.id === fixture.gameId) : null,
       live = state.currentGame?.fixtureId === fixture.id,
       isNext = !game && !live && next?.id === fixture.id,
       shoot = game?.shootout && Number.isFinite(game.shootout.homeScore) ? " · pên. " + game.shootout.homeScore + "×" + game.shootout.awayScore : "",
@@ -2659,7 +2685,7 @@
     return '<div class="ranking-row' + (index < 3 ? " top-rank top-rank-" + (index + 1) : "") + '"><span class="rank">' + String(index + 1).padStart(2, "0") + "</span><span>" + escapeHtml(displayName(name)) + " <small>" + escapeHtml(detail) + "</small></span><strong>" + value + "</strong></div>";
   }
   function superRankingData() {
-    const games = (state.gameHistory || []).filter((game) => game.superLigaId),
+    const games = officialGames().filter((game) => game.superLigaId),
       plural = (n, one, many) => n + " " + (n === 1 ? one : many),
       teamOf = (key) => superTeam(key)?.name || teamLabel(key);
     const scorers = new Map();
@@ -2696,7 +2722,7 @@
       score = (value) => value.toFixed(1).replace(".", ",");
     return '<div class="sl-rankings-head"><h3>Rankings da Super Liga</h3><p class="help-text">Somam todas as Super Ligas já disputadas. Não zeram com "Nova Super Liga".</p></div><div class="sl-rankings">' +
       '<div class="sl-block"><h3>Artilheiros</h3>' + (scorerRows.map((r, i) => superRankingRow(i, r.name, teamOf(r.team), plural(r.goals, "gol", "gols"))).join("") || empty) + "</div>" +
-      '<div class="sl-block"><h3>Melhores goleiros</h3>' + (keeperRows.map((r, i) => superRankingRow(i, r.name, teamOf(r.team) + " · " + plural(r.games, "jogo", "jogos") + " · " + plural(r.against, "gol sofrido", "gols sofridos"), score(r.average))).join("") || ((state.gameHistory || []).some((game) => game.superLigaId) ? '<p class="empty-state">' + "Entra no ranking quem tiver " + MIN_KEEPER_GAMES + " jogos ou mais no gol." + "</p>" : empty)) + "</div>" +
+      '<div class="sl-block"><h3>Melhores goleiros</h3>' + (keeperRows.map((r, i) => superRankingRow(i, r.name, teamOf(r.team) + " · " + plural(r.games, "jogo", "jogos") + " · " + plural(r.against, "gol sofrido", "gols sofridos"), score(r.average))).join("") || (officialGames().some((game) => game.superLigaId) ? '<p class="empty-state">' + "Entra no ranking quem tiver " + MIN_KEEPER_GAMES + " jogos ou mais no gol." + "</p>" : empty)) + "</div>" +
       '<div class="sl-block"><h3>Score dos jogadores</h3>' + (playerRows.map((r, i) => superRankingRow(i, r.name, teamOf(r.team) + " · " + plural(r.games, "jogo", "jogos"), score(r.average))).join("") || empty) + "</div>" +
       "</div>";
   }
@@ -2704,7 +2730,7 @@
   // O título é decidido pelo primeiro jogo com stage "final" desta Super Liga (nunca pelo último jogo disputado).
   function superFinalGame(sl = state.superLiga) {
     if (!sl) return null;
-    const history = state.gameHistory || [],
+    const history = officialGames(),
       finals = history.filter((game) => game.superLigaId === sl.id && game.stage === "final").sort((a, b) => new Date(a.finishedAt || 0) - new Date(b.finishedAt || 0));
     if (finals[0]) return finals[0];
     const fixture = (sl.fixtures || []).find((item) => item.stage === "final" && item.gameId);
@@ -2802,7 +2828,7 @@
     const { scorerRows, keeperRows, playerRows, teamOf, plural } = superRankingData(), score = (value) => value.toFixed(1).replace(".", ",");
     html += '<section class="slx-ranks" aria-labelledby="slxRanksTitle"><div class="slx-sec-head"><h3 id="slxRanksTitle">RANKINGS DA SUPER LIGA</h3><p>Somam todas as Super Ligas, inclusive os amistosos.</p></div><div class="slx-rank-grid">' +
       slxRankCard("Artilheiros", scorerRows, (row) => teamOf(row.team), (row) => row.goals + '<small>' + (row.goals === 1 ? "gol" : "gols") + "</small>") +
-      slxRankCard("Melhores goleiros", keeperRows, (row) => teamOf(row.team) + " · " + plural(row.games, "jogo", "jogos") + " · " + plural(row.against, "gol sofrido", "gols sofridos"), (row) => score(row.average), (state.gameHistory || []).some((game) => game.superLigaId) ? "Entra no ranking quem tiver " + MIN_KEEPER_GAMES + " jogos ou mais no gol." : "") +
+      slxRankCard("Melhores goleiros", keeperRows, (row) => teamOf(row.team) + " · " + plural(row.games, "jogo", "jogos") + " · " + plural(row.against, "gol sofrido", "gols sofridos"), (row) => score(row.average), officialGames().some((game) => game.superLigaId) ? "Entra no ranking quem tiver " + MIN_KEEPER_GAMES + " jogos ou mais no gol." : "") +
       slxRankCard("Score dos jogadores", playerRows, (row) => teamOf(row.team) + " · " + plural(row.games, "jogo", "jogos"), (row) => score(row.average)) +
       "</div></section>";
     if (final && champion) {
@@ -2811,7 +2837,7 @@
         slxTeamCard(final, champSide, true) + slxTeamCard(final, champSide === "home" ? "away" : "home", false) + "</div></section>";
     }
     // Outros jogos desta Super Liga (fora a final).
-    const others = (state.gameHistory || []).filter((game) => game.superLigaId === sl.id && game.id !== final?.id).sort((a, b) => new Date(a.finishedAt || 0) - new Date(b.finishedAt || 0));
+    const others = officialGames().filter((game) => game.superLigaId === sl.id && game.id !== final?.id).sort((a, b) => new Date(a.finishedAt || 0) - new Date(b.finishedAt || 0));
     if (others.length)
       html += '<section class="slx-others" aria-labelledby="slxOthersTitle"><div class="slx-sec-head"><h3 id="slxOthersTitle">OUTROS JOGOS DA SUPER LIGA</h3></div><ul class="slx-other-list">' + others.map((game) => {
         const tag = game.stage === "amistoso" ? "AMISTOSO · conta para o ranking" : game.stage === "group" ? "FASE DE GRUPOS · Rodada " + (game.round || "") : "JOGO",
@@ -2913,7 +2939,7 @@
               : '<p class="help-text">Com ' + teams.length + " times são " + (teams.length * (teams.length - 1)) / 2 + " jogos em que todos se enfrentam uma vez, em ordem sorteada, e depois a final.</p>"
             : "");
       // Os rankings acumulam todas as Super Ligas, então aparecem também enquanto os times são montados.
-      if (status === "setup" && (state.gameHistory || []).some((game) => game.superLigaId)) html += superRankings(sl);
+      if (status === "setup" && officialGames().some((game) => game.superLigaId)) html += superRankings(sl);
       }
     }
     if (html === superMarkup) return;
@@ -3120,7 +3146,7 @@
   }
   // Capa automática para notícia de jogo sem foto: escudos e placar.
   function newsMatchCover(post) {
-    const game = post.match_id && (state.gameHistory || []).find((item) => item.id === post.match_id);
+    const game = post.match_id && officialGames().find((item) => item.id === post.match_id);
     if (!game) return "";
     const win = game.winner === game.home ? "home" : game.winner === game.away ? "away" : null;
     return '<div class="news-cover news-cover-match" aria-hidden="true">' +
@@ -3172,7 +3198,7 @@
   }
   // Súmula completa do jogo ligado à notícia: placar, campeão, ficha, gols, números e escalações.
   function newsMatchReport(post) {
-    const game = post.match_id && (state.gameHistory || []).find((item) => item.id === post.match_id);
+    const game = post.match_id && officialGames().find((item) => item.id === post.match_id);
     if (!game) return { top: "", details: "" };
     const sides = ["home", "away"],
       label = (side) => gameTeamLabel(game, side),
@@ -3302,7 +3328,7 @@
     box.hidden = !post;
     box.closest(".home-top")?.classList.toggle("no-news", !post);
     if (!post) { box.innerHTML = ""; return; }
-    const game = post.match_id && (state?.gameHistory || []).find((item) => item.id === post.match_id);
+    const game = post.match_id && officialGames().find((item) => item.id === post.match_id);
     let board = "";
     if (game) {
       const win = game.winner === game.home ? "home" : game.winner === game.away ? "away" : null,
@@ -3352,7 +3378,7 @@
   // Antes do primeiro jogo da rodada, os cards sem dados somem e aparece um aviso só.
   function renderHomeVisibility() {
     const roundId = state.roundId || state.currentGame?.roundId,
-      roundGames = roundId ? (state.gameHistory || []).filter((game) => game.roundId === roundId).length : 0,
+      roundGames = roundId ? officialGames().filter((game) => game.roundId === roundId).length : 0,
       empty = (id) => { const host = $(id); return !host || !host.children.length || (host.children.length === 1 && host.firstElementChild.classList.contains("empty-state")); },
       cards = [
         [$("homeGoalsCard"), empty("goalRanking")],
@@ -3531,7 +3557,7 @@
     const add = (name) => { if (name && !names.has(playerKey(name))) names.set(playerKey(name), name); };
     (state.roster || []).forEach(add);
     (state.superLiga?.teams || []).forEach((team) => team.players.forEach(add));
-    (state.gameHistory || []).forEach((game) => [...(game.homePlayers || []), ...(game.awayPlayers || []), ...(game.homeBench || []), ...(game.awayBench || [])].forEach(add));
+    officialGames().forEach((game) => [...(game.homePlayers || []), ...(game.awayPlayers || []), ...(game.homeBench || []), ...(game.awayBench || [])].forEach(add));
     return [...names.values()].sort((a, b) => displayName(a).localeCompare(displayName(b), "pt-BR"));
   }
   function newsLocalInput(iso) {
@@ -3573,7 +3599,7 @@
   function renderNewsEditor() {
     const editor = $("newsEditor"), d = newsDraft;
     const option = (value, label, current) => '<option value="' + escapeHtml(value) + '"' + (String(current) === String(value) ? " selected" : "") + ">" + escapeHtml(label) + "</option>";
-    const games = [...(state.gameHistory || [])].sort((a, b) => new Date(b.finishedAt) - new Date(a.finishedAt));
+    const games = [...officialGames()].sort((a, b) => new Date(b.finishedAt) - new Date(a.finishedAt));
     const known = newsKnownPlayers();
     editor.innerHTML =
       '<div class="news-post-actions"><button type="button" class="button button-outline button-small" data-news-cancel>← Cancelar</button></div>' +
@@ -3596,7 +3622,7 @@
   // Rascunho em tom de resenha da pelada, a partir de um jogo do histórico.
   function newsGenerateFromGame() {
     newsCollect();
-    const game = (state.gameHistory || []).find((item) => item.id === newsDraft.match_id);
+    const game = officialGames().find((item) => item.id === newsDraft.match_id);
     if (!game) { notify("Escolha um jogo para gerar o texto.", true); return; }
     const home = gameTeamLabel(game, "home"), away = gameTeamLabel(game, "away"),
       hs = Number(game.homeScore) || 0, as = Number(game.awayScore) || 0,
@@ -3716,6 +3742,51 @@
   function pushIsIOS() {
     return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   }
+  // ---------- Instalar o app (Tela principal) ----------
+  // Android/PC: usa o convite guardado no layout (beforeinstallprompt). iPhone/iPad (Safari): passo a passo.
+  const INSTALL_LATER_KEY = "skalama-install-later", INSTALL_LATER_MS = 30 * 24 * 60 * 60 * 1000;
+  function installLaterActive() {
+    try { const at = Number(localStorage.getItem(INSTALL_LATER_KEY) || 0); return at > 0 && Date.now() - at < INSTALL_LATER_MS; } catch { return false; }
+  }
+  function installIosSafari() {
+    const ua = navigator.userAgent || "", ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    return ios && /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|GSA\//.test(ua);
+  }
+  function renderInstall() {
+    const box = $("homeInstall");
+    if (!box) return;
+    const prompt = window.__skInstall, ios = !prompt && installIosSafari(),
+      show = !pushStandalone() && !window.__skInstalled && !installLaterActive() && (!!prompt || ios);
+    box.hidden = !show;
+    if (!show) return;
+    $("homeInstallIos").hidden = !ios;
+    $("homeInstallBtn").hidden = ios;
+    box.classList.toggle("is-ios", ios);
+  }
+  async function installApp() {
+    const prompt = window.__skInstall;
+    if (!prompt) { renderInstall(); return; }
+    window.__skInstall = null;
+    try {
+      prompt.prompt();
+      const choice = await prompt.userChoice;
+      if (choice?.outcome === "accepted") { window.__skInstalled = true; notify("App da Skalama instalado."); }
+    } catch {}
+    renderInstall();
+  }
+  function setupInstall() {
+    if (!$("homeInstall")) return;
+    $("homeInstallBtn").addEventListener("click", installApp);
+    $("homeInstallLater").addEventListener("click", () => {
+      try { localStorage.setItem(INSTALL_LATER_KEY, String(Date.now())); } catch {}
+      renderInstall();
+    });
+    document.addEventListener("sk-installable", renderInstall);
+    document.addEventListener("sk-installed", renderInstall);
+    window.matchMedia?.("(display-mode: standalone)").addEventListener?.("change", renderInstall);
+    renderInstall();
+  }
+  setupInstall();
   function pushStandalone() {
     return !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
   }
@@ -4000,11 +4071,11 @@
     if (sl) return SUPER_COLORS[sl.color] || SUPER_COLORS[0];
     const index = TEAM_NAMES.indexOf(name);
     if (index >= 0) return teamColors[index];
-    const past = (state?.gameHistory || []).find((game) => (game.home === name && game.homeColor) || (game.away === name && game.awayColor));
+    const past = officialGames().find((game) => (game.home === name && game.homeColor) || (game.away === name && game.awayColor));
     return (past && (past.home === name ? past.homeColor : past.awayColor)) || teamColors[0];
   }
   function artGames() {
-    return [...(state?.gameHistory || [])].sort((a, b) => new Date(b.finishedAt) - new Date(a.finishedAt));
+    return [...officialGames()].sort((a, b) => new Date(b.finishedAt) - new Date(a.finishedAt));
   }
   // ---------- Carregamento: fontes e imagens antes de desenhar ----------
   function axFontsReady() {
@@ -4048,7 +4119,7 @@
     return date ? date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "";
   }
   function axScorerRows(scope) {
-    const games = (state.gameHistory || []).filter((game) =>
+    const games = officialGames().filter((game) =>
       scope === "superliga" ? !!game.superLigaId : scope === "temporada" ? !game.superLigaId : !game.superLigaId && !!state.roundId && game.roundId === state.roundId);
     const rows = new Map();
     for (const game of games)
@@ -4064,7 +4135,7 @@
   const AX_SCOPES = [["rodada", "Rodada"], ["temporada", "Temporada (Modo Liga)"], ["superliga", "Super Liga"]];
   function axNight() {
     const roundId = state.roundId || state.currentGame?.roundId,
-      games = roundId ? (state.gameHistory || []).filter((game) => game.roundId === roundId) : [];
+      games = roundId ? officialGames().filter((game) => game.roundId === roundId) : [];
     if (!games.length) return null;
     const totals = new Map();
     for (const game of games)
@@ -4789,8 +4860,12 @@
       const open = randomize(teams.filter((team) => team.players.length < 5));
       open[0].players.push(others.pop());
     }
+    // Rodada nova: jogos de treino que ainda existirem são apagados (com os gols deles).
+    const oldTraining = trainingGames();
+    if (oldTraining.length) await purgeTrainingGoals(oldTraining.map((game) => game.id));
     await saveState(
       {
+        ...(oldTraining.length ? { gameHistory: officialGames() } : {}),
         teams,
         teamLabels: {},
         lineups: Object.fromEntries(
@@ -5046,7 +5121,7 @@
     if ((!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 180)) { notify("A duração deve ser de 1 a 180 minutos.", true); return; }
     const now = nowMs(), duration = durationMinutes * 60;
     const fixture = superMode ? superFixture(pending.fixtureId) : null;
-    const currentGame = { id: crypto.randomUUID(), roundId: (fixture ? sl.id : state.roundId) || null, venue: String(state.venue || "").trim() || undefined, ...(fixture ? { superLigaId: sl.id, fixtureId: fixture.id, stage: fixture.stage, round: fixture.round } : {}), number: (state.gameHistory || []).length + 1, home, away, homePlayers, awayPlayers, homeStart: [...homePlayers], awayStart: [...awayPlayers], homeBench, awayBench, onCourt, substitutions: [], homeKeeper, awayKeeper, homeKeeperStart: homeKeeper, awayKeeperStart: awayKeeper, loans, timerMode: mode, durationMinutes: mode === "coca" ? null : durationMinutes, startedAt: now };
+    const currentGame = { id: crypto.randomUUID(), roundId: (fixture ? sl.id : state.roundId) || null, venue: String(state.venue || "").trim() || undefined, ...(fixture ? { superLigaId: sl.id, fixtureId: fixture.id, stage: fixture.stage, round: fixture.round } : {}), number: (state.trainingMode ? trainingGames() : officialGames()).length + 1, ...(state.trainingMode ? { training: true } : {}), home, away, homePlayers, awayPlayers, homeStart: [...homePlayers], awayStart: [...awayPlayers], homeBench, awayBench, onCourt, substitutions: [], homeKeeper, awayKeeper, homeKeeperStart: homeKeeper, awayKeeperStart: awayKeeper, loans, timerMode: mode, durationMinutes: mode === "coca" ? null : durationMinutes, startedAt: now };
     const order = [...(state.challengeQueue || []), pending.home, pending.away, ...teams.map((team) => team.name)].filter((name,index,all) => name && name !== home && name !== away && all.indexOf(name) === index);
     const nextQueue = order;
     const nextPending = { home, away };
@@ -5104,7 +5179,7 @@
     if (actualTeam !== expectedAuthorTeam || (assistedBy && (ownGoal || assistedBy === player || !lineupForTeam(scoringTeam, game).includes(assistedBy)))) { notify("Confira o autor e a assistência do gol.", true); return; }
     if ((shared && !canManageShared) || (!shared && window.LIGA_CONFIG?.publicReadOnly === true)) { notify("Somente o organizador pode registrar gols.", true); return; }
     const elapsed = Math.max(0, Math.floor(timerElapsed())), minute = Math.max(1, Math.ceil(elapsed / 60));
-    const goal = { id: crypto.randomUUID(), player_name: player, team_name: actualTeam, score_team_name: scoringTeam, own_goal: ownGoal, assisted_by: assistedBy, match_number: game.number, game_id: game.id, minute };
+    const goal = { id: crypto.randomUUID(), player_name: player, team_name: actualTeam, score_team_name: scoringTeam, own_goal: ownGoal, assisted_by: assistedBy, match_number: game.number, game_id: game.id, minute, ...(game.training ? { training: true } : {}) };
     goalSubmitting = true; $("addGoal").disabled = true;
     try {
       if (shared) {
@@ -5232,7 +5307,7 @@
       try {
         const history = [...(state.gameHistory || []), entry],
           sl = state.superLiga,
-          sameLeague = sl && sl.id === current.superLigaId,
+          sameLeague = !current.training && sl && sl.id === current.superLigaId,
           nextSl = sameLeague ? superAfterGame(sl, current, entry, history) : sl,
           final = nextSl?.fixtures?.find((fixture) => fixture.stage === "final"),
           finalCreated = sameLeague && final && !sl.fixtures.some((fixture) => fixture.stage === "final"),
@@ -5248,8 +5323,8 @@
                 ? " Próximo: " + teamLabel(upcoming.home) + " × " + teamLabel(upcoming.away) + "."
                 : "";
         await saveState(
-          { gameHistory: history, currentGame: null, ...(sameLeague ? { superLiga: nextSl } : {}), timer: freshTimer("coca"), shootout: null, incidents: [] },
-          "Jogo " + current.number + " encerrado" + (winner === "Empate" ? " empatado" : penalties ? " nos pênaltis" : "") + "." + ending,
+          { gameHistory: history, currentGame: null, ...(sameLeague ? { superLiga: nextSl } : current.training && sl?.pending ? { superLiga: { ...sl, pending: { ...sl.pending, prepared: false } } } : {}), timer: freshTimer("coca"), shootout: null, incidents: [] },
+          (current.training ? "Treino " + current.number + " encerrado" + (winner === "Empate" ? " empatado" : penalties ? " nos pênaltis" : "") + ". Não conta em nada." : "Jogo " + current.number + " encerrado" + (winner === "Empate" ? " empatado" : penalties ? " nos pênaltis" : "") + "." + ending),
         );
       } finally { gameFinishing = false; renderTimer(); }
       return;
@@ -5278,7 +5353,7 @@
         shootout: null,
         incidents: [],
       },
-      "Jogo " +
+      (current.training ? "Treino " : "Jogo ") +
         current.number +
         " encerrado" +
         (winner === "Empate" ? " empatado" : penalties ? " nos pênaltis" : "") +
@@ -5411,7 +5486,7 @@
     return mode === "coca" ? "Modo Super Liga" : "Modo Liga";
   }
   function lvGameOfNight(game) {
-    const same = (state.gameHistory || []).filter((item) => game.roundId ? item.roundId === game.roundId : !item.superLigaId).length;
+    const same = (state.gameHistory || []).filter((item) => !!item.training === !!game.training && (game.roundId ? item.roundId === game.roundId : !item.superLigaId)).length;
     return same + 1;
   }
   function lvDurationMin(game) {
@@ -5433,7 +5508,7 @@
   }
   // Último jogo encerrado do modo que está valendo agora (para o card ENCERRADO).
   function lvLastGame() {
-    const mode = activeLiveMode(), history = state.gameHistory || [];
+    const mode = activeLiveMode(), history = isEditLocked() ? officialGames() : state.gameHistory || [];
     const list = mode === "coca"
       ? history.filter((game) => game.superLigaId && game.superLigaId === state.superLiga?.id)
       : history.filter((game) => !game.superLigaId && (!state.roundId || game.roundId === state.roundId));
@@ -5456,7 +5531,7 @@
           : nextTeams.length ? "Próximo: " + nextTeams.map(teamLabel).join(" e ") + (nextTeams.length > 1 ? " entram" : " entra") + " em quadra" : ""
         : "",
       col = (side) => '<div class="lv-fcol' + (winSide && winSide !== side ? " is-lose" : "") + '">' + lvCrest(game[side], "l") + "<strong>" + escapeHtml(gameTeamLabel(game, side)) + "</strong></div>";
-    return '<section class="lv-card is-ended" aria-label="Jogo encerrado"><div class="lv-strip"><span class="lv-tag">ENCERRADO</span><span>' + lvModeName(game.timerMode) + " · Jogo " + game.number + "</span></div>" +
+    return '<section class="lv-card is-ended" aria-label="Jogo encerrado"><div class="lv-strip"><span class="lv-tag">' + (game.training ? "TREINO ENCERRADO" : "ENCERRADO") + "</span><span>" + lvModeName(game.timerMode) + (game.training ? " · Treino " : " · Jogo ") + game.number + "</span></div>" +
       '<div class="lv-final">' + col("home") + '<div class="lv-fscore"><b class="' + (winSide === "away" ? "is-lose" : "") + '">' + (Number(game.homeScore) || 0) + '</b><i aria-hidden="true">×</i><b class="' + (winSide === "home" ? "is-lose" : "") + '">' + (Number(game.awayScore) || 0) + "</b></div>" + col("away") + "</div>" +
       '<p class="lv-pill">' + escapeHtml(lvResultText(game)) + "</p>" + (nextLine ? '<p class="lv-nextline">' + escapeHtml(nextLine) + "</p>" : "") + "</section>";
   }
@@ -5499,7 +5574,7 @@
     const locked = isEditLocked();
     box.hidden = !locked;
     if (!locked) return;
-    const game = state.currentGame, pending = currentPending(), last = lvLastGame();
+    const game = state.currentGame && !state.currentGame.training ? state.currentGame : null, pending = currentPending(), last = lvLastGame();
     let html;
     if (game) html = lvLiveCard(game);
     else if (pending?.home && pending?.away && (pending.prepared || !last)) html = lvNextCard(pending.home, pending.away);
@@ -5554,9 +5629,73 @@
     // Mais recente primeiro; no mesmo minuto e horário, o último registrado fica em cima.
     return items.sort((a, b) => b.minute - a.minute || time(b.at) - time(a.at) || b.seq - a.seq);
   }
+  // ---------- Modo treino (painel do organizador) ----------
+  function lvTrainHtml() {
+    const on = !!state.trainingMode, list = trainingGames(),
+      row = (game) => '<li><span class="lv-train-tag">TREINO</span><span class="lv-train-teams">' + escapeHtml(gameTeamLabel(game, "home")) + " <b>" + Number(game.homeScore || 0) + " × " + Number(game.awayScore || 0) + "</b> " + escapeHtml(gameTeamLabel(game, "away")) + "</span></li>";
+    return '<div class="lv-train-row"><div class="lv-train-text"><strong id="lvTrainLabel">Modo treino</strong><small id="lvTrainHelp">Jogos de teste não contam em nada e só você vê.</small></div>' +
+      '<button type="button" class="lv-switch" role="switch" aria-checked="' + on + '" aria-labelledby="lvTrainLabel" aria-describedby="lvTrainHelp" data-lv-train-toggle><span class="lv-switch-knob" aria-hidden="true"></span><span class="lv-switch-text" aria-hidden="true">' + (on ? "LIGADO" : "DESLIGADO") + "</span></button></div>" +
+      (list.length ? '<div class="lv-train-list"><h3 class="lv-label">JOGOS DE TREINO (' + list.length + ')</h3><ul>' + list.map(row).join("") + '</ul><button type="button" class="lv-btn lv-train-delete" data-lv-train-delete>🗑 Apagar ' + (list.length === 1 ? "o jogo de treino" : "os " + list.length + " jogos de treino") + "</button></div>" : "");
+  }
+  // Apaga os gols de jogos de treino na tabela goals (ou no modo local).
+  async function purgeTrainingGoals(ids) {
+    if (!ids.length) return;
+    if (shared) {
+      const { error } = await client.from("goals").delete().in("game_id", ids);
+      if (error) throw error;
+      await refreshGoals();
+    } else goals = goals.filter((goal) => !ids.includes(goal.game_id));
+  }
+  async function setGoalsTraining(game, training) {
+    if (!game) return;
+    if (shared) {
+      const { error } = await client.from("goals").update({ training, match_number: game.number }).eq("game_id", game.id);
+      if (error) throw error;
+      await refreshGoals();
+    } else goals = goals.map((goal) => goal.game_id === game.id ? { ...goal, training, match_number: game.number } : goal);
+  }
+  async function toggleTrainingMode() {
+    const turnOn = !state.trainingMode, game = state.currentGame;
+    let nextGame = game;
+    if (turnOn && game && !game.training) nextGame = { ...game, training: true, number: trainingGames().length + 1 };
+    if (!turnOn && game?.training) {
+      const counts = await askConfirm({
+        title: "O jogo atual continua como treino?",
+        message: "Ele começou no modo treino. Se passar a valer, entra no histórico, na classificação e nos rankings como jogo oficial. Tocar fora ou em Cancelar mantém como treino.",
+        confirmText: "Passar a valer",
+        tone: "green",
+      });
+      if (counts) { nextGame = { ...game, number: officialGames().length + 1 }; delete nextGame.training; }
+    }
+    try {
+      if (nextGame !== game) await setGoalsTraining(nextGame, !!nextGame.training);
+    } catch (error) { notify("Não deu para atualizar os gols do jogo: " + error.message, true); return; }
+    await saveState(
+      { trainingMode: turnOn, ...(nextGame !== game ? { currentGame: nextGame } : {}) },
+      turnOn ? "Modo treino ligado. Os jogos de agora não contam em nada." : nextGame !== game ? "Modo treino desligado. O jogo atual passou a valer." : "Modo treino desligado.",
+    );
+  }
+  async function deleteTrainingGames() {
+    const list = trainingGames();
+    if (!list.length) return;
+    const ok = await askConfirm({
+      title: list.length === 1 ? "Apagar o jogo de treino?" : "Apagar os " + list.length + " jogos de treino?",
+      message: "Apaga só os jogos marcados como TREINO e os gols deles. Os jogos oficiais, a classificação e os rankings não mudam.",
+      confirmText: "Apagar",
+      tone: "red",
+    });
+    if (!ok) return;
+    const ids = list.map((game) => game.id);
+    try { await purgeTrainingGoals(ids); } catch (error) { notify("Não deu para apagar os gols de treino: " + error.message, true); return; }
+    await saveState({ gameHistory: (state.gameHistory || []).filter((game) => !ids.includes(game.id)) }, list.length === 1 ? "Jogo de treino apagado." : list.length + " jogos de treino apagados.");
+  }
   function renderOrganizer() {
     const org = $("lvOrg");
     if (!org || isEditLocked()) return;
+    const trainHtml = lvTrainHtml();
+    if (lvUI.marks.lvTrain !== trainHtml) { lvUI.marks.lvTrain = trainHtml; $("lvTrain").innerHTML = trainHtml; }
+    $("lvTrainStripe").hidden = !state.trainingMode;
+    org.classList.toggle("is-training", !!state.trainingMode);
     const game = state.currentGame, pending = currentPending(), { home, away } = lvMatchTeams(), step = lvStep(), last = lvLastGame(),
       steps = ["prep", "play", "end"], stepIndex = steps.indexOf(step);
     org.querySelectorAll("#lvSteps li").forEach((li, index) => {
@@ -5910,6 +6049,8 @@
       const target = event.target.closest("button");
       if (!target || target.disabled) return;
       const data = target.dataset;
+      if ("lvTrainToggle" in data) { toggleTrainingMode(); return; }
+      if ("lvTrainDelete" in data) { deleteTrainingGames(); return; }
       if (data.lvPick) lvOpenSheet({ kind: "pick", side: data.lvPick });
       else if (target.id === "lvAdjustBtn") lvOpenSheet({ kind: "adjust", team: lvMatchTeams().home });
       else if (data.lvDuration) {

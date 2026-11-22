@@ -47,7 +47,10 @@ export default function RootLayout({ children }) {
         <link rel="stylesheet" href={`/styles.css?v=${assetVersion}`} />
         <script
           dangerouslySetInnerHTML={{
-            __html: `window.LIGA_CONFIG=${JSON.stringify(ligaConfig).replace(/</g, '\\u003c')};`,
+            __html: `window.LIGA_CONFIG=${JSON.stringify(ligaConfig).replace(/</g, '\\u003c')};` +
+              // Instalar o app: guarda o convite do navegador para o botão "Instalar" da Tela principal.
+              "window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__skInstall=e;document.dispatchEvent(new Event('sk-installable'))});" +
+              "window.addEventListener('appinstalled',function(){window.__skInstall=null;window.__skInstalled=true;document.dispatchEvent(new Event('sk-installed'))});",
           }}
         />
       </head>
