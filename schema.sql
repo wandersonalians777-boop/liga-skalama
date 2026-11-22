@@ -31,8 +31,12 @@ do $$ declare p record; begin
   end loop;
 end $$;
 create policy "organizer can read full league state" on public.league_night for select to authenticated using (exists (select 1 from public.league_admins a where a.user_id=auth.uid()));
--- Gols de jogos de treino (training = true) só o organizador lê.
-create policy "public can read goals" on public.goals for select to anon, authenticated using (not training or exists (select 1 from public.league_admins a where a.user_id = (select auth.uid())));
+-- 2) Gols de treino (training = true): visitante (anon) não lê; organizador lê tudo.
+-- A regra do anon NÃO pode citar league_admins (anon não tem acesso a essa tabela e a consulta inteira falharia).
+drop policy if exists "public can read goals" on public.goals;
+create policy "public can read goals" on public.goals for select to anon using (not training);
+create policy "logged users read official goals and admins read all" on public.goals for select to authenticated
+  using (not training or exists (select 1 from public.league_admins a where a.user_id = (select auth.uid())));
 create policy "organizer can read own access" on public.league_admins for select to authenticated using (user_id = auth.uid());
 create policy "organizer can insert league night" on public.league_night for insert to authenticated with check (exists (select 1 from public.league_admins a where a.user_id=auth.uid()));
 create policy "organizer can update league night" on public.league_night for update to authenticated using (exists (select 1 from public.league_admins a where a.user_id=auth.uid())) with check (exists (select 1 from public.league_admins a where a.user_id=auth.uid()));

@@ -3,14 +3,12 @@
 -- 1) Gols de jogos de treino ficam marcados na tabela goals.
 alter table public.goals add column if not exists training boolean not null default false;
 
--- 2) Visitantes não leem gols de treino; o organizador continua lendo tudo.
+-- 2) Gols de treino (training = true): visitante (anon) não lê; organizador lê tudo.
+-- A regra do anon NÃO pode citar league_admins (anon não tem acesso a essa tabela e a consulta inteira falharia).
 drop policy if exists "public can read goals" on public.goals;
-create policy "public can read goals" on public.goals
-  for select to anon, authenticated
-  using (
-    not training
-    or exists (select 1 from public.league_admins a where a.user_id = (select auth.uid()))
-  );
+create policy "public can read goals" on public.goals for select to anon using (not training);
+create policy "logged users read official goals and admins read all" on public.goals for select to authenticated
+  using (not training or exists (select 1 from public.league_admins a where a.user_id = (select auth.uid())));
 
 -- 3) A view pública tira os jogos de treino do histórico e esconde o jogo atual quando ele é de treino.
 create or replace view public.league_public with (security_barrier = true, security_invoker = false) as
