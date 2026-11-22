@@ -4369,6 +4369,8 @@
     return '<a class="plink" href="#jogador/' + pSlug(name) + '">' + escapeHtml(label) + "</a>";
   }
   const PF = { slug: "", mode: "", fromSite: false, lastFocus: null };
+  // Fotos dos jogadores: liga quando a migração supabase/migrations/20261124_fotos_jogadores.sql for aplicada.
+  const PLAYER_PHOTOS_ENABLED = false;
   const monthKeyOf = (game) => { const d = hxTime(game.finishedAt); return d ? d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") : ""; };
   const monthLabel = (key) => { const [y, m] = key.split("-").map(Number); return new Date(y, m - 1, 15).toLocaleDateString("pt-BR", { month: "long", year: "numeric" }).replace(/^./, (c) => c.toUpperCase()); };
   const fmt1 = (value) => Number(value || 0).toFixed(1).replace(".", ",");
@@ -4432,7 +4434,7 @@
     return out;
   }
   function playerPhotoUrl(slug) {
-    const v = state?.playerPhotos?.[slug], base = window.LIGA_CONFIG?.supabaseUrl;
+    const v = PLAYER_PHOTOS_ENABLED && state?.playerPhotos?.[slug], base = window.LIGA_CONFIG?.supabaseUrl;
     return v && base ? base.replace(/\/$/, "") + "/storage/v1/object/public/player-photos/" + slug + ".webp?v=" + encodeURIComponent(v) : "";
   }
   function playerCurrentTeam(slug) {
@@ -4481,7 +4483,7 @@
         '<section class="pf-card" aria-labelledby="pfBarsTitle"><h3 id="pfBarsTitle" class="pf-h">NOTAS DOS ÚLTIMOS JOGOS</h3>' + bars + "</section>" +
         '<section class="pf-card" aria-labelledby="pfBestTitle"><h3 id="pfBestTitle" class="pf-h">MELHOR JOGO</h3>' + bestHtml + "</section>") +
       '<section class="pf-card" aria-labelledby="pfAchTitle"><h3 id="pfAchTitle" class="pf-h">CONQUISTAS</h3>' + (ach.length ? '<ul class="pf-ach">' + ach.map(([icon, label, n]) => '<li><span aria-hidden="true">' + icon + "</span><strong>" + label + "</strong>" + (n > 1 ? "<small>×" + n + "</small>" : "") + "</li>").join("") + "</ul>" : '<p class="pf-empty">Ainda sem conquistas. Bora!</p>') + "</section>" +
-      (!isEditLocked() && shared && client ? '<section class="pf-card pf-admin"><h3 class="pf-h">FOTO (ORGANIZADOR)</h3><p class="pf-empty">A foto é reduzida para 400×400 e guardada em WebP.</p><label class="button button-outline pf-upload">Escolher foto<input type="file" accept="image/*" id="pfPhotoInput" hidden></label>' + (photo ? '<button type="button" class="button button-outline" data-pf-photo-remove>Tirar foto</button>' : "") + '<p class="pv-msg" id="pfPhotoMsg" role="status"></p></section>' : "") +
+      (PLAYER_PHOTOS_ENABLED && !isEditLocked() && shared && client ? '<section class="pf-card pf-admin"><h3 class="pf-h">FOTO (ORGANIZADOR)</h3><p class="pf-empty">A foto é reduzida para 400×400 e guardada em WebP.</p><label class="button button-outline pf-upload">Escolher foto<input type="file" accept="image/*" id="pfPhotoInput" hidden></label>' + (photo ? '<button type="button" class="button button-outline" data-pf-photo-remove>Tirar foto</button>' : "") + '<p class="pv-msg" id="pfPhotoMsg" role="status"></p></section>' : "") +
       "</div>";
   }
   function openProfile(slug, fromSite) {
