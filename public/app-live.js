@@ -1126,7 +1126,7 @@
     box.hidden = !elUI.reorder || !!state.currentGame;
     reorder.textContent = elUI.reorder ? "✓ Pronto" : "⇅ Trocar ordem";
     box.innerHTML = '<p class="el-lead">Use as setas para escolher quem começa. Os dois primeiros fazem o jogo 1.</p><ol>' + order.map((team, index) => '<li><span class="el-pos">' + (index + 1) + "</span>" + elCrest(team, "s") + "<strong>" + escapeHtml(teamLabel(team)) + '</strong><button type="button" class="el-btn el-white el-small" data-el-move="up" data-el-index="' + index + '" aria-label="Subir ' + escapeHtml(teamLabel(team)) + '"' + (index === 0 ? " disabled" : "") + '>↑</button><button type="button" class="el-btn el-white el-small" data-el-move="down" data-el-index="' + index + '" aria-label="Descer ' + escapeHtml(teamLabel(team)) + '"' + (index === order.length - 1 ? " disabled" : "") + ">↓</button></li>").join("") + "</ol>";
-    $("elRedraw").innerHTML = '<button type="button" class="el-btn el-white" data-el-redraw>↻ Sortear de novo</button>';
+    $("elRedraw").innerHTML = '<button type="button" class="el-btn el-white" data-el-redraw>' + (drawMode() === "balanced" ? "↻ Sortear de novo (equilibrado)" : "↻ Sortear de novo") + "</button>";
     elSteps();
   }
 
@@ -1594,7 +1594,7 @@
                 '"><span class="rank">' +
                 String(i + 1).padStart(2, "0") +
                 "</span><span>" +
-                escapeHtml(displayName(r.name)) +
+                plink(r.name) +
                 " <small>" +
                 r.games +
                 " " +
@@ -1638,7 +1638,7 @@
               '"><span class="rank">' +
               String(i + 1).padStart(2, "0") +
               "</span><span>" +
-              escapeHtml(displayName(r.name)) +
+              plink(r.name) +
               " <small>" +
               r.games +
               " " +
@@ -1723,8 +1723,8 @@
           : "O score será calculado após as partidas.";
         return;
       }
-      $(nameId).textContent = result.rows
-        .map((row) => displayName(row.player))
+      $(nameId).innerHTML = result.rows
+        .map((row) => plink(row.player))
         .join(" · ");
       const row = result.rows[0],
         score = row.average.toFixed(1).replace(".", ",");
@@ -1808,14 +1808,14 @@
     const goalLeaders = goalRows.length
       ? goalRows
           .filter((row) => row[1] === goalRows[0][1])
-          .map((row) => escapeHtml(displayName(row[0])))
+          .map((row) => plink(row[0]))
           .join(" · ")
       : "—";
     const scoreLeaders = (rows) =>
       rows.length
         ? rows
             .filter((row) => row.average === rows[0].average)
-            .map((row) => escapeHtml(displayName(row.player)))
+            .map((row) => plink(row.player))
             .join(" · ")
         : "—";
     const scorerValue = goalRows.length
@@ -1882,7 +1882,7 @@
     $("individualStats").innerHTML = '<table class="hx-stats"><thead><tr><th scope="col">Jogador</th><th scope="col">Jogos</th><th scope="col">Score médio</th><th scope="col">Gols</th><th scope="col">Assist.</th><th scope="col">Sofridos</th><th scope="col"><abbr title="Vitórias · Empates · Derrotas">V · E · D</abbr></th></tr></thead><tbody>' +
       rows.map((row) => {
         const isKeeper = row.keeperGames > row.games - row.keeperGames;
-        return '<tr><th scope="row"><span class="hx-player">' + hxCrest(row.teamKey, row.teamLabel, "sm") + '<span class="hx-pinfo"><strong>' + escapeHtml(displayName(row.player)) + (isKeeper ? ' <b class="hx-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "</strong><small>" + escapeHtml((row.teamLabel || "") + " · " + roleText(row)) + "</small></span></span></th>" +
+        return '<tr><th scope="row"><span class="hx-player">' + hxCrest(row.teamKey, row.teamLabel, "sm") + '<span class="hx-pinfo"><strong>' + plink(row.player) + (isKeeper ? ' <b class="hx-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "</strong><small>" + escapeHtml((row.teamLabel || "") + " · " + roleText(row)) + "</small></span></span></th>" +
           '<td class="hx-n">' + row.games + '</td><td class="hx-n' + lead(row.avg, topAvg) + '">' + row.avg.toFixed(1).replace(".", ",") + '</td><td class="hx-n' + lead(row.goals, topGoals) + '">' + row.goals + '</td><td class="hx-n' + lead(row.assists, topAssists) + '">' + row.assists + '</td><td class="hx-n">' + row.goalsAgainst + "</td>" +
           '<td><span class="hx-ved" aria-label="' + row.wins + " vitórias, " + row.draws + " empates, " + row.losses + ' derrotas"><i class="v">' + row.wins + '</i><i class="e">' + row.draws + '</i><i class="d">' + row.losses + "</i></span></td></tr>";
       }).join("") + "</tbody></table>";
@@ -2011,13 +2011,13 @@
     return merged.map((item) => {
       if (item.kind === "goal") {
         const goal = item.goal, times = item.count > 1 ? " ×" + item.count + (item.count === 3 ? " · hat-trick" : "") : "";
-        return { ...item, html: '<span class="hx-ev hx-ev-goal">' + HX_BALL + '<span><span class="sr-only">Gol: </span><strong>' + escapeHtml(displayName(goal.player || "Gol")) + escapeHtml(times) + "</strong>" + (goal.ownGoal ? ' <em class="hx-own">contra</em>' : "") + (item.assists.length ? '<small>assist. ' + item.assists.map((name) => escapeHtml(displayName(name))).join(", ") + "</small>" : "") + "</span></span>" };
+        return { ...item, html: '<span class="hx-ev hx-ev-goal">' + HX_BALL + '<span><span class="sr-only">Gol: </span><strong>' + plink(goal.player || "Gol") + escapeHtml(times) + "</strong>" + (goal.ownGoal ? ' <em class="hx-own">contra</em>' : "") + (item.assists.length ? '<small>assist. ' + item.assists.map((name) => plink(name)).join(", ") + "</small>" : "") + "</span></span>" };
       }
       const sub = item.sub, sideSpells = spells[item.side], goalie = sub.keeperIn || sub.in, toGoal = sub.keeper || sideSpells.some((spell) => spell.player === goalie && spell.minute === (Number(sub.minute) || 0) && spell.out === sub.out),
         wasKeeper = toGoal && sideSpells.some((spell) => spell.player === goalie && spell.minute < (Number(sub.minute) || 0)),
         goalText = toGoal ? (wasKeeper ? " volta pro gol" : " vai pro gol") : "",
         inText = displayName(sub.in) + (goalie === sub.in ? goalText : "");
-      return { ...item, html: '<span class="hx-ev hx-ev-sub">' + HX_SWAP + '<span><span class="sr-only">Substituição: </span><strong class="hx-in"><span aria-hidden="true">↑ </span><span class="sr-only">entra </span>' + escapeHtml(inText) + '</strong><strong class="hx-out"><span aria-hidden="true">↓ </span><span class="sr-only">sai </span>' + escapeHtml(displayName(sub.out)) + "</strong>" + (goalie !== sub.in && toGoal ? "<small><b class=\"hx-g\" title=\"Goleiro\" aria-label=\"Goleiro\">G</b> " + escapeHtml(displayName(goalie)) + goalText + "</small>" : "") + "</span></span>" };
+      return { ...item, html: '<span class="hx-ev hx-ev-sub">' + HX_SWAP + '<span><span class="sr-only">Substituição: </span><strong class="hx-in"><span aria-hidden="true">↑ </span><span class="sr-only">entra </span>' + plink(sub.in, inText) + '</strong><strong class="hx-out"><span aria-hidden="true">↓ </span><span class="sr-only">sai </span>' + plink(sub.out) + "</strong>" + (goalie !== sub.in && toGoal ? "<small><b class=\"hx-g\" title=\"Goleiro\" aria-label=\"Goleiro\">G</b> " + plink(goalie) + goalText + "</small>" : "") + "</span></span>" };
     });
   }
   function hxPanel(game, key, title, html) {
@@ -2094,15 +2094,15 @@
       const team = key(item.side), crest = hxCrest(team, label(item.side), "xs");
       if (item.kind === "goal") {
         const goal = item.goal, times = item.count > 1 ? " ×" + item.count : "";
-        return { cls: "", html: crest + '<span class="hx-tl-txt"><b><span aria-hidden="true">⚽ </span><span class="sr-only">Gol: </span>' + escapeHtml(displayName(goal.player || "Gol")) + escapeHtml(times) + (goal.ownGoal ? " (contra)" : "") + "</b>" + (item.assists.length ? '<small>assist. ' + item.assists.map((name) => escapeHtml(displayName(name))).join(", ") + "</small>" : "") + "</span>" };
+        return { cls: "", html: crest + '<span class="hx-tl-txt"><b><span aria-hidden="true">⚽ </span><span class="sr-only">Gol: </span>' + plink(goal.player || "Gol") + escapeHtml(times) + (goal.ownGoal ? " (contra)" : "") + "</b>" + (item.assists.length ? '<small>assist. ' + item.assists.map((name) => plink(name)).join(", ") + "</small>" : "") + "</span>" };
       }
       if (item.kind === "sub") {
         const sub = item.sub, sideSpells = spells[item.side], goalie = sub.keeperIn || sub.in,
           toGoal = sub.keeper || sideSpells.some((spell) => spell.player === goalie && spell.minute === (Number(sub.minute) || 0) && spell.out === sub.out);
-        return { cls: " is-sub", html: crest + '<span class="hx-tl-txt"><b><span aria-hidden="true">⇄ </span><span class="sr-only">Substituição: </span><span class="hx-in"><span aria-hidden="true">↑ </span><span class="sr-only">entra </span>' + escapeHtml(displayName(sub.in)) + '</span> <span class="hx-out"><span aria-hidden="true">↓ </span><span class="sr-only">sai </span>' + escapeHtml(displayName(sub.out)) + "</span></b>" + (toGoal ? '<small class="hx-in"><span aria-hidden="true">↑ </span>' + escapeHtml(displayName(goalie)) + " vai pro gol</small>" : "") + "</span>" };
+        return { cls: " is-sub", html: crest + '<span class="hx-tl-txt"><b><span aria-hidden="true">⇄ </span><span class="sr-only">Substituição: </span><span class="hx-in"><span aria-hidden="true">↑ </span><span class="sr-only">entra </span>' + plink(sub.in) + '</span> <span class="hx-out"><span aria-hidden="true">↓ </span><span class="sr-only">sai </span>' + plink(sub.out) + "</span></b>" + (toGoal ? '<small class="hx-in"><span aria-hidden="true">↑ </span>' + plink(goalie) + " vai pro gol</small>" : "") + "</span>" };
       }
       const w = item.warn;
-      return { cls: " is-warn", html: crest + '<span class="hx-tl-txt"><b><span aria-hidden="true">⚠ </span><span class="sr-only">Advertência: </span>' + escapeHtml(displayName(w.player || "")) + " · " + escapeHtml(hxWarnLabel(w)) + "</b>" + (w.note ? "<small>" + escapeHtml(w.note) + "</small>" : "") + "</span>" };
+      return { cls: " is-warn", html: crest + '<span class="hx-tl-txt"><b><span aria-hidden="true">⚠ </span><span class="sr-only">Advertência: </span>' + plink(w.player || "") + " · " + escapeHtml(hxWarnLabel(w)) + "</b>" + (w.note ? "<small>" + escapeHtml(w.note) + "</small>" : "") + "</span>" };
     };
     // Empilha as fichas do mesmo lado que ficariam encostadas (mesmo minuto ou muito perto).
     const gap = Math.max(1, end * 0.24), lanes = { home: [], away: [] };
@@ -2180,7 +2180,7 @@
           ].join(""),
           conceded = isKeeper && p ? Number(p.goalsAgainst) || 0 : null,
           note = p ? '<b class="hx-note' + (best != null && Number(p.score) === best ? " is-best" : "") + '" aria-label="Nota ' + Number(p.score).toFixed(1).replace(".", ",") + '">' + Number(p.score).toFixed(1).replace(".", ",") + "</b>" : "";
-        return '<li class="hx-lu-p' + (isEntered ? " is-entered" : "") + '"><span class="hx-pname">' + escapeHtml(displayName(name)) + "</span>" +
+        return '<li class="hx-lu-p' + (isEntered ? " is-entered" : "") + '"><span class="hx-pname">' + plink(name) + "</span>" +
           (isKeeper ? '<b class="hx-g" title="Goleiro" aria-label="Goleiro">G</b>' + (conceded != null ? '<small class="hx-conc">' + conceded + (conceded === 1 ? " sofrido" : " sofridos") + "</small>" : "") : "") +
           '<span class="hx-pstats">' + stats + "</span>" + note + "</li>";
       };
@@ -2192,7 +2192,7 @@
   function hxFooter(game, shoot) {
     const warnings = hxWarnings(game),
       warningRows = warnings.length
-        ? '<ul class="hx-warn-list">' + warnings.map((item) => "<li><span>" + escapeHtml(hxWarnLabel(item)) + " · " + escapeHtml(displayName(item.player || "")) + (item.note ? ' <small>' + escapeHtml(item.note) + "</small>" : "") + "</span><b>" + (Number(item.minute) || 0) + "′</b></li>").join("") + "</ul>"
+        ? '<ul class="hx-warn-list">' + warnings.map((item) => "<li><span>" + escapeHtml(hxWarnLabel(item)) + " · " + plink(item.player || "") + (item.note ? ' <small>' + escapeHtml(item.note) + "</small>" : "") + "</span><b>" + (Number(item.minute) || 0) + "′</b></li>").join("") + "</ul>"
         : '<p class="empty-state">Sem advertências ou ocorrências registradas.</p>',
       shootRows = shoot && (shoot.kicks || []).length ? '<h5 class="hx-sub-title">Pênaltis</h5><ul class="hx-warn-list">' + shoot.kicks.map((kick, index) => "<li><span>" + (index + 1) + ". " + escapeHtml(teamName(game, kick.team)) + " · " + escapeHtml(kick.player ? displayName(kick.player) : "Batedor não identificado") + "</span><b>" + (kick.scored ? "✓ Gol" : "✗ Errou") + "</b></li>").join("") + "</ul>" : "",
       panel = hxPanel(game, "warnings", "Advertências e ocorrências", warningRows + shootRows);
@@ -2337,7 +2337,7 @@
               '"><span class="rank">' +
               String(index + 1).padStart(2, "0") +
               "</span><span>" +
-              escapeHtml(displayName(name)) +
+              plink(name) +
               " <small>" +
               played +
               " " +
@@ -2682,7 +2682,7 @@
   }
   // Rankings só da Super Liga atual (fase de todos contra todos e final).
   function superRankingRow(index, name, detail, value) {
-    return '<div class="ranking-row' + (index < 3 ? " top-rank top-rank-" + (index + 1) : "") + '"><span class="rank">' + String(index + 1).padStart(2, "0") + "</span><span>" + escapeHtml(displayName(name)) + " <small>" + escapeHtml(detail) + "</small></span><strong>" + value + "</strong></div>";
+    return '<div class="ranking-row' + (index < 3 ? " top-rank top-rank-" + (index + 1) : "") + '"><span class="rank">' + String(index + 1).padStart(2, "0") + "</span><span>" + plink(name) + " <small>" + escapeHtml(detail) + "</small></span><strong>" + value + "</strong></div>";
   }
   function superRankingData() {
     const games = officialGames().filter((game) => game.superLigaId),
@@ -2762,7 +2762,7 @@
   function slxGoalList(game, key) {
     const goals = (game.goals || []).filter((goal) => (goal.scoringTeam || goal.team) === key).sort((a, b) => (Number(a.minute) || 0) - (Number(b.minute) || 0));
     return goals.length
-      ? goals.map((goal) => "<li><b>" + slxMinute(goal.minute) + "</b> " + escapeHtml(displayName(goal.player || "Gol")) + (goal.ownGoal ? " <small>(contra)</small>" : "") + "</li>").join("")
+      ? goals.map((goal) => "<li><b>" + slxMinute(goal.minute) + "</b> " + plink(goal.player || "Gol") + (goal.ownGoal ? " <small>(contra)</small>" : "") + "</li>").join("")
       : '<li class="slx-nogoal">Sem gols</li>';
   }
   function slxPlayerRow(name, role, lineup) {
@@ -2770,7 +2770,7 @@
       marks = lineup.events(name).map((item) => item.kind === "out"
         ? '<span class="slx-ev slx-ev-out">↓ saiu ' + slxMinute(item.minute) + "</span>"
         : '<span class="slx-ev slx-ev-in">↑ entrou ' + slxMinute(item.minute) + "</span>").join("");
-    return '<li><span class="slx-pname">' + escapeHtml(displayName(name)) + (isKeeper ? ' <b class="slx-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "</span>" + marks +
+    return '<li><span class="slx-pname">' + plink(name) + (isKeeper ? ' <b class="slx-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "</span>" + marks +
       '<span class="slx-role ' + (role === "titular" ? "is-tit" : "is-res") + '">' + (role === "titular" ? "TITULAR" : "RESERVA") + "</span></li>";
   }
   function slxTeamCard(game, side, isChampion) {
@@ -2787,7 +2787,7 @@
   function slxRankCard(title, rows, detail, value, emptyText) {
     if (!rows.length) return '<article class="slx-rank-card"><h4>' + title + '</h4><p class="empty-state">' + escapeHtml(emptyText || "Aparece depois do primeiro jogo da Super Liga.") + '</p></article>';
     return '<article class="slx-rank-card"><h4>' + title + '</h4><ol class="slx-rank-list">' + rows.map((row, index) =>
-      '<li class="slx-rank-' + (index < 3 ? index + 1 : "n") + '"><span class="slx-pos">' + (index + 1) + '</span><span class="slx-who"><strong>' + escapeHtml(displayName(row.name)) + "</strong><small>" + escapeHtml(detail(row)) + '</small></span><b class="slx-val">' + value(row) + "</b></li>").join("") + "</ol></article>";
+      '<li class="slx-rank-' + (index < 3 ? index + 1 : "n") + '"><span class="slx-pos">' + (index + 1) + '</span><span class="slx-who"><strong>' + plink(row.name) + "</strong><small>" + escapeHtml(detail(row)) + '</small></span><b class="slx-val">' + value(row) + "</b></li>").join("") + "</ol></article>";
   }
   function slxDateText(game) {
     const date = game.matchDate ? new Date(game.matchDate + "T12:00:00") : new Date(game.finishedAt || 0);
@@ -2820,7 +2820,7 @@
       html += "</div>";
       if (final) {
         const lineup = slxLineup(final, champSide);
-        html += '<div class="slx-squad"><p class="slx-squad-title">QUEM JOGOU A FINAL</p><ul class="slx-chips">' + lineup.played.map((name) => "<li>" + escapeHtml(displayName(name)) + (name === lineup.keeperName || keeper(name) ? ' <b class="slx-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "</li>").join("") + "</ul></div>";
+        html += '<div class="slx-squad"><p class="slx-squad-title">QUEM JOGOU A FINAL</p><ul class="slx-chips">' + lineup.played.map((name) => "<li>" + plink(name) + (name === lineup.keeperName || keeper(name) ? ' <b class="slx-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "</li>").join("") + "</ul></div>";
       }
       html += "</section>";
     }
@@ -2963,7 +2963,7 @@
       initials = String(label || "").replace(/^time\s+/i, "").split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
     const crest = '<span class="pt-crest' + (src ? "" : " pt-initials") + '" aria-hidden="true">' + (src ? '<img src="' + escapeHtml(src) + '" alt="">' : escapeHtml(initials || "?")) + "</span>";
     return '<article class="pt-card' + (onField ? " is-on-field" : "") + '"><header class="pt-head" style="--team-color:' + head + ";--team-ink:" + ink + '">' + crest + '<strong class="pt-name">' + escapeHtml(label) + "</strong>" + (onField ? '<span class="pt-live">EM CAMPO</span>' : "") + '</header><ol class="pt-list">' +
-      players.map(([name, extra], index) => '<li><span class="pt-num">' + (index + 1) + '</span><span class="pt-player">' + escapeHtml(displayName(name)) + "</span>" + (keeper(name) ? '<b class="pt-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + (extra ? '<small class="pt-extra">' + extra + "</small>" : "") + "</li>").join("") +
+      players.map(([name, extra], index) => '<li><span class="pt-num">' + (index + 1) + '</span><span class="pt-player">' + plink(name) + "</span>" + (keeper(name) ? '<b class="pt-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + (extra ? '<small class="pt-extra">' + extra + "</small>" : "") + "</li>").join("") +
       "</ol></article>";
   }
   // Garantia extra: se um nome ainda não couber na linha, diminui a fonte até caber (nunca corta nem quebra).
@@ -3250,7 +3250,7 @@
     const timeline = goals.length
       ? '<ol class="nm-timeline">' + goals.map((goal) => {
           const side = sideOfTeam(goal.scoringTeam || goal.team) || "home";
-          return '<li class="nm-goal nm-' + side + '"><span class="nm-minute">' + (Number(goal.minute) || "–") + "'</span><span class=\"nm-goal-text\"><strong>" + escapeHtml(displayName(goal.player || "Gol")) + "</strong>" + (goal.ownGoal ? " <em>(contra)</em>" : "") + (goal.assistedBy ? "<small>assist. " + escapeHtml(displayName(goal.assistedBy)) + "</small>" : "") + "</span></li>";
+          return '<li class="nm-goal nm-' + side + '"><span class="nm-minute">' + (Number(goal.minute) || "–") + "'</span><span class=\"nm-goal-text\"><strong>" + plink(goal.player || "Gol") + "</strong>" + (goal.ownGoal ? " <em>(contra)</em>" : "") + (goal.assistedBy ? "<small>assist. " + plink(goal.assistedBy) + "</small>" : "") + "</span></li>";
         }).join("") + "</ol>"
       : '<p class="empty-state">Jogo sem gols.</p>';
     // Escalações
@@ -3264,7 +3264,7 @@
             moves = subs.filter((item) => sideOfTeam(item.team) === side && (item.in === name || item.out === name)).sort((a, b) => (Number(a.minute) || 0) - (Number(b.minute) || 0)),
             enteredAt = moves.find((item) => item.in === name);
           if (benchRow && !enteredAt && !p) return "";
-          return '<li><span class="nm-player">' + escapeHtml(displayName(name)) + (name === keeperName || keeper(name) ? ' <b class="nm-tag">GOL</b>' : "") +
+          return '<li><span class="nm-player">' + plink(name) + (name === keeperName || keeper(name) ? ' <b class="nm-tag">GOL</b>' : "") +
             (scored ? ' <span class="nm-icons" title="' + scored + ' gol(s)">' + "⚽".repeat(Math.min(scored, 5)) + "</span>" : "") +
             (assists ? ' <small class="nm-assist">' + assists + " assist.</small>" : "") +
             moves.map((item) => (item.in === name ? ' <small class="nm-sub-in">↑ ' : ' <small class="nm-sub-out">↓ ') + (item.minute || "") + "'</small>").join("") +
@@ -3278,7 +3278,7 @@
         unused = bench.filter((name) => !starters.includes(name) && !entered.includes(name));
       return '<div class="nm-lineup' + (winnerSide === side ? " is-winner" : "") + '" style="--team-color:' + colorOf(team).color + '"><header>' + newsCrest(game, side, "sm") + "<strong>" + escapeHtml(label(side)) + '</strong></header><p class="nm-lineup-label">Titulares</p><ol>' + rowsFor(starters, false) + "</ol>" +
         (entered.length ? '<p class="nm-lineup-label">Entraram</p><ol>' + rowsFor(entered, false) + "</ol>" : "") +
-        (unused.length ? '<p class="nm-bench">Banco: ' + unused.map((name) => escapeHtml(displayName(name))).join(", ") + "</p>" : "") + "</div>";
+        (unused.length ? '<p class="nm-bench">Banco: ' + unused.map((name) => plink(name)).join(", ") + "</p>" : "") + "</div>";
     };
     const champion = isFinal && winnerSide
       ? '<div class="nm-champion" style="--team-color:' + colorOf(game[winnerSide]).color + '">' + newsCrest(game, winnerSide, "md") + '<div><p>🏆 CAMPEÃO DA SUPER LIGA</p><strong>' + escapeHtml(label(winnerSide)) + "</strong><span>" + (single ? "Venceu o jogo único" : "Venceu a final") + " por " + Math.max(score.home, score.away) + " a " + Math.min(score.home, score.away) + (shoot ? " nos pênaltis (" + shoot.homeScore + "×" + shoot.awayScore + ")" : "") + "</span></div></div>"
@@ -3310,11 +3310,11 @@
       (post.subtitle ? '<p class="news-subtitle">' + escapeHtml(post.subtitle) + "</p>" : "") +
       (cover ? '<img class="news-post-cover" src="' + escapeHtml(cover) + '" alt="">' : "") +
       report.top +
-      (highlights.length ? '<div class="news-highlights">' + highlights.map((item) => '<div class="news-highlight"><small>' + escapeHtml(item.label || NEWS_HIGHLIGHTS[item.type] || "Destaque") + "</small><strong>" + escapeHtml(displayName(item.player_name || "")) + "</strong>" + (item.value !== null && item.value !== undefined && item.value !== "" ? "<span>" + escapeHtml(String(item.value).replace(".", ",")) + (item.type === "top_scorer" ? " gol(s)" : "") + "</span>" : "") + "</div>").join("") + "</div>" : "") +
+      (highlights.length ? '<div class="news-highlights">' + highlights.map((item) => '<div class="news-highlight"><small>' + escapeHtml(item.label || NEWS_HIGHLIGHTS[item.type] || "Destaque") + "</small><strong>" + plink(item.player_name || "") + "</strong>" + (item.value !== null && item.value !== undefined && item.value !== "" ? "<span>" + escapeHtml(String(item.value).replace(".", ",")) + (item.type === "top_scorer" ? " gol(s)" : "") + "</span>" : "") + "</div>").join("") + "</div>" : "") +
       '<div class="news-content">' + newsParagraphs(post.content) + "</div>" +
       report.details +
       (media.length ? '<div class="news-media">' + media.map((item) => '<figure><img src="' + escapeHtml(newsSafeUrl(item.url)) + '" alt="' + escapeHtml(item.caption || "") + '" loading="lazy">' + (item.caption ? "<figcaption>" + escapeHtml(item.caption) + "</figcaption>" : "") + "</figure>").join("") + "</div>" : "") +
-      (players.length ? '<div class="news-players"><small>Na notícia</small>' + players.map((item) => '<span class="news-player">' + escapeHtml(displayName(item.player_name)) + (item.role && item.role !== "mentioned" ? " · " + escapeHtml(NEWS_ROLES[item.role] || item.role) : "") + (Number(item.goals) ? " · " + item.goals + " gol" + (item.goals > 1 ? "s" : "") : "") + "</span>").join("") + "</div>" : "") +
+      (players.length ? '<div class="news-players"><small>Na notícia</small>' + players.map((item) => '<span class="news-player">' + plink(item.player_name) + (item.role && item.role !== "mentioned" ? " · " + escapeHtml(NEWS_ROLES[item.role] || item.role) : "") + (Number(item.goals) ? " · " + item.goals + " gol" + (item.goals > 1 ? "s" : "") : "") + "</span>").join("") + "</div>" : "") +
       '<div class="button-row"><button type="button" class="button button-primary" data-news-share="' + escapeHtml(post.id) + '">Compartilhar</button></div>' +
       "</article>";
   }
@@ -4200,7 +4200,7 @@
     if (event.target.id === "vtName") { renderVoting(); }
   });
   // ----- Rotas próprias: #presenca e #votacao abrem só essa tela -----
-  const PV_VIEWS = { "#presenca": "presenca", "#votacao": "votacao" };
+  const PV_VIEWS = { "#presenca": "presenca", "#votacao": "votacao", "#hall": "hall" };
   function pvRoute() {
     const view = PV_VIEWS[location.hash];
     document.body.classList.toggle("pv-standalone", !!view);
@@ -4209,10 +4209,12 @@
     setView(view);
     window.scrollTo(0, 0);
     if (view === "presenca") { renderPresence(); pzLoad(); PZ.timer = setInterval(() => { if (!document.hidden) pzLoad(true); }, 10000); }
-    else { renderVoting(); vtLoad(); VT.timer = setInterval(() => { if (!document.hidden) vtLoad(true); }, 10000); }
+    else if (view === "votacao") { renderVoting(); vtLoad(); VT.timer = setInterval(() => { if (!document.hidden) vtLoad(true); }, 10000); }
+    else hallOpen();
     return true;
   }
   window.addEventListener("hashchange", () => {
+    if (/^#jogador\//.test(location.hash)) return;
     const was = document.body.classList.contains("pv-standalone");
     if (!pvRoute() && was) setView("home");
   });
@@ -4353,10 +4355,241 @@
     card.hidden = false;
     card.innerHTML = '<span class="season-kicker">CRAQUE DA NOITE (VOTAÇÃO)</span>' + (round.open
       ? '<strong>Votação aberta</strong><small>' + round.voted + " de " + round.eligible + ' já votaram · <a href="#votacao">Votar</a></small>'
-      : data.winner?.name ? "<strong>" + escapeHtml(displayName(data.winner.name)) + "</strong><small>" + data.winner.votes + (data.winner.votes === 1 ? " voto" : " votos") + " de " + data.winner.total + ' · <a href="#votacao">ver votação</a></small>' : "<strong>Sem votos</strong><small>A votação fechou sem votos.</small>");
+      : data.winner?.name ? "<strong>" + plink(data.winner.name) + "</strong><small>" + data.winner.votes + (data.winner.votes === 1 ? " voto" : " votos") + " de " + data.winner.total + ' · <a href="#votacao">ver votação</a></small>' : "<strong>Sem votos</strong><small>A votação fechou sem votos.</small>");
+  }
+  // ---------- Perfil do jogador (#jogador/nome) e Hall da fama (#hall) ----------
+  // Tudo calculado do histórico oficial (officialGames + gamePerformance); jogo de treino nunca entra.
+  function pSlug(name) {
+    return displayName(name).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  }
+  // Nome de jogador como link para o perfil (só em telas de leitura, nunca dentro de botão).
+  function plink(name, text) {
+    const label = text != null ? text : displayName(name);
+    if (!name || name === "Gol" || !pSlug(name)) return escapeHtml(label);
+    return '<a class="plink" href="#jogador/' + pSlug(name) + '">' + escapeHtml(label) + "</a>";
+  }
+  const PF = { slug: "", mode: "", fromSite: false, lastFocus: null };
+  const monthKeyOf = (game) => { const d = hxTime(game.finishedAt); return d ? d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") : ""; };
+  const monthLabel = (key) => { const [y, m] = key.split("-").map(Number); return new Date(y, m - 1, 15).toLocaleDateString("pt-BR", { month: "long", year: "numeric" }).replace(/^./, (c) => c.toUpperCase()); };
+  const fmt1 = (value) => Number(value || 0).toFixed(1).replace(".", ",");
+  // Mesma regra dos destaques do mês (Tela principal): Modo Liga, gols sem gol contra, goleiro com 3 jogos no gol.
+  function monthLeaders(key) {
+    const games = ligaGames().filter((game) => monthKeyOf(game) === key);
+    const goals = new Map(), keepers = new Map();
+    for (const game of games) {
+      (game.goals || []).filter((goal) => !goal.ownGoal && goal.player).forEach((goal) => goals.set(goal.player, (goals.get(goal.player) || 0) + 1));
+      gamePerformance(game).filter((p) => p.role === "goleiro").forEach((p) => { const row = keepers.get(p.player) || { player: p.player, sum: 0, games: 0, conceded: 0 }; row.sum += Number(p.score) || 0; row.games++; row.conceded += Number(p.goalsAgainst) || 0; keepers.set(p.player, row); });
+    }
+    const goalRows = [...goals.entries()].sort((a, b) => b[1] - a[1]), top = goalRows[0]?.[1] || 0;
+    const keeperRows = [...keepers.values()].filter((row) => row.games >= MIN_KEEPER_GAMES).map((row) => ({ ...row, average: row.sum / row.games })).sort((a, b) => b.average - a.average);
+    return {
+      key, games: games.length, goals: top,
+      scorers: top ? goalRows.filter((row) => row[1] === top).map((row) => row[0]).sort((a, b) => a.localeCompare(b, "pt-BR")) : [],
+      keepers: keeperRows.length ? keeperRows.filter((row) => row.average === keeperRows[0].average) : [],
+    };
+  }
+  function allMonths() { return [...new Set(ligaGames().map(monthKeyOf).filter(Boolean))].sort().reverse(); }
+  // Campeões: o primeiro jogo "final" de cada Super Liga decide.
+  function superChampions() {
+    const byLeague = new Map();
+    officialGames().filter((game) => game.superLigaId && game.stage === "final").sort((a, b) => (hxTime(a.finishedAt)?.getTime() || 0) - (hxTime(b.finishedAt)?.getTime() || 0))
+      .forEach((game) => { if (!byLeague.has(game.superLigaId)) byLeague.set(game.superLigaId, game); });
+    return [...byLeague.values()].filter((game) => game.winner && game.winner !== "Empate").sort((a, b) => (hxTime(b.finishedAt)?.getTime() || 0) - (hxTime(a.finishedAt)?.getTime() || 0));
+  }
+  // Números do jogador num modo ("liga" ou "super").
+  function playerData(slug, mode) {
+    const games = officialGames().filter((game) => (mode === "super" ? !!game.superLigaId : !game.superLigaId)).sort((a, b) => (hxTime(a.finishedAt)?.getTime() || 0) - (hxTime(b.finishedAt)?.getTime() || 0));
+    const d = { name: "", games: 0, keeperGames: 0, goals: 0, assists: 0, sum: 0, conceded: 0, cleanSheets: 0, wins: 0, draws: 0, losses: 0, first: null, list: [], hatTricks: 0, team: "", teamLabel: "" };
+    for (const game of games)
+      for (const p of gamePerformance(game)) {
+        if (pSlug(p.player) !== slug) continue;
+        d.name = d.name || p.player;
+        const score = Number(p.score) || 0;
+        d.games++; d.sum += score; d.goals += Number(p.goalsFor) || 0; d.assists += Number(p.assists) || 0;
+        if (p.role === "goleiro") { d.keeperGames++; d.conceded += Number(p.goalsAgainst) || 0; if (!Number(p.goalsAgainst)) d.cleanSheets++; }
+        if (p.result === "vitória") d.wins++; else if (p.result === "empate") d.draws++; else d.losses++;
+        if ((Number(p.goalsFor) || 0) >= 3) d.hatTricks++;
+        d.first = d.first || hxTime(game.finishedAt);
+        d.team = p.team; d.teamLabel = teamName(game, p.team);
+        d.list.push({ game, p, score });
+      }
+    d.keeper = d.keeperGames > d.games - d.keeperGames;
+    d.avg = d.games ? d.sum / d.games : 0;
+    return d;
+  }
+  function playerAchievements(slug) {
+    const out = [];
+    const titles = superChampions().filter((game) => gamePerformance(game).some((p) => p.team === game.winner && pSlug(p.player) === slug));
+    if (titles.length) out.push(["🏆", "Campeão da Super Liga", titles.length]);
+    let scorer = 0, keeperMonth = 0;
+    for (const key of allMonths()) { const m = monthLeaders(key); if (m.scorers.some((n) => pSlug(n) === slug)) scorer++; if (m.keepers.some((row) => pSlug(row.player) === slug)) keeperMonth++; }
+    if (scorer) out.push(["⚽", "Artilheiro do mês", scorer]);
+    const craque = (VOTE.winners || []).filter((w) => pSlug(w.name) === slug).length;
+    if (craque) out.push(["⭐", "Craque da noite", craque]);
+    if (keeperMonth) out.push(["🧤", "Goleiro do mês", keeperMonth]);
+    const hat = playerData(slug, "liga").hatTricks + playerData(slug, "super").hatTricks;
+    if (hat) out.push(["🎩", "Hat-trick", hat]);
+    return out;
+  }
+  function playerPhotoUrl(slug) {
+    const v = state?.playerPhotos?.[slug], base = window.LIGA_CONFIG?.supabaseUrl;
+    return v && base ? base.replace(/\/$/, "") + "/storage/v1/object/public/player-photos/" + slug + ".webp?v=" + encodeURIComponent(v) : "";
+  }
+  function playerCurrentTeam(slug) {
+    for (const team of state.teams || []) if (lineupForTeam(team.name).some((n) => pSlug(n) === slug)) return teamLabel(team.name);
+    for (const team of state.superLiga?.teams || []) if ((team.players || []).some((n) => pSlug(n) === slug)) return team.name;
+    return "";
+  }
+  function pfKnownName(slug) {
+    const fromRoster = (state.roster || []).find((n) => pSlug(n) === slug);
+    if (fromRoster) return fromRoster;
+    for (const game of officialGames()) for (const p of gamePerformance(game)) if (pSlug(p.player) === slug) return p.player;
+    return "";
+  }
+  function renderProfile() {
+    const box = $("jogador");
+    if (!box || !PF.slug) return;
+    const slug = PF.slug, name = pfKnownName(slug);
+    const liga = playerData(slug, "liga"), sup = playerData(slug, "super");
+    if (!PF.mode) PF.mode = liga.games || !sup.games ? "liga" : "super";
+    const d = PF.mode === "super" ? sup : liga, total = liga.games + sup.games, isKeeper = liga.keeperGames + sup.keeperGames > total - (liga.keeperGames + sup.keeperGames);
+    const photo = playerPhotoUrl(slug), initials = displayName(name || slug).split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+    const first = [liga.first, sup.first].filter(Boolean).sort((a, b) => a - b)[0];
+    const big = (value, label) => '<div class="pf-num"><strong>' + value + "</strong><small>" + label + "</small></div>";
+    const nums = d.keeper
+      ? big(d.games, "JOGOS") + big(d.conceded, "SOFRIDOS") + big(d.keeperGames ? fmt1(d.conceded / d.keeperGames) : "0,0", "MÉDIA SOFRIDA POR JOGO") + big(d.cleanSheets, "JOGOS SEM SOFRER GOL")
+      : big(d.games, "JOGOS") + big(d.goals, "GOLS") + big(d.assists, "ASSIST.") + big(d.games ? fmt1(d.avg) : "–", "NOTA MÉDIA");
+    const last = d.list.slice(-8), bestScore = Math.max(0, ...last.map((x) => x.score));
+    const bars = last.length ? '<div class="pf-bars" role="img" aria-label="Notas dos últimos ' + last.length + " jogos: " + last.map((x) => fmt1(x.score)).join(", ") + '">' + last.map((x) => '<div class="pf-bar' + (x.score === bestScore ? " is-best" : "") + '"><span>' + fmt1(x.score) + '</span><i style="height:' + Math.max(4, (x.score / 10) * 100) + '%"></i><small>' + escapeHtml(new Date(hxTime(x.game.finishedAt)).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })) + "</small></div>").join("") + "</div>" : '<p class="pf-empty">Ainda sem jogos neste modo.</p>';
+    const best = d.list.slice().sort((a, b) => b.score - a.score || (Number(b.p.goalsFor) || 0) - (Number(a.p.goalsFor) || 0))[0];
+    const bestHtml = best ? (() => {
+      const g = best.game, p = best.p, did = [];
+      if (Number(p.goalsFor)) did.push(p.goalsFor + (Number(p.goalsFor) === 1 ? " gol" : " gols"));
+      if (Number(p.assists)) did.push(p.assists + (Number(p.assists) === 1 ? " assistência" : " assistências"));
+      if (p.role === "goleiro") did.push("no gol · " + (Number(p.goalsAgainst) || 0) + (Number(p.goalsAgainst) === 1 ? " sofrido" : " sofridos"));
+      if (!did.length) did.push(p.result === "vitória" ? "vitória" : p.result === "empate" ? "empate" : "derrota");
+      return '<div class="pf-best"><div class="pf-best-score">' + hxCrest(g.home, gameTeamLabel(g, "home"), "lg") + "<strong>" + Number(g.homeScore || 0) + " × " + Number(g.awayScore || 0) + "</strong>" + hxCrest(g.away, gameTeamLabel(g, "away"), "lg") + '</div><p class="pf-best-teams">' + escapeHtml(gameTeamLabel(g, "home") + " × " + gameTeamLabel(g, "away")) + " · " + escapeHtml(new Date(hxTime(g.finishedAt)).toLocaleDateString("pt-BR")) + '</p><p class="pf-best-did">' + escapeHtml(did.join(" · ")) + ' · nota <b>' + fmt1(best.score) + "</b></p></div>";
+    })() : '<p class="pf-empty">Ainda sem jogos neste modo.</p>';
+    const ach = playerAchievements(slug);
+    const tab = (mode, label, n) => '<button type="button" class="pf-tab' + (PF.mode === mode ? " is-on" : "") + '" role="tab" aria-selected="' + (PF.mode === mode) + '" data-pf-mode="' + mode + '">' + label + " <small>" + n + "</small></button>";
+    box.innerHTML = '<div class="pf-wrap"><div class="pf-bar-top"><button type="button" class="pf-back" data-pf-back>← Voltar</button><button type="button" class="pf-share" data-pf-share>Compartilhar</button></div>' +
+      '<header class="pf-head"><div class="pf-photo">' + (photo ? '<img src="' + escapeHtml(photo) + '" alt="Foto de ' + escapeHtml(displayName(name)) + '" onerror="this.remove()">' : "") + '<span aria-hidden="true">' + escapeHtml(initials || "?") + "</span></div>" +
+      '<div class="pf-id"><h2 id="pfTitle">' + escapeHtml(displayName(name) || "Jogador") + '</h2><p class="pf-tags"><span>' + (isKeeper ? "Goleiro" : "Linha") + "</span>" + (playerCurrentTeam(slug) ? "<span>" + escapeHtml(playerCurrentTeam(slug)) + "</span>" : "") + (first ? "<span>desde " + escapeHtml(first.toLocaleDateString("pt-BR", { month: "short", year: "numeric" }).replace(". de ", "/").replace(" de ", "/")) + "</span>" : "") + "</p></div></header>" +
+      (!total ? '<p class="pf-empty pf-card">Este jogador ainda não tem jogos oficiais.</p>' :
+        '<div class="pf-tabs" role="tablist" aria-label="Modo">' + tab("liga", "Modo Liga", liga.games) + tab("super", "Super Liga", sup.games) + "</div>" +
+        '<section class="pf-card" aria-label="Números"><div class="pf-nums">' + nums + '</div><div class="pf-ved"><div class="v"><strong>' + d.wins + '</strong><small>VITÓRIAS</small></div><div class="e"><strong>' + d.draws + '</strong><small>EMPATES</small></div><div class="d"><strong>' + d.losses + "</strong><small>DERROTAS</small></div></div></section>" +
+        '<section class="pf-card" aria-labelledby="pfBarsTitle"><h3 id="pfBarsTitle" class="pf-h">NOTAS DOS ÚLTIMOS JOGOS</h3>' + bars + "</section>" +
+        '<section class="pf-card" aria-labelledby="pfBestTitle"><h3 id="pfBestTitle" class="pf-h">MELHOR JOGO</h3>' + bestHtml + "</section>") +
+      '<section class="pf-card" aria-labelledby="pfAchTitle"><h3 id="pfAchTitle" class="pf-h">CONQUISTAS</h3>' + (ach.length ? '<ul class="pf-ach">' + ach.map(([icon, label, n]) => '<li><span aria-hidden="true">' + icon + "</span><strong>" + label + "</strong>" + (n > 1 ? "<small>×" + n + "</small>" : "") + "</li>").join("") + "</ul>" : '<p class="pf-empty">Ainda sem conquistas. Bora!</p>') + "</section>" +
+      (!isEditLocked() && shared && client ? '<section class="pf-card pf-admin"><h3 class="pf-h">FOTO (ORGANIZADOR)</h3><p class="pf-empty">A foto é reduzida para 400×400 e guardada em WebP.</p><label class="button button-outline pf-upload">Escolher foto<input type="file" accept="image/*" id="pfPhotoInput" hidden></label>' + (photo ? '<button type="button" class="button button-outline" data-pf-photo-remove>Tirar foto</button>' : "") + '<p class="pv-msg" id="pfPhotoMsg" role="status"></p></section>' : "") +
+      "</div>";
+  }
+  function openProfile(slug, fromSite) {
+    PF.slug = slug; PF.mode = ""; PF.fromSite = fromSite;
+    PF.lastFocus = PF.lastFocus || document.activeElement;
+    const box = $("jogador");
+    box.hidden = false; document.body.classList.add("pf-open");
+    renderProfile();
+    box.scrollTop = 0;
+    box.querySelector(".pf-back")?.focus();
+  }
+  function closeProfile() {
+    const box = $("jogador");
+    if (!box || box.hidden) return;
+    box.hidden = true; PF.slug = ""; document.body.classList.remove("pf-open");
+    const focus = PF.lastFocus; PF.lastFocus = null;
+    if (focus && document.contains(focus)) focus.focus();
+  }
+  function pfRoute(fromSite) {
+    const match = location.hash.match(/^#jogador\/([a-z0-9-]+)$/);
+    if (match) { openProfile(match[1], fromSite); return true; }
+    closeProfile();
+    return false;
+  }
+  let pfPrevHash = location.hash;
+  window.addEventListener("hashchange", () => { const from = !/^#jogador\//.test(pfPrevHash); pfPrevHash = location.hash; pfRoute(from); if (location.hash === "#hall") hallOpen(); });
+  document.addEventListener("click", (event) => {
+    if (event.target.closest?.("[data-pf-back]")) { if (PF.fromSite && history.length > 1) history.back(); else { history.pushState(null, "", location.pathname + location.search); pfPrevHash = ""; closeProfile(); } return; }
+    const tab = event.target.closest?.("[data-pf-mode]");
+    if (tab) { PF.mode = tab.dataset.pfMode; renderProfile(); $("jogador").querySelector('[data-pf-mode="' + PF.mode + '"]')?.focus(); return; }
+    if (event.target.closest?.("[data-pf-share]")) {
+      const url = location.origin + "/#jogador/" + PF.slug, title = "Perfil de " + displayName(pfKnownName(PF.slug)) + " · LIGA SKALAMA";
+      if (navigator.share) navigator.share({ title, url }).catch(() => {}); else navigator.clipboard?.writeText(url).then(() => notify("Link do perfil copiado."), () => notify(url));
+      return;
+    }
+    if (event.target.closest?.("[data-pf-photo-remove]")) pfPhotoRemove();
+  });
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape" && PF.slug && !document.querySelector("dialog[open]")) document.querySelector("[data-pf-back]")?.click(); });
+  document.addEventListener("change", (event) => { if (event.target.id === "pfPhotoInput" && event.target.files?.[0]) pfPhotoUpload(event.target.files[0]); });
+  // Foto: reduz para no máximo 400×400 em WebP e sobe no Supabase Storage (só organizador consegue gravar).
+  async function pfPhotoUpload(file) {
+    const msg = (text, bad) => { const el = $("pfPhotoMsg"); if (el) { el.textContent = text; el.className = "pv-msg" + (bad ? " is-bad" : " is-good"); } };
+    if (!/^image\//.test(file.type) || file.size > 15 * 1024 * 1024) { msg("Escolha uma imagem de até 15 MB.", true); return; }
+    try {
+      const bitmap = await createImageBitmap(file), size = Math.min(400, bitmap.width, bitmap.height), side = Math.min(bitmap.width, bitmap.height);
+      const canvas = document.createElement("canvas"); canvas.width = canvas.height = size;
+      canvas.getContext("2d").drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, size, size);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
+      if (!blob || blob.type !== "image/webp") { msg("Este navegador não gera WebP. Tente pelo Chrome.", true); return; }
+      const slug = PF.slug, { error } = await client.storage.from("player-photos").upload(slug + ".webp", blob, { upsert: true, contentType: "image/webp", cacheControl: "3600" });
+      if (error) { msg("Não deu para subir a foto: " + error.message, true); return; }
+      await saveState({ playerPhotos: { ...(state.playerPhotos || {}), [slug]: Date.now() } }, "Foto de " + displayName(pfKnownName(slug)) + " salva.");
+      renderProfile();
+    } catch (error) { msg("Não deu para ler a imagem: " + error.message, true); }
+  }
+  async function pfPhotoRemove() {
+    const slug = PF.slug;
+    if (!(await askConfirm({ title: "Tirar a foto?", message: "O perfil volta a mostrar as iniciais.", confirmText: "Tirar foto", tone: "red" }))) return;
+    await client.storage.from("player-photos").remove([slug + ".webp"]).catch(() => {});
+    const photos = { ...(state.playerPhotos || {}) }; delete photos[slug];
+    await saveState({ playerPhotos: photos }, "Foto removida.");
+    renderProfile();
+  }
+  // ----- Hall da fama -----
+  async function hallOpen() { if (!VOTE.hallLoaded && shared && client) { VOTE.hallLoaded = true; const r = await pvRpc("vote_winners", { p_limit: 20 }); if (Array.isArray(r)) VOTE.allWinners = r; } renderHall(); }
+  function hallRecords() {
+    const games = officialGames(), out = [];
+    const perGame = [];
+    for (const game of games) for (const p of gamePerformance(game)) if (Number(p.goalsFor)) perGame.push({ name: p.player, goals: Number(p.goalsFor), game });
+    const maxGoals = Math.max(0, ...perGame.map((x) => x.goals));
+    if (maxGoals) out.push(["⚽", "Mais gols num jogo", maxGoals + (maxGoals === 1 ? " gol" : " gols"), perGame.filter((x) => x.goals === maxGoals).map((x) => plink(x.name) + ' <small>' + escapeHtml(gameTeamLabel(x.game, "home") + " " + x.game.homeScore + "×" + x.game.awayScore + " " + gameTeamLabel(x.game, "away")) + "</small>")]);
+    const diff = (g) => Math.abs(Number(g.homeScore || 0) - Number(g.awayScore || 0)), maxDiff = Math.max(0, ...games.map(diff));
+    if (maxDiff) out.push(["💥", "Maior goleada", "diferença de " + maxDiff, games.filter((g) => diff(g) === maxDiff).map((g) => escapeHtml(gameTeamLabel(g, "home") + " " + g.homeScore + " × " + g.awayScore + " " + gameTeamLabel(g, "away")) + " <small>" + escapeHtml(new Date(hxTime(g.finishedAt)).toLocaleDateString("pt-BR")) + "</small>")]);
+    const streak = new Map(), best = new Map();
+    ligaGames().sort((a, b) => (hxTime(a.finishedAt)?.getTime() || 0) - (hxTime(b.finishedAt)?.getTime() || 0)).forEach((g) => [g.home, g.away].forEach((team) => { const s = g.winner === team ? (streak.get(team) || 0) + 1 : 0; streak.set(team, s); best.set(team, Math.max(best.get(team) || 0, s)); }));
+    const maxStreak = Math.max(0, ...best.values());
+    if (maxStreak) out.push(["🔥", "Maior sequência de vitórias", maxStreak + (maxStreak === 1 ? " vitória" : " vitórias seguidas"), [...best.entries()].filter(([, v]) => v === maxStreak).map(([team]) => hxCrest(team, teamLabel(team), "sm") + " " + escapeHtml(teamLabel(team)))]);
+    const clean = new Map();
+    for (const game of games) for (const p of gamePerformance(game)) if (p.role === "goleiro") { const row = clean.get(p.player) || { games: 0, clean: 0 }; row.games++; if (!Number(p.goalsAgainst)) row.clean++; clean.set(p.player, row); }
+    const keepers = [...clean.entries()].filter(([, r]) => r.games >= MIN_KEEPER_GAMES), maxClean = Math.max(0, ...keepers.map(([, r]) => r.clean));
+    out.push(["🧤", "Mais jogos sem sofrer gol", maxClean ? maxClean + (maxClean === 1 ? " jogo" : " jogos") : "—", maxClean ? keepers.filter(([, r]) => r.clean === maxClean).map(([n, r]) => plink(n) + " <small>" + r.games + " jogos no gol</small>") : ["<small>Ainda sem goleiro com " + MIN_KEEPER_GAMES + " jogos no gol sem sofrer gol.</small>"]]);
+    const wins = new Map(); (VOTE.allWinners || VOTE.winners || []).forEach((w) => wins.set(w.name, (wins.get(w.name) || 0) + 1));
+    const maxCraque = Math.max(0, ...wins.values());
+    if (maxCraque) out.push(["⭐", "Mais craques da noite", maxCraque + (maxCraque === 1 ? " vez" : " vezes"), [...wins.entries()].filter(([, v]) => v === maxCraque).map(([n]) => plink(n))]);
+    return out;
+  }
+  function renderHall() {
+    const box = $("hall");
+    if (!box) return;
+    const champs = superChampions(), months = allMonths();
+    box.innerHTML = '<div class="pv-wrap hall-wrap"><a class="pv-back" href="./">← Ir para o site</a>' +
+      '<header class="hall-head"><p class="pv-kicker">LIGA SKALAMA</p><h2>🏆 Hall da fama</h2><p>Campeões, recordes e os melhores de cada mês. Toque num nome para ver o perfil.</p></header>' +
+      '<section class="pv-panel" aria-labelledby="hallChamps"><h3 class="pv-h" id="hallChamps">CAMPEÕES DA SUPER LIGA</h3>' + (champs.length ? '<div class="hall-champs">' + champs.map((g) => {
+        const side = g.winner === g.home ? "home" : "away", label = gameTeamLabel(g, side);
+        return '<article class="hall-champ">' + hxCrest(g.winner, label, "lg") + '<div><strong>' + escapeHtml(label) + "</strong><small>" + escapeHtml(new Date(hxTime(g.finishedAt)).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })) + "</small><small>Final: " + escapeHtml(gameTeamLabel(g, "home") + " " + g.homeScore + " × " + g.awayScore + " " + gameTeamLabel(g, "away")) + "</small></div></article>";
+      }).join("") + "</div>" : '<p class="pv-hint">Ainda sem campeão.</p>') + "</section>" +
+      '<section class="pv-panel" aria-labelledby="hallRecs"><h3 class="pv-h" id="hallRecs">RECORDES</h3><ul class="hall-recs">' + hallRecords().map(([icon, title, value, who]) => '<li><span class="hall-ico" aria-hidden="true">' + icon + '</span><div><p class="hall-rt">' + title + ' · <b>' + escapeHtml(value) + '</b></p><p class="hall-who">' + who.join("<br>") + "</p></div></li>").join("") + "</ul></section>" +
+      '<section class="pv-panel" aria-labelledby="hallMonths"><h3 class="pv-h" id="hallMonths">ARTILHEIRO E GOLEIRO DE CADA MÊS</h3><p class="pv-hint">Modo Liga. Goleiro do mês precisa de ' + MIN_KEEPER_GAMES + ' jogos no gol.</p>' + (months.length ? '<div class="hall-months">' + months.map((key) => {
+        const m = monthLeaders(key);
+        return '<article class="hall-month"><h4>' + escapeHtml(monthLabel(key)) + '</h4><p><span>⚽ Artilheiro</span>' + (m.scorers.length ? m.scorers.map((n) => plink(n)).join(" · ") + " <small>" + m.goals + (m.goals === 1 ? " gol" : " gols") + "</small>" : "<small>sem gols</small>") + '</p><p><span>🧤 Goleiro</span>' + (m.keepers.length ? m.keepers.map((r) => plink(r.player)).join(" · ") + " <small>nota " + fmt1(m.keepers[0].average) + "</small>" : "<small>ninguém com " + MIN_KEEPER_GAMES + " jogos no gol</small>") + "</p></article>";
+      }).join("") + "</div>" : '<p class="pv-hint">Ainda sem jogos do Modo Liga.</p>') + "</section></div>";
   }
   function renderAll() {
     if (!state) return;
+    renderDrawMode();
+    renderElStrength();
+    if (PF.slug) renderProfile();
+    if (location.hash === "#hall") renderHall();
     renderElPresence();
     renderNightVoteCard();
     if (document.activeElement !== $("venue"))
@@ -5110,7 +5343,7 @@
         element.classList.toggle("view-hidden", element.dataset.view !== view),
       );
     markActiveTab(view);
-    if (view !== "presenca" && view !== "votacao") localStorage.setItem("liga-skalama-view", view);
+    if (view !== "presenca" && view !== "votacao" && view !== "hall") localStorage.setItem("liga-skalama-view", view);
     if (view === "news") { renderNews(); loadNews(); }
     if (view === "home") renderNightVoteCard();
   }
@@ -5276,10 +5509,13 @@
     keepers.forEach((name, index) =>
       teams[keeperSlots[index]].players.push(name),
     );
-    while (others.length) {
-      const open = randomize(teams.filter((team) => team.players.length < 5));
-      open[0].players.push(others.pop());
-    }
+    const balanced = drawMode() === "balanced";
+    if (balanced) balancedFill(teams, others, starterTotal);
+    else
+      while (others.length) {
+        const open = randomize(teams.filter((team) => team.players.length < 5));
+        open[0].players.push(others.pop());
+      }
     // Rodada nova: jogos de treino que ainda existirem são apagados (com os gols deles).
     const oldTraining = trainingGames();
     if (oldTraining.length) await purgeTrainingGoals(oldTraining.map((game) => game.id));
@@ -5303,9 +5539,90 @@
         incidents: [],
         timer: freshTimer(),
       },
-      "Times sorteados. A sequência começa com Águia × Sol.",
+      (balanced ? "Times sorteados (equilibrado). Diferença de força: " + strengthGap(teams.map((team) => team.players)).toFixed(1).replace(".", ",") + ". " : "Times sorteados. ") + "A sequência começa com Águia × Sol.",
     );
   }
+  // ---------- Sorteio equilibrado ----------
+  // Força = nota média nos jogos oficiais do Modo Liga (mínimo de 3 jogos; com menos, a média geral da liga).
+  const DRAW_MODE_KEY = "skalama-draw-mode";
+  function drawMode() { try { return localStorage.getItem(DRAW_MODE_KEY) === "balanced" ? "balanced" : "random"; } catch { return "random"; } }
+  function strengthTable() {
+    const rows = new Map();
+    let sum = 0, count = 0;
+    for (const game of ligaGames())
+      for (const p of gamePerformance(game)) {
+        const key = playerKey(p.player), row = rows.get(key) || { sum: 0, games: 0 }, score = Number(p.score) || 0;
+        row.sum += score; row.games++; rows.set(key, row); sum += score; count++;
+      }
+    return { rows, avg: count ? sum / count : 7 };
+  }
+  function playerStrength(name, table = strengthTable()) {
+    const row = table.rows.get(playerKey(name));
+    return row && row.games >= 3 ? row.sum / row.games : table.avg;
+  }
+  function teamStrength(players, table = strengthTable()) {
+    return players.length ? players.reduce((sum, name) => sum + playerStrength(name, table), 0) / players.length : 0;
+  }
+  function strengthGap(lineups, table = strengthTable()) {
+    const values = lineups.filter((players) => players.length).map((players) => teamStrength(players, table));
+    return values.length > 1 ? Math.max(...values) - Math.min(...values) : 0;
+  }
+  // Serpentina pela força (com um pouco de sorte) + trocas aleatórias que só valem se diminuírem a diferença.
+  function balancedFill(teams, others, starterTotal) {
+    const table = strengthTable(), per = Math.floor(starterTotal / teams.length), extra = starterTotal % teams.length;
+    const capacity = randomize(teams.map((_, index) => index)).reduce((acc, index, order) => { acc[index] = Math.min(5, per + (order < extra ? 1 : 0)); return acc; }, {});
+    const pool = others.map((name) => ({ name, s: playerStrength(name, table) + (Math.random() - 0.5) * 0.6 })).sort((a, b) => b.s - a.s);
+    let order = randomize(teams.map((_, index) => index)), forward = true;
+    while (pool.length) {
+      const seq = forward ? order : [...order].reverse();
+      for (const index of seq) {
+        if (!pool.length) break;
+        if (teams[index].players.length < capacity[index]) teams[index].players.push(pool.shift().name);
+      }
+      forward = !forward;
+      if (teams.every((team, index) => team.players.length >= capacity[index]) && pool.length) { const open = teams.filter((team) => team.players.length < 5); (open[0] || teams[0]).players.push(pool.shift().name); }
+    }
+    others.length = 0;
+    const gap = () => strengthGap(teams.map((team) => team.players), table);
+    let best = gap();
+    for (let i = 0; i < 400 && teams.length > 1; i++) {
+      const [a, b] = randomize(teams.map((_, index) => index)).slice(0, 2), ta = teams[a].players, tb = teams[b].players;
+      const ia = Math.floor(Math.random() * ta.length), ib = Math.floor(Math.random() * tb.length);
+      if (!ta.length || !tb.length || keeper(ta[ia]) !== keeper(tb[ib])) continue;
+      [ta[ia], tb[ib]] = [tb[ib], ta[ia]];
+      const next = gap();
+      if (next < best - 1e-9) best = next; else [ta[ia], tb[ib]] = [tb[ib], ta[ia]];
+    }
+  }
+  // Força de cada time (só o organizador vê): atualiza na hora com trocas manuais.
+  function renderElStrength() {
+    const box = $("elStrength");
+    if (!box) return;
+    const teams = state.teams || [];
+    if (!teams.length || isEditLocked()) { box.innerHTML = ""; return; }
+    const table = strengthTable(), lineups = teams.map((team) => lineupForTeam(team.name)), gap = strengthGap(lineups, table);
+    box.innerHTML = '<div class="el-strength"><h4 class="el-strength-title">⚖ FORÇA DE CADA TIME</h4><div class="el-strength-grid">' + teams.map((team, index) => {
+      const [bg, ink] = EL_HEAD[team.name] || ["#3a3a35", "#ffffff"];
+      return '<div class="el-strength-card"><div class="el-strength-head" style="background:' + bg + ";color:" + ink + '">' + elCrest(team.name, "s") + "<span>" + escapeHtml(teamLabel(team.name)) + '</span></div><strong>' + teamStrength(lineups[index], table).toFixed(1).replace(".", ",") + "</strong><small>nota média</small></div>";
+    }).join("") + '</div><p class="el-strength-gap' + (gap <= 0.5 ? " is-good" : "") + '">' + (gap <= 0.5 ? "✓ " : "") + "Diferença entre o time mais forte e o mais fraco: <b>" + gap.toFixed(1).replace(".", ",") + "</b></p>" +
+      '<p class="el-strength-note">Força = nota média nos jogos oficiais do Modo Liga (quem tem menos de 3 jogos entra com a média da liga). Só você vê.</p></div>';
+  }
+  function renderDrawMode() {
+    const box = $("elDrawMode");
+    if (!box) return;
+    const mode = drawMode(), opt = (value, label, help) => '<button type="button" class="el-mode' + (mode === value ? " is-on" : "") + '" role="radio" aria-checked="' + (mode === value) + '" data-draw-mode="' + value + '"><strong>' + label + "</strong><small>" + help + "</small></button>";
+    box.innerHTML = '<div class="el-modes" role="radiogroup" aria-label="Tipo de sorteio">' + opt("random", "🎲 Aleatório", "como é hoje") + opt("balanced", "⚖ Equilibrado", "pela nota média") + "</div>";
+    const button = $("drawTeams");
+    if (button) button.textContent = mode === "balanced" ? "⚖ Sortear times equilibrados" : "🎲 Sortear times";
+  }
+  document.addEventListener("click", (event) => {
+    const option = event.target.closest?.("[data-draw-mode]");
+    if (!option) return;
+    try { localStorage.setItem(DRAW_MODE_KEY, option.dataset.drawMode); } catch {}
+    renderDrawMode();
+    const redraw = document.querySelector("[data-el-redraw]");
+    if (redraw) redraw.textContent = option.dataset.drawMode === "balanced" ? "↻ Sortear de novo (equilibrado)" : "↻ Sortear de novo";
+  });
   function cocaOnCourtCount() { return Math.min(9, Math.max(4, Number(state.superLiga?.starters || state.cocaOnCourt) || 5)); }
   // Titulares iguais nos dois times: vale o número escolhido, limitado ao menor time do confronto.
   function effectiveOnCourt() {
@@ -6817,6 +7134,7 @@
     // Link direto de notícia (#noticia-slug) abre o SKALAMA News; senão, carrega a manchete da Tela principal.
     if (!pvRoute() && !openNewsFromHash()) loadNews();
     loadVoteWinners();
+    pfRoute(false);
     initPush();
     setTheme(localStorage.getItem("liga-skalama-theme-v2") || "light");
     syncServerClock();
