@@ -2062,6 +2062,11 @@ body.light-theme .pv-msg.is-bad{color:#b42318}
 .pza-x:hover{background:#b4231814}
 body:not(.light-theme) .pza-x{color:#ff7267}
 .pza-use{width:100%}
+.pza-copy{flex-direction:row;gap:8px;width:auto;min-height:48px;padding:10px 22px;font-size:16px}
+.pza-copy svg{flex:none}
+.pza-copy-label{display:block;margin:14px 0 6px;font-size:13px;font-weight:800}
+.pza-copy-text{box-sizing:border-box;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);font-family:inherit;font-size:15px;line-height:1.4;resize:vertical}
+@media(max-width:620px){.pza-copy{width:100%}}
 /* Painel do jogo: votação */
 .lv-vote:empty{display:none}
 .lv-vote{display:grid;gap:8px}

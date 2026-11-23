@@ -4039,13 +4039,15 @@
     if (term && first && select.selectedOptions[0]?.hidden !== false) select.value = first.value;
   });
   function pvKeeperBadge(keeper) { return keeper ? ' <b class="pv-g" title="Goleiro" aria-label="goleiro">G</b>' : ""; }
-  function pvInviteText(round) {
+  // Link oficial da lista: o convite sempre termina com ele (mesmo testando em outro endereço).
+  const PV_LINK = "https://skalama.com.br/#presenca";
+  function pvInviteText(round, countsIn) {
     if (!round) return "";
-    const counts = PZ.data?.counts || PZA.data?.counts || {}, left = Math.max(0, round.slots - (counts.in || 0));
+    const counts = countsIn || PZ.data?.counts || PZA.data?.counts || {}, left = Math.max(0, round.slots - (counts.in || 0));
     return "⚽ *CONVOCAÇÃO SKALAMA*\n" + pvWeekday(round.round_key).toLowerCase().replace(/^./, (c) => c.toUpperCase()) + ", " + pvDayMonth(round.round_key) +
       (round.start_time ? " às " + round.start_time.replace(":", "h") : "") + (round.venue ? "\n📍 " + round.venue : "") +
       "\n👥 " + round.slots + " vagas" + (counts.in ? " · " + left + (left === 1 ? " sobrando" : " sobrando") : "") +
-      "\n\nConfirme com seu nome e PIN:\n" + location.origin + "/#presenca";
+      "\n\nConfirme com seu nome e PIN:\n" + PV_LINK;
   }
   // ----- Tela do jogador: lista de presença -----
   async function pzLoad(silent = false) {
@@ -4243,11 +4245,11 @@
     box.innerHTML = '<div class="pza"><div class="pza-head"><h4 class="pza-title">📋 LISTA DE PRESENÇA PELO LINK</h4>' + (round ? '<span class="pza-state ' + (round.open ? "is-open" : "is-closed") + '">' + (round.open ? "ABERTA" : "FECHADA") + "</span>" : "") + "</div>" +
       '<p class="pza-round">' + escapeHtml(pzaRoundLabel(key, round ? round.start_time : pzaTime())) + "</p>" +
       (!data ? '<p class="pv-hint">Carregando…</p>' : !round
-        ? '<p class="pv-hint">Os jogadores confirmam pelo link <b>' + escapeHtml(location.origin) + '/#presenca</b> com nome e PIN. A lista fecha sozinha no horário do jogo.</p><div class="pza-row"><label>Vagas<input type="number" id="pzaSlots" min="2" max="60" value="20" inputmode="numeric"></label><button type="button" class="button button-primary" data-pza="open">Abrir lista</button></div>'
+        ? '<p class="pv-hint">Os jogadores confirmam pelo link <b>' + escapeHtml(PV_LINK.replace("https://", "")) + '</b> com nome e PIN. A lista fecha sozinha no horário do jogo.</p><div class="pza-row"><label>Vagas<input type="number" id="pzaSlots" min="2" max="60" value="20" inputmode="numeric"></label><button type="button" class="button button-primary" data-pza="open">Abrir lista</button></div>'
         : '<p class="pza-count"><strong>' + confirmed.length + " de " + round.slots + "</strong> confirmados" + (waiting.length ? " · " + waiting.length + " na espera" : "") + "</p>" +
           '<div class="pza-row"><label>Vagas<input type="number" id="pzaSlots" min="2" max="60" value="' + round.slots + '" inputmode="numeric"></label><button type="button" class="button button-outline" data-pza="slots">Salvar vagas</button>' +
           '<button type="button" class="button button-outline" data-pza="' + (round.open ? "close" : "reopen") + '">' + (round.open ? "Fechar lista" : "Reabrir lista") + "</button></div>" +
-          '<div class="pza-row"><button type="button" class="button button-outline" data-pza="invite">Copiar convite</button><button type="button" class="button button-outline" data-pza="link">Copiar link</button></div>' +
+          '<div class="pza-row"><button type="button" class="lv-btn lv-black pza-copy" data-pza="invite">' + PZA_COPY_ICON + "Copiar convite</button></div>" +
           '<div class="pza-cols"><div><h5>CONFIRMADOS</h5>' + (confirmed.length ? '<ol class="pza-list">' + confirmed.map(item).join("") + "</ol>" : '<p class="pv-hint">Ninguém ainda.</p>') + "</div>" +
           (waiting.length ? '<div><h5>LISTA DE ESPERA</h5><ol class="pza-list">' + waiting.map(item).join("") + "</ol></div>" : "") + "</div>" +
           '<div class="pza-row"><label class="pza-grow">Confirmar alguém sem celular<select id="pzaAdd"><option value="">Escolha</option>' + roster.filter((r) => !listed.has(r.name)).map((r) => '<option value="' + escapeHtml(r.name) + '">' + escapeHtml(displayName(r.name)) + "</option>").join("") + '</select></label><button type="button" class="button button-outline" data-pza="add">Confirmar</button></div>' +
@@ -4256,6 +4258,38 @@
       '<p class="pv-msg" id="pzaMsg" role="status" aria-live="polite"></p></div>';
   }
   function pzaMsg(text, tone = "") { const el = $("pzaMsg"); if (el) { el.textContent = text; el.className = "pv-msg" + (tone ? " is-" + tone : ""); } if (text) notify(text, tone === "bad"); }
+  const PZA_COPY_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><rect x="8" y="8" width="12" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 8V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
+  // Navegador sem a API de área de transferência: tenta o jeito antigo (execCommand).
+  function pzaCopyLegacy(text) {
+    const area = document.createElement("textarea");
+    area.value = text; area.setAttribute("readonly", ""); area.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
+    document.body.appendChild(area); area.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch {}
+    area.remove();
+    return ok;
+  }
+  // Não deu para copiar: janela com o convite já selecionado para copiar na mão.
+  function pzaCopyDialog(text) {
+    let dialog = $("pzaCopyDialog");
+    if (!dialog) {
+      dialog = document.createElement("dialog");
+      dialog.id = "pzaCopyDialog";
+      dialog.className = "lv-sheet ask-sheet";
+      dialog.setAttribute("aria-labelledby", "pzaCopyTitle");
+      document.body.appendChild(dialog);
+      dialog.addEventListener("click", (event) => { if (event.target === dialog || event.target.closest("[data-pza-copy-close]")) dialog.close(); });
+    }
+    const back = document.activeElement;
+    dialog.innerHTML = '<header class="lv-sheet-head"><h2 id="pzaCopyTitle">Copie o convite</h2></header><div class="lv-sheet-body"><p class="ask-message">O navegador não deixou copiar sozinho. O texto já está selecionado: segure em cima dele e toque em <b>Copiar</b> (no PC, Ctrl+C).</p>' +
+      '<label class="pza-copy-label" for="pzaCopyText">Convite</label><textarea id="pzaCopyText" class="pza-copy-text" readonly rows="9"></textarea></div>' +
+      '<footer class="lv-sheet-foot"><button type="button" class="lv-btn lv-white" data-pza-copy-close>Fechar</button></footer>';
+    const area = dialog.querySelector("textarea");
+    area.value = text;
+    dialog.addEventListener("close", () => { if (back && document.contains(back)) back.focus?.(); }, { once: true });
+    try { dialog.showModal(); } catch { dialog.setAttribute("open", ""); }
+    area.focus(); area.select(); try { area.setSelectionRange(0, text.length); } catch {}
+  }
   // Horário do jogo em Dados do jogo (o mesmo que o banco usa para fechar a lista).
   const pzaTime = () => (/^\d{2}:\d{2}$/.test(state.startTime || "") ? state.startTime : null);
   // Quando a lista fecha: data + horário em Brasília (UTC-3, sem horário de verão). Sem horário, conta o fim do dia.
@@ -4337,9 +4371,24 @@
       if (!name || !/^\d{4}$/.test(pin)) { pzaMsg("Escolha o jogador e digite 4 números.", "bad"); return; }
       const r = await pvRpc("player_pin_admin_set", { p_name: name, p_pin: pin });
       if (r.ok) { $("pzaPin").value = ""; pzaMsg("PIN de " + displayName(name) + " trocado. Avise o jogador."); } else pzaMsg(pvError(r), "bad");
-    } else if (kind === "invite" || kind === "link") {
-      const text = kind === "invite" ? pvInviteText(round) : location.origin + "/#presenca";
-      try { await navigator.clipboard.writeText(text); pzaMsg(kind === "invite" ? "Convite copiado. Cole no grupo do WhatsApp." : "Link copiado."); } catch { pzaMsg("Não deu para copiar. Link: " + location.origin + "/#presenca", "bad"); }
+    } else if (kind === "invite") {
+      if (!round) return;
+      // Convite com os dados atuais: data/horário/local de Dados do jogo, vagas do campo (ou da lista gravada).
+      const slotsField = Math.round(Number($("pzaSlots")?.value));
+      const text = pvInviteText({
+        round_key: key || round.round_key,
+        start_time: pzaTime() || round.start_time,
+        venue: String(state.venue || "").trim() || round.venue,
+        slots: slotsField >= 2 && slotsField <= 60 ? slotsField : round.slots,
+      }, PZA.data?.counts);
+      let copied = false;
+      try { if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); copied = true; } } catch {}
+      if (!copied) copied = pzaCopyLegacy(text);
+      if (copied) {
+        pzaMsg("Convite copiado! É só colar no grupo.");
+        clearTimeout(PZA.msgTimer);
+        PZA.msgTimer = setTimeout(() => { const el = $("pzaMsg"); if (el && el.textContent.startsWith("Convite copiado")) { el.textContent = ""; el.className = "pv-msg"; } }, 4000);
+      } else pzaCopyDialog(text);
     } else if (kind === "use") {
       const confirmed = new Set((PZA.data?.players || []).filter((p) => p.status === "in").map((p) => pvNorm(p.name)));
       const ok = await askConfirm({ title: "Usar a lista no Elenco?", message: confirmed.size + " jogadores confirmados ficam ativos para o sorteio. Todo o resto do elenco fica inativo.", confirmText: "Usar a lista (" + confirmed.size + ")", tone: "green" });
