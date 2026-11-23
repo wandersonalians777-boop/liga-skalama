@@ -4599,9 +4599,8 @@
     if (PZA.slotsKey !== key) { PZA.slotsKey = key; PZA.slots = round ? round.slots : 20; PZA.slotState = ""; }
     else if (round && !PZA.slotTimer && PZA.slotState !== "saving") PZA.slots = round.slots;
     const slots = PZA.slots, full = !!round && confirmed.length >= round.slots, freeSlot = !!round && confirmed.length < round.slots;
-    // Confirmar sem PIN: só jogadores ATIVOS do Elenco que ainda não estão na lista nem na espera.
-    const active = (state.roster || []).filter((name) => !isInactive(name)).map((name) => pvNorm(name));
-    const manual = roster.filter((r) => active.includes(pvNorm(r.name)) && !listed.has(pvNorm(r.name)));
+    // Confirmar sem PIN: todo o Elenco (ativos e inativos: a presença é que decide quem fica ativo) fora dos confirmados e da espera.
+    const manual = roster.filter((r) => !listed.has(pvNorm(r.name))).sort((a, b) => displayName(a.name).localeCompare(displayName(b.name), "pt-BR"));
     const card = (p, i, wait) => {
       const nm = escapeHtml(displayName(p.name)), sub = wait ? (i === 0 ? "próximo a entrar" : "espera nº " + (i + 1)) : p.source === "organizador" ? "confirmado pelo organizador" : "";
       return '<li class="pza-card ' + (wait ? "is-wait" : "is-ok") + (p.keeper ? " is-keeper" : "") + '"><span class="pza-n">' + (i + 1) + '</span><span class="pza-nm"><span class="pza-nm-t">' + nm + "</span>" + (sub ? "<small>" + sub + "</small>" : "") + "</span>" +
@@ -4635,8 +4634,10 @@
           '<div class="pza-sh"><h5>Confirmados</h5><span class="pza-tag is-ok">' + confirmed.length + " de " + round.slots + "</span></div>" +
           (confirmed.length ? '<ol class="pza-cards">' + confirmed.map((p, i) => card(p, i, false)).join("") + "</ol>" : '<p class="pv-hint">Ninguém ainda.</p>') +
           (waiting.length ? '<div class="pza-waitsec"><div class="pza-sh"><h5>Lista de espera</h5><span class="pza-tag is-wait">' + waiting.length + ' na espera</span></div><p class="pv-hint">Se alguém sair, o primeiro da espera entra sozinho e recebe aviso.</p><ol class="pza-cards">' + waiting.map((p, i) => card(p, i, true)).join("") + "</ol></div>" : "") +
-          '<div class="pza-manual"><label for="pzaAdd">Confirmar sem PIN</label><p>Para quem não tem celular ou não lembra o PIN.</p><div class="pza-mrow"><select id="pzaAdd"><option value="">Escolha o jogador</option>' +
-          manual.map((r) => '<option value="' + escapeHtml(r.name) + '">' + escapeHtml(displayName(r.name)) + (r.keeper ? " · goleiro" : "") + "</option>").join("") + '</select><button type="button" class="pza-btn is-outline" data-pza="add">Confirmar</button></div>' +
+          '<div class="pza-manual">' + (manual.length ? '<label for="pzaAdd">Confirmar sem PIN</label>' : '<p class="pza-manual-t">Confirmar sem PIN</p>') + '<p>Para quem não tem celular ou não lembra o PIN.</p><div class="pza-mrow">' +
+          (manual.length ? '<select id="pzaAdd"><option value="">Escolha o jogador</option>' + manual.map((r) => '<option value="' + escapeHtml(r.name) + '">' + escapeHtml(displayName(r.name)) + (r.keeper ? " · goleiro" : "") + "</option>").join("") + "</select>"
+            : '<p class="pza-allin" role="status">Todos do Elenco já estão na lista</p>') +
+          '<button type="button" class="pza-btn is-outline" data-pza="add"' + (manual.length ? "" : " disabled") + ">Confirmar</button></div>" +
           (full ? '<p class="pza-fullnote">Lista completa: quem você confirmar agora entra na lista de espera.</p>' : "") + "</div></div>" +
           '<div class="pza-bar"><button type="button" class="pza-btn is-green" data-pza="use"' + (confirmed.length ? "" : " disabled") + ">✓ Usar a lista no Elenco · " + confirmed.length + (confirmed.length === 1 ? " vai jogar" : " vão jogar") + "</button></div>") +
       '<p class="pv-msg pza-pad" id="pzaMsg" role="status" aria-live="polite"></p>' + (data ? '<div class="pza-extra">' + nmaPendingHtml() + pzaAccessHtml() + "</div>" : "") + "</div>";
@@ -4907,7 +4908,7 @@
       if (r.ok) PZA.slotState = "";
       after(r, (kind === "open" ? "Lista aberta. Mande o convite no grupo." : kind === "close" ? "Lista fechada." : "Lista reaberta.") + pzaPromotedText(r.promoted), kind === "open" || kind === "reopen");
     } else if (kind === "add") {
-      const name = $("pzaAdd")?.value; if (!name) { pzaMsg("Escolha quem confirmar.", "bad"); return; }
+      const name = $("pzaAdd")?.value || ""; if (!name) { pzaMsg("Escolha quem confirmar.", "bad"); return; }
       const r = await pvRpc("presence_admin_set", { p_round: key, p_name: name, p_going: true });
       after(r, displayName(name) + (r.status === "wait" ? " entrou na lista de espera." : " confirmado."));
     } else if (kind === "alerts-ok") {

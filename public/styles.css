@@ -2453,3 +2453,6 @@ body:not(.light-theme) .pza-card .pza-x{color:#9a9a92}
 body:not(.light-theme) .pza-card .pza-x:hover,body:not(.light-theme) .pza-card .pza-x:focus-visible{color:#ff7267}
 .pza-vagas-l{min-width:0}
 @media(max-width:420px){.pza-acts .pza-btn{padding:0 6px;font-size:13px;white-space:nowrap}.pza-vagas{padding:10px}.pza-saved{min-width:58px}}
+.pza-manual .pza-allin{display:flex;align-items:center;min-height:48px;margin:0;padding:0 12px;border:1px solid var(--line);border-radius:12px;font-weight:700;font-size:14px;color:#9a9a92}
+body.light-theme .pza-manual .pza-allin{color:#5a5a54}
+.pza-manual .pza-manual-t{margin:0 0 4px;font-weight:800;font-size:14px;color:var(--ink)}
