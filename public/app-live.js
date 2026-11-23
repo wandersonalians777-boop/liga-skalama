@@ -4107,11 +4107,12 @@
     if (!shared || !client) { box.innerHTML = '<div class="pv-wrap"><a class="pv-back" href="./">← Ir para o site</a><article class="pv-card"><p class="pv-kicker">CONVOCAÇÃO SKALAMA</p><p class="pv-empty">A lista de presença precisa de internet e do banco compartilhado.</p></article></div>'; return; }
     const data = PZ.data, round = data?.round, roster = data?.roster || [];
     if (!box.querySelector(".pv-wrap")) box.innerHTML = '<div class="pv-wrap"><a class="pv-back" href="./">← Ir para o site</a><article class="pv-card" id="pzCard" aria-live="polite"></article><section class="pv-panel" id="pzForm" aria-labelledby="pzFormTitle"></section><section class="pv-panel" id="pzLists" aria-label="Lista de presença"></section><div class="pv-namebox" id="pzNameBox"></div></div>';
-    if (PZ.invite) { pzRenderInvite(); $("pzNameBox").innerHTML = ""; return; }
+    if (PZ.invite) { pzRenderInvite(); $("pzNameBox").innerHTML = ""; $("pzNameBox").dataset.html = ""; return; }
     // "✎ Editar meu nome": quem o aparelho lembra já vem escolhido; senão escolhe na janela.
     {
       const meR = (data?.roster || []).find((r) => pvNorm(r.name) === pvNorm(pvMe()) && r.has_pin);
-      $("pzNameBox").innerHTML = data ? '<button type="button" class="pv-switch nm-open" data-nm-open="' + escapeHtml(meR ? meR.name : "") + '">✎ Editar meu nome</button>' : "";
+      const html = data ? '<button type="button" class="pv-switch nm-open" data-nm-open="' + escapeHtml(meR ? meR.name : "") + '">✎ Editar meu nome</button>' : "";
+      if ($("pzNameBox").dataset.html !== html) { $("pzNameBox").dataset.html = html; $("pzNameBox").innerHTML = html; } // não recria o botão a cada atualização
     }
     const counts = data?.counts || { in: 0, wait: 0 }, left = round ? Math.max(0, round.slots - counts.in) : 0;
     $("pzCard").innerHTML = '<p class="pv-kicker">CONVOCAÇÃO SKALAMA</p>' + (!data ? '<p class="pv-empty">Carregando…</p>' : !round ? '<p class="pv-empty">Ainda não tem lista aberta. Quando o organizador abrir, ela aparece aqui.</p>' :
