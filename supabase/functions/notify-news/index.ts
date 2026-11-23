@@ -1,12 +1,14 @@
 // SKALAMA News: envia notificação push quando uma notícia é publicada.
 //
-// Três formas de chamada (a autenticação é feita aqui dentro, por isso a função roda com verify_jwt desligado):
+// Formas de chamada (a autenticação é feita aqui dentro, por isso a função roda com verify_jwt desligado):
 //  1) Pelo gatilho do banco (pg_net), com o header x-notify-secret (o segredo fica só no Vault):
 //     { "post_id": "<uuid>" }
 //  2) Pelo organizador logado no site, para testar no próprio aparelho:
 //     { "test": true, "endpoint": "<endpoint da inscrição deste aparelho>" }  + Authorization: Bearer <sessão>
 //  3) Uma única vez, pelo banco (com o mesmo header secreto), para gerar as chaves VAPID:
 //     { "setup": true }  -> gera o par, guarda no Vault e devolve só a chave pública.
+//  4) Pelo banco (mesmo header secreto), quando a lista de espera puxa alguém para a lista de presença:
+//     { "presence_queue_id": 123 }  -> avisa só os aparelhos ligados a esse jogador (player_push_links).
 //
 // Chaves VAPID: lidas do Vault (news_push_vapid). Se existirem os secrets VAPID_PUBLIC_KEY,
 // VAPID_PRIVATE_KEY e VAPID_SUBJECT na função, eles têm prioridade. Nada disso fica no repositório.
@@ -145,6 +147,30 @@ async function handlePublish(req: Request, postId: string) {
   return json(req, 200, { post: post.slug, ...result });
 }
 
+// Lista de espera: avisa o jogador que entrou na lista (só nos aparelhos que ele ligou com o PIN).
+async function handlePresence(req: Request, queueId: number) {
+  if (!(await secretOk(req))) return json(req, 401, { error: "não autorizado" });
+  // Reserva o aviso: só uma chamada envia.
+  const { data: item } = await admin.from("presence_push_queue").update({ sent_at: new Date().toISOString() })
+    .eq("id", queueId).is("sent_at", null).select("id, round_key, player_name").maybeSingle();
+  if (!item) return json(req, 200, { skipped: "aviso já enviado" });
+  const { data: links } = await admin.from("player_push_links").select("endpoint").eq("player_name", item.player_name);
+  const endpoints = (links || []).map((l: { endpoint: string }) => l.endpoint);
+  let result = { total: 0, ok: 0, failed: 0, removed: 0 };
+  if (endpoints.length) {
+    const { data: subs } = await admin.from("push_subscriptions").select("id, endpoint, p256dh, auth, failures").in("endpoint", endpoints);
+    const [, m, d] = String(item.round_key).split("-");
+    result = await sendToAll((subs || []) as Sub[], {
+      title: "LIGA SKALAMA",
+      body: "Abriu vaga: você está confirmado para o jogo de " + d + "/" + m + ". ✅",
+      url: SITE + "/#presenca",
+      tag: "presenca-" + item.round_key,
+    });
+  }
+  await admin.from("presence_push_queue").update({ total: result.total, ok: result.ok }).eq("id", item.id);
+  return json(req, 200, { presence: true, ...result });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(req) });
   if (req.method !== "POST") return json(req, 405, { error: "use POST" });
@@ -154,6 +180,7 @@ Deno.serve(async (req) => {
     if (body.setup === true) return await handleSetup(req);
     if (!(await vapidReady())) return json(req, 500, { error: "Chaves VAPID ainda não configuradas." });
     if (body.test === true && typeof body.endpoint === "string") return await handleTest(req, body.endpoint);
+    if (typeof body.presence_queue_id === "number") return await handlePresence(req, body.presence_queue_id);
     if (typeof body.post_id === "string") return await handlePublish(req, body.post_id);
     return json(req, 400, { error: "pedido inválido" });
   } catch (err) {
