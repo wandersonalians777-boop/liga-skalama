@@ -2045,6 +2045,7 @@ body.light-theme .pv-msg.is-bad{color:#b42318}
 .pza-state.is-open{background:#1e7a3c;color:#fff}
 .pza-state.is-closed{background:#3a3a35;color:#fff}
 .pza-count{margin:0;font-size:15px}
+.pza-round{margin:-4px 0 0;font-size:14px;font-weight:800;color:var(--ink)}
 .pza-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px}
 .pza-row label{display:grid;gap:4px;font-size:13px;font-weight:700}
 .pza-row input,.pza-row select{min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);font-size:15px}

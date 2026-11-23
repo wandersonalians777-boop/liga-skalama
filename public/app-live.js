@@ -4241,6 +4241,7 @@
     if (box.dataset.sig === sig) return;
     box.dataset.sig = sig;
     box.innerHTML = '<div class="pza"><div class="pza-head"><h4 class="pza-title">📋 LISTA DE PRESENÇA PELO LINK</h4>' + (round ? '<span class="pza-state ' + (round.open ? "is-open" : "is-closed") + '">' + (round.open ? "ABERTA" : "FECHADA") + "</span>" : "") + "</div>" +
+      '<p class="pza-round">' + escapeHtml(pzaRoundLabel(key, round ? round.start_time : pzaTime())) + "</p>" +
       (!data ? '<p class="pv-hint">Carregando…</p>' : !round
         ? '<p class="pv-hint">Os jogadores confirmam pelo link <b>' + escapeHtml(location.origin) + '/#presenca</b> com nome e PIN. A lista fecha sozinha no horário do jogo.</p><div class="pza-row"><label>Vagas<input type="number" id="pzaSlots" min="2" max="60" value="20" inputmode="numeric"></label><button type="button" class="button button-primary" data-pza="open">Abrir lista</button></div>'
         : '<p class="pza-count"><strong>' + confirmed.length + " de " + round.slots + "</strong> confirmados" + (waiting.length ? " · " + waiting.length + " na espera" : "") + "</p>" +
@@ -4255,15 +4256,79 @@
       '<p class="pv-msg" id="pzaMsg" role="status" aria-live="polite"></p></div>';
   }
   function pzaMsg(text, tone = "") { const el = $("pzaMsg"); if (el) { el.textContent = text; el.className = "pv-msg" + (tone ? " is-" + tone : ""); } if (text) notify(text, tone === "bad"); }
+  // Horário do jogo em Dados do jogo (o mesmo que o banco usa para fechar a lista).
+  const pzaTime = () => (/^\d{2}:\d{2}$/.test(state.startTime || "") ? state.startTime : null);
+  // Quando a lista fecha: data + horário em Brasília (UTC-3, sem horário de verão). Sem horário, conta o fim do dia.
+  function pzaClosesMs(key, time) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key || "")) return null;
+    const ms = Date.parse(key + "T" + (/^\d{2}:\d{2}/.test(time || "") ? time.slice(0, 5) : "23:59") + ":00-03:00");
+    return Number.isFinite(ms) ? ms : null;
+  }
+  // "Rodada de segunda, 23/11 · fecha às 20:30"
+  function pzaRoundLabel(key, time) {
+    const d = pvDate(key);
+    if (!d) return "";
+    const day = d.toLocaleDateString("pt-BR", { weekday: "long" }).split("-")[0];
+    const t = /^\d{2}:\d{2}/.test(time || "") ? time.slice(0, 5) : "";
+    const past = (pzaClosesMs(key, t) ?? Infinity) <= nowMs();
+    return "Rodada de " + day + ", " + pvDayMonth(key) + " · " + (t ? (past ? "fechou às " : "fecha às ") + t : "sem horário definido");
+  }
+  function pzaGoToDate() {
+    const input = $("matchDate");
+    if (!input) return;
+    setTimeout(() => {
+      input.scrollIntoView({ behavior: "smooth", block: "center" });
+      try { input.focus({ preventScroll: true }); } catch { input.focus(); }
+    }, 60);
+  }
+  // Data/horário mudou em Dados do jogo: a lista acompanha. A rodada anterior fica como estava (outra round_key);
+  // a nova data ganha a sua lista com as mesmas vagas. No mesmo dia, só o horário (closes_at) muda.
+  async function pzaSyncRound(prevKey, prevTime) {
+    if (!shared || !canManageShared) return;
+    const key = state.matchDate || "", time = pzaTime();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || (key === prevKey && time === prevTime)) return;
+    const get = async (k) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(k || "")) return null;
+      const d = await pvRpc("presence_get", { p_round: k });
+      return d?.round && d.round.round_key === k ? d.round : null;
+    };
+    const cur = await get(key), prev = !cur && prevKey !== key ? await get(prevKey) : null, base = cur || prev;
+    if (!base) return;
+    const closedByTime = !!base.closes_at && Date.parse(base.closes_at) <= nowMs();
+    const open = cur ? cur.open || closedByTime : true;
+    const r = await pvRpc("presence_admin_round", { p_round: key, p_start: time, p_venue: String(state.venue || "").slice(0, 120) || null, p_slots: base.slots, p_open: open });
+    if (!r.ok) { pzaMsg("A lista de presença não acompanhou a nova data: " + pvError(r), "bad"); return; }
+    if (state.matchDate !== key) return;
+    PZA.data = r.view; PZA.key = key; PZA.at = Date.now();
+    if ($("elPresence")) $("elPresence").dataset.sig = "";
+    renderElPresence();
+    const nowOpen = !!r.view?.round?.open;
+    pzaMsg(cur ? (nowOpen ? "Lista de presença atualizada: fecha às " + (time || "—") + "." : "Horário da lista atualizado.") : nowOpen ? "Lista da rodada de " + pvDayMonth(key) + " aberta. Mande o convite no grupo." : "Lista da rodada de " + pvDayMonth(key) + " criada (fechada: o horário já passou).", !cur && !nowOpen ? "bad" : "");
+  }
   async function pzaAction(kind) {
     const key = state.matchDate, round = PZA.data?.round;
-    const after = (r, ok) => { if (r.ok) { if (r.view) { PZA.data = r.view; PZA.at = Date.now(); } $("elPresence").dataset.sig = ""; renderElPresence(); pzaMsg(ok); } else pzaMsg(pvError(r), "bad"); };
+    const after = (r, ok, mustOpen = false) => {
+      if (!r.ok) { pzaMsg(pvError(r), "bad"); return; }
+      if (r.view) { PZA.data = r.view; PZA.at = Date.now(); }
+      $("elPresence").dataset.sig = ""; renderElPresence();
+      // Só diz que abriu se a lista realmente ficou aberta depois de gravar.
+      if (mustOpen && !r.view?.round?.open) pzaMsg("A lista continua fechada: o horário do jogo já passou. Atualize a data em Dados do jogo.", "bad");
+      else pzaMsg(ok);
+    };
+    if (kind === "open" || kind === "reopen") {
+      const time = pzaTime(), closes = pzaClosesMs(key, time);
+      if (closes !== null && closes <= nowMs()) {
+        const go = await askConfirm({ title: "A data do jogo já passou", message: "A data do jogo (" + pvDayMonth(key) + (time ? ", " + time : "") + ") já passou. Atualize a data em Dados do jogo para abrir a lista da próxima rodada.", confirmText: "Ir para Dados do jogo", tone: "green" });
+        if (go) pzaGoToDate();
+        return;
+      }
+    }
     if (kind === "open" || kind === "slots" || kind === "close" || kind === "reopen") {
       const slots = Math.round(Number($("pzaSlots")?.value || round?.slots || 20));
       if (!(slots >= 2 && slots <= 60)) { pzaMsg("Vagas: de 2 a 60.", "bad"); return; }
       const open = kind === "close" ? false : kind === "reopen" || kind === "open" ? true : round.open;
       const r = await pvRpc("presence_admin_round", { p_round: key, p_start: /^\d{2}:\d{2}$/.test(state.startTime || "") ? state.startTime : null, p_venue: String(state.venue || "").slice(0, 120) || null, p_slots: slots, p_open: open });
-      after(r, kind === "open" ? "Lista aberta. Mande o convite no grupo." : kind === "close" ? "Lista fechada." : kind === "reopen" ? "Lista reaberta." : "Vagas atualizadas.");
+      after(r, kind === "open" ? "Lista aberta. Mande o convite no grupo." : kind === "close" ? "Lista fechada." : kind === "reopen" ? "Lista reaberta." : "Vagas atualizadas.", kind === "open" || kind === "reopen");
     } else if (kind === "add") {
       const name = $("pzaAdd")?.value; if (!name) { pzaMsg("Escolha quem confirmar.", "bad"); return; }
       after(await pvRpc("presence_admin_set", { p_round: key, p_name: name, p_going: true }), displayName(name) + " confirmado.");
@@ -6955,12 +7020,14 @@
     $("venue").addEventListener("change", (e) =>
       saveState({ venue: e.target.value.trim() }, "Local do jogo atualizado."),
     );
-    $("matchDate").addEventListener("change", (e) =>
-      saveState({ matchDate: e.target.value }, "Data atualizada."),
-    );
-    $("startTime").addEventListener("change", (e) =>
-      saveState({ startTime: e.target.value }, "Horário atualizado."),
-    );
+    $("matchDate").addEventListener("change", async (e) => {
+      const prevKey = state.matchDate || "", prevTime = pzaTime();
+      if (await saveState({ matchDate: e.target.value }, "Data atualizada.")) pzaSyncRound(prevKey, prevTime);
+    });
+    $("startTime").addEventListener("change", async (e) => {
+      const prevKey = state.matchDate || "", prevTime = pzaTime();
+      if (await saveState({ startTime: e.target.value }, "Horário atualizado.")) pzaSyncRound(prevKey, prevTime);
+    });
     document
       .querySelectorAll("[data-view-button]")
       .forEach((button) =>
