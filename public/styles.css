@@ -2456,3 +2456,7 @@ body:not(.light-theme) .pza-card .pza-x:hover,body:not(.light-theme) .pza-card .
 .pza-manual .pza-allin{display:flex;align-items:center;min-height:48px;margin:0;padding:0 12px;border:1px solid var(--line);border-radius:12px;font-weight:700;font-size:14px;color:#9a9a92}
 body.light-theme .pza-manual .pza-allin{color:#5a5a54}
 .pza-manual .pza-manual-t{margin:0 0 4px;font-weight:800;font-size:14px;color:var(--ink)}
+/* Próximo jogo: lista fechada (sem botão de confirmar) */
+.hx-pres-row .pza-st{height:24px;font-size:11px}
+.hx-pres-closed{margin:0;font-size:15px;color:#fff}
+.hx-pres-note{margin:0;font-size:12px;font-weight:600;color:#bdbdb5}

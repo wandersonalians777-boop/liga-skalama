@@ -3418,10 +3418,14 @@
   }
   function homePresenceHtml() {
     const round = HOME_PZ.data?.round;
-    if (!round || !round.open) return ""; // sem lista aberta, o bloco não aparece
+    // Sem rodada para a data do jogo, o bloco não aparece. Fechada (na mão ou pelo horário): fica, sem o botão.
+    if (!round || (state.matchDate && round.round_key !== state.matchDate)) return "";
     const inn = Number(HOME_PZ.data.counts?.in) || 0, slots = Number(round.slots) || 0, left = Math.max(0, slots - inn), full = slots > 0 && left === 0;
+    const meter = '<div class="hx-meter" role="progressbar" aria-label="Vagas preenchidas" aria-valuemin="0" aria-valuemax="' + slots + '" aria-valuenow="' + Math.min(inn, slots) + '"><i style="width:' + (slots ? Math.min(100, (inn / slots) * 100) : 0) + '%"></i></div>';
+    if (!round.open) return '<div class="hx-pres is-closed"><p class="hx-pres-row"><span>Lista de presença</span><span class="pza-st is-full">FECHADA</span></p>' +
+      '<p class="hx-pres-closed"><b>Lista fechada · ' + inn + (inn === 1 ? " confirmado" : " confirmados") + "</b></p>" + meter + '<p class="hx-pres-note">Fale com o organizador</p></div>';
     return '<div class="hx-pres"><p class="hx-pres-row"><span>Lista de presença</span><b>' + (full ? "Lista completa" : inn + " de " + slots + " · " + left + (left === 1 ? " vaga" : " vagas")) + "</b></p>" +
-      '<div class="hx-meter" role="progressbar" aria-label="Vagas preenchidas" aria-valuemin="0" aria-valuemax="' + slots + '" aria-valuenow="' + Math.min(inn, slots) + '"><i style="width:' + (slots ? Math.min(100, (inn / slots) * 100) : 0) + '%"></i></div>' +
+      meter +
       // Lista cheia: o fluxo de presença já coloca na lista de espera.
       '<a class="hx-pres-btn" href="#presenca">' + (full ? "Entrar na espera" : '<span aria-hidden="true">✅</span> Confirmar presença') + "</a></div>";
   }
