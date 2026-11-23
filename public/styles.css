@@ -2177,3 +2177,29 @@ body:not(.light-theme) .pf-tab.is-on{border-color:#ffc400}
 .el-strength-gap.is-good{color:#1e7a3c}
 body:not(.light-theme) .el-strength-gap.is-good{color:#3dba6e}
 .el-strength-note{margin:0;color:var(--muted);font-size:13px}
+/* Presença: link pessoal de primeiro acesso, aparelho que lembra e acesso dos jogadores */
+.pv-invite-hi{margin:6px 0 0;font:900 40px/1 'Barlow Condensed',sans-serif;letter-spacing:.4px;overflow-wrap:anywhere}
+.pv-me{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 12px;margin:4px 0 2px}
+.pv-me-name{margin:0;font-size:18px}
+.pv-me-name b{font-weight:900}
+.pv-switch{min-height:44px;padding:0 4px;border:0;background:none;color:inherit;font-size:14px;font-weight:700;text-decoration:underline;cursor:pointer}
+.pv-switch:focus-visible{outline:3px solid #6f8fe8;outline-offset:2px}
+.pv-warn{padding:10px 12px;border-left:4px solid #c2560c;border-radius:8px;background:#c2560c1a;color:inherit}
+.pza-alert{padding:12px 14px;border:2px solid #c2560c;border-radius:12px;background:#c2560c1a}
+.pza-alert ul{margin:0 0 6px;padding:0;list-style:none;display:grid;gap:4px;font-size:15px}
+.pza-alert .button{min-height:44px;margin-top:6px}
+.pza-acc{border-top:1px solid var(--line);padding-top:10px}
+.pza-acc summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font:900 16px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.5px}
+.pza-acc[open] summary{margin-bottom:8px}
+.pza-acc>.pv-hint,.pza-acc>.pza-row{margin-bottom:10px}
+.pza-acc-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.pza-acc-item{display:grid;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.pza-acc-main{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+.pza-acc-main .pv-name{flex:1 1 140px;font-weight:800}
+.pza-acc-main .button{min-height:44px}
+.pza-acc-st{padding:4px 10px;border-radius:999px;font-size:12px;font-weight:900;background:#3a3a35;color:#fff}
+.pza-acc-st.is-pin{background:#1e7a3c}
+.pza-acc-st.is-invite{background:#1f4fd1}
+.pza-acc-st.is-expired{background:#b42318}
+.pza-link{display:grid;gap:8px}
+.pza-link code{display:block;padding:8px 10px;border-radius:8px;background:var(--panel2);font-size:13px;overflow-wrap:anywhere}

@@ -3966,7 +3966,7 @@
   // O PIN nunca é guardado no aparelho; só o nome escolhido (comodidade).
   const PV_ME_KEY = "skalama-me";
   const PZ = { data: null, msg: "", tone: "", busy: false, formSig: "", timer: null };
-  const PZA = { data: null, key: "", busy: false, timer: null, at: 0 };
+  const PZA = { data: null, key: "", busy: false, timer: null, at: 0, access: null, links: new Map(), alerts: [], alerted: new Set(), accOpen: false };
   const VT = { data: null, msg: "", tone: "", busy: false, cand: "", mine: "", formSig: "", timer: null };
   const VTA = { data: null, key: "", at: 0 };
   const VOTE = { winners: [], homeData: null, homeKey: "", homeAt: 0 };
@@ -3981,6 +3981,11 @@
     self_vote: () => "Não dá para votar em você mesmo.",
     bad_candidate: () => "Escolha alguém que jogou nessa noite.",
     forbidden: () => "Só o organizador pode fazer isso.",
+    no_pin: () => "Você ainda não tem PIN. Peça seu link pessoal ao organizador para criar.",
+    invite_invalid: () => "Esse link não vale. Confira se copiou inteiro ou peça um novo ao organizador.",
+    invite_used: () => "Esse link já foi usado para criar um PIN. Se não foi você, avise o organizador agora.",
+    invite_expired: () => "Esse link venceu (vale 30 dias). Peça um novo ao organizador.",
+    invite_has_pin: () => "Esse jogador já tem PIN. Se esqueceu, peça ao organizador para resetar seu acesso.",
     offline: () => "Precisa de internet e do banco compartilhado.",
     net: (r) => "Não deu para falar com o servidor agora. " + (r.message || ""),
   };
@@ -3996,6 +4001,12 @@
   const pvNorm = (name) => displayName(name).toLocaleUpperCase("pt-BR");
   const pvMe = () => { try { return localStorage.getItem(PV_ME_KEY) || ""; } catch { return ""; } };
   const pvSetMe = (name) => { try { localStorage.setItem(PV_ME_KEY, name); } catch {} };
+  const pvForgetMe = () => { try { localStorage.removeItem(PV_ME_KEY); } catch {} };
+  // Aparelho que lembra: "Você é FULANO" + só o PIN. É só comodidade; a segurança está no PIN e no link pessoal.
+  function pvMeBlock(id, me, prefix) {
+    return '<div class="pv-me"><p class="pv-me-name">Você é <b>' + escapeHtml(displayName(me)) + '</b></p><button type="button" class="pv-switch" data-pv-switch="' + prefix + '">Não é você? Trocar</button></div>' +
+      '<input type="hidden" id="' + id + '" value="' + escapeHtml(me) + '">';
+  }
   function pvDate(key) { const d = key ? new Date(key + "T12:00:00") : null; return d && Number.isFinite(d.getTime()) ? d : null; }
   function pvWeekday(key) { const d = pvDate(key); return d ? d.toLocaleDateString("pt-BR", { weekday: "long" }).split("-")[0].toUpperCase() : ""; }
   function pvDayMonth(key) { const d = pvDate(key); return d ? d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : ""; }
@@ -4028,14 +4039,17 @@
   function pvNameField(id, names, selected, label = "Quem é você?") {
     const search = names.length > 12 ? '<input type="search" class="pv-search" id="' + id + 'Search" placeholder="Buscar nome" aria-label="Buscar nome no elenco" autocomplete="off">' : "";
     return '<label class="pv-label" for="' + id + '">' + label + "</label>" + search +
-      '<select id="' + id + '" class="pv-select"><option value="">Escolha seu nome</option>' + names.map((n) => '<option value="' + escapeHtml(n.name) + '"' + (pvNorm(n.name) === pvNorm(selected) ? " selected" : "") + ">" + escapeHtml(displayName(n.name)) + (n.keeper ? " · goleiro" : "") + "</option>").join("") + "</select>";
+      '<select id="' + id + '" class="pv-select"><option value="">Escolha seu nome</option>' + names.map((n) => {
+        const locked = n.has_pin === false; // sem PIN: só cria pelo link pessoal, não dá para escolher
+        return '<option value="' + escapeHtml(n.name) + '"' + (locked ? " disabled" : pvNorm(n.name) === pvNorm(selected) ? " selected" : "") + ">" + escapeHtml(displayName(n.name)) + (n.keeper ? " · goleiro" : "") + (locked ? " — peça seu link ao organizador" : "") + "</option>";
+      }).join("") + "</select>";
   }
   document.addEventListener("input", (event) => {
     const search = event.target.closest?.(".pv-search");
     if (!search) return;
     const select = $(search.id.replace(/Search$/, "")), term = search.value.trim().toLocaleUpperCase("pt-BR").normalize("NFD").replace(/[̀-ͯ]/g, "");
     [...select.options].forEach((option, i) => { if (i) option.hidden = !!term && !option.textContent.toLocaleUpperCase("pt-BR").normalize("NFD").replace(/[̀-ͯ]/g, "").includes(term); });
-    const first = [...select.options].find((option, i) => i && !option.hidden);
+    const first = [...select.options].find((option, i) => i && !option.hidden && !option.disabled);
     if (term && first && select.selectedOptions[0]?.hidden !== false) select.value = first.value;
   });
   function pvKeeperBadge(keeper) { return keeper ? ' <b class="pv-g" title="Goleiro" aria-label="goleiro">G</b>' : ""; }
@@ -4062,6 +4076,7 @@
     if (!shared || !client) { box.innerHTML = '<div class="pv-wrap"><a class="pv-back" href="./">← Ir para o site</a><article class="pv-card"><p class="pv-kicker">CONVOCAÇÃO SKALAMA</p><p class="pv-empty">A lista de presença precisa de internet e do banco compartilhado.</p></article></div>'; return; }
     const data = PZ.data, round = data?.round, roster = data?.roster || [];
     if (!box.querySelector(".pv-wrap")) box.innerHTML = '<div class="pv-wrap"><a class="pv-back" href="./">← Ir para o site</a><article class="pv-card" id="pzCard" aria-live="polite"></article><section class="pv-panel" id="pzForm" aria-labelledby="pzFormTitle"></section><section class="pv-panel" id="pzLists" aria-label="Lista de presença"></section></div>';
+    if (PZ.invite) { pzRenderInvite(); return; }
     const counts = data?.counts || { in: 0, wait: 0 }, left = round ? Math.max(0, round.slots - counts.in) : 0;
     $("pzCard").innerHTML = '<p class="pv-kicker">CONVOCAÇÃO SKALAMA</p>' + (!data ? '<p class="pv-empty">Carregando…</p>' : !round ? '<p class="pv-empty">Ainda não tem lista aberta. Quando o organizador abrir, ela aparece aqui.</p>' :
       '<p class="pv-day">' + escapeHtml(pvWeekday(round.round_key)) + '</p><p class="pv-date">' + escapeHtml(pvDayMonth(round.round_key)) + "</p>" +
@@ -4070,13 +4085,17 @@
       '<div class="pv-bar" role="progressbar" aria-label="Vagas preenchidas" aria-valuemin="0" aria-valuemax="' + round.slots + '" aria-valuenow="' + counts.in + '"><i style="width:' + Math.min(100, (counts.in / round.slots) * 100) + '%"></i></div>' +
       '<p class="pv-state ' + (round.open ? "is-open" : "is-closed") + '">' + (round.open ? "Lista aberta até o horário do jogo" : "Lista fechada") + "</p>");
     // Formulário: só redesenha quando o elenco ou a lista mudam de aberta/fechada (não apaga o PIN digitado).
-    const sig = JSON.stringify([roster.map((r) => r.name), !!round, round?.open, round?.round_key]);
+    const meRow = roster.find((r) => pvNorm(r.name) === pvNorm(pvMe()));
+    const sig = JSON.stringify([roster.map((r) => r.name + (r.has_pin ? "+" : "-")), !!round, round?.open, round?.round_key, meRow?.name || ""]);
     if (PZ.formSig !== sig) {
       PZ.formSig = sig;
+      const pinAndGo = '<p class="pv-label" id="pzPinLabel">PIN (4 números)</p>' + pvPinHtml("pzPin") +
+        '<div class="pv-actions"><button type="button" class="pv-btn pv-green" data-pz-go="1">✓ Vou jogar</button><button type="button" class="pv-btn pv-white" data-pz-go="0">Não vou desta vez</button></div>';
+      const who = meRow && meRow.has_pin ? pvMeBlock("pzName", meRow.name, "pz") + pinAndGo
+        : meRow ? pvMeBlock("pzNameNo", meRow.name, "pz") + '<p class="pv-hint pv-warn">Você ainda não tem PIN. Peça seu link pessoal ao organizador para criar.</p>'
+        : pvNameField("pzName", roster, "") + pinAndGo + '<p class="pv-hint">Primeira vez? Peça seu link pessoal ao organizador para criar o PIN.</p>';
       $("pzForm").innerHTML = !round ? "" : '<h2 class="pv-h" id="pzFormTitle">' + (round.open ? "Confirme sua presença" : "Lista fechada") + "</h2>" +
-        (round.open ? pvNameField("pzName", roster, pvMe()) + '<p class="pv-label" id="pzPinLabel">PIN (4 números)</p>' + pvPinHtml("pzPin") +
-          '<p class="pv-hint">Primeira vez? O PIN que você digitar agora vira o seu. Nas próximas, use o mesmo.</p>' +
-          '<div class="pv-actions"><button type="button" class="pv-btn pv-green" data-pz-go="1">✓ Vou jogar</button><button type="button" class="pv-btn pv-white" data-pz-go="0">Não vou desta vez</button></div>' : '<p class="pv-hint">Só o organizador pode mudar a lista agora.</p>') +
+        (round.open ? who : '<p class="pv-hint">Só o organizador pode mudar a lista agora.</p>') +
         '<p class="pv-msg" id="pzMsg" role="status" aria-live="polite"></p>' +
         '<div class="pv-share"><a class="pv-btn pv-wa" id="pzWa" target="_blank" rel="noopener">Compartilhar no WhatsApp</a></div>';
     }
@@ -4088,6 +4107,54 @@
     const confirmed = players.filter((p) => p.status === "in"), waiting = players.filter((p) => p.status === "wait");
     $("pzLists").innerHTML = !round ? "" : '<h2 class="pv-h">CONFIRMADOS (' + confirmed.length + "/" + round.slots + ")</h2>" + (confirmed.length ? '<ol class="pv-list">' + confirmed.map(row).join("") + "</ol>" : '<p class="pv-hint">Ninguém confirmou ainda. Seja o primeiro!</p>') +
       (waiting.length ? '<h2 class="pv-h pv-wait-h">LISTA DE ESPERA</h2><p class="pv-hint">Se alguém confirmado desistir, o primeiro da espera entra sozinho.</p><ol class="pv-list pv-wait">' + waiting.map(row).join("") + "</ol>" : "");
+  }
+  // ----- Link pessoal de primeiro acesso (#presenca/TOKEN): o único jeito de criar o PIN -----
+  async function pzInviteOpen(token) {
+    PZ.invite = { token, data: null, msg: "", tone: "", busy: false };
+    PZ.formSig = "";
+    renderPresence();
+    const r = await pvRpc("invite_get", { p_token: token });
+    if (!PZ.invite || PZ.invite.token !== token) return;
+    PZ.invite.data = r;
+    renderPresence();
+    if (r.ok) document.querySelector("#pzNewPin input")?.focus();
+  }
+  function pzRenderInvite() {
+    const inv = PZ.invite, r = inv.data;
+    PZ.formSig = "";
+    $("pzLists").innerHTML = "";
+    if (!r) { $("pzCard").innerHTML = '<p class="pv-kicker">PRIMEIRO ACESSO</p><p class="pv-empty">Abrindo seu link…</p>'; $("pzForm").innerHTML = ""; return; }
+    if (!r.ok) {
+      $("pzCard").innerHTML = '<p class="pv-kicker">PRIMEIRO ACESSO</p><p class="pv-empty">' + escapeHtml(pvError(r)) + "</p>";
+      $("pzForm").innerHTML = '<div class="pv-actions"><a class="pv-btn pv-white" href="#presenca">Ir para a lista de presença</a></div>';
+      return;
+    }
+    if (!$("pzNewPin")) {
+      $("pzCard").innerHTML = '<p class="pv-kicker">PRIMEIRO ACESSO</p><p class="pv-invite-hi">Olá, ' + escapeHtml(displayName(r.name)) + '!</p><p class="pv-where">Crie seu PIN de 4 números</p>';
+      $("pzForm").innerHTML = '<h2 class="pv-h" id="pzFormTitle">Crie seu PIN</h2>' +
+        '<p class="pv-label">PIN (4 números)</p>' + pvPinHtml("pzNewPin") + '<p class="pv-label">Repita o PIN</p>' + pvPinHtml("pzNewPin2") +
+        '<p class="pv-hint">Esse link é só seu e serve uma vez. Guarde o PIN: você usa ele para confirmar presença e votar no craque da noite.</p>' +
+        '<div class="pv-actions"><button type="button" class="pv-btn pv-green" id="pzInviteGo">Criar meu PIN</button></div><p class="pv-msg" id="pzInviteMsg" role="status" aria-live="polite"></p>';
+    }
+    $("pzInviteGo").disabled = inv.busy;
+    $("pzInviteMsg").textContent = inv.msg; $("pzInviteMsg").className = "pv-msg" + (inv.tone ? " is-" + inv.tone : "");
+  }
+  async function pzInviteSubmit() {
+    const inv = PZ.invite;
+    if (!inv?.data?.ok || inv.busy) return;
+    const a = pvPinValue("pzNewPin"), b = pvPinValue("pzNewPin2");
+    const fail = (msg, box) => { inv.msg = msg; inv.tone = "bad"; renderPresence(); if (box) { pvPinClear(box); document.querySelector("#" + box + " input")?.focus(); } };
+    if (!/^\d{4}$/.test(a)) return fail("Digite os 4 números do PIN.", "pzNewPin");
+    if (a !== b) return fail("Os dois PINs não batem. Digite de novo.", "pzNewPin2");
+    inv.busy = true; renderPresence();
+    const r = await pvRpc("invite_use", { p_token: inv.token, p_pin: a });
+    inv.busy = false;
+    if (!r.ok) { if (r.error === "pin_format") return fail(pvError(r), "pzNewPin"); inv.data = r; renderPresence(); return; }
+    pvSetMe(r.name);
+    PZ.invite = null; PZ.formSig = "";
+    PZ.msg = "PIN criado! Guarde esses 4 números. Agora é só confirmar sua presença."; PZ.tone = "good";
+    history.replaceState(null, "", location.pathname + location.search + "#presenca"); // o link usado sai da barra de endereço
+    pvRoute();
   }
   async function pzSubmit(going) {
     const round = PZ.data?.round, name = $("pzName")?.value || "", pin = pvPinValue("pzPin");
@@ -4155,15 +4222,18 @@
     $("vtCard").innerHTML = '<p class="pv-kicker">⭐ CRAQUE DA NOITE</p><p class="pv-day">' + escapeHtml(pvWeekday(round.round_key)) + '</p><p class="pv-date">' + escapeHtml(pvDayMonth(round.round_key)) + "</p>" +
       '<p class="pv-count"><strong>' + round.voted + " de " + round.eligible + "</strong> já votaram</p>" +
       '<p class="pv-state is-open">Votação aberta até ' + escapeHtml(closes.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " às " + closes.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })) + ". Os votos só aparecem quando fechar.</p>";
-    const sig = "open:" + round.round_key + ":" + parts.map((p) => p.name).join("|");
+    const meRow = parts.find((p) => pvNorm(p.name) === pvNorm(pvMe()));
+    const sig = "open:" + round.round_key + ":" + parts.map((p) => p.name + (p.has_pin ? "+" : "-")).join("|") + ":" + (meRow?.name || "");
     if (VT.formSig !== sig) {
       VT.formSig = sig;
-      const meName = parts.find((p) => pvNorm(p.name) === pvNorm(pvMe()))?.name || "";
-      $("vtForm").innerHTML = '<h2 class="pv-h" id="vtFormTitle">Vote no craque da noite</h2><p class="pv-hint">Só vota quem jogou nessa noite. Você pode trocar o voto até a votação fechar.</p>' +
-        pvNameField("vtName", parts.map((p) => ({ name: p.name, keeper: false })), meName) +
-        '<p class="pv-label">PIN (4 números)</p>' + pvPinHtml("vtPin") + '<p class="pv-hint">Primeira vez? O PIN que você digitar agora vira o seu.</p>' +
-        '<p class="pv-label" id="vtCandLabel">Quem foi o craque?</p><div class="vt-cands" id="vtCands" role="radiogroup" aria-labelledby="vtCandLabel"></div>' +
-        '<button type="button" class="pv-btn pv-green vt-submit" id="vtSubmit" disabled>Escolha um jogador</button><p class="pv-msg" id="vtMsg" role="status" aria-live="polite"></p>' +
+      const blocked = meRow && !meRow.has_pin;
+      const who = meRow && meRow.has_pin ? pvMeBlock("vtName", meRow.name, "vt")
+        : blocked ? pvMeBlock("vtNameNo", meRow.name, "vt") + '<p class="pv-hint pv-warn">Você ainda não tem PIN. Peça seu link pessoal ao organizador para criar e votar.</p>'
+        : pvNameField("vtName", parts.map((p) => ({ name: p.name, keeper: false, has_pin: p.has_pin !== false })), "");
+      $("vtForm").innerHTML = '<h2 class="pv-h" id="vtFormTitle">Vote no craque da noite</h2><p class="pv-hint">Só vota quem jogou nessa noite. Você pode trocar o voto até a votação fechar.</p>' + who +
+        (blocked ? "" : '<p class="pv-label">PIN (4 números)</p>' + pvPinHtml("vtPin") + (meRow ? "" : '<p class="pv-hint">Primeira vez? Peça seu link pessoal ao organizador para criar o PIN.</p>')) +
+        '<div' + (blocked ? " hidden" : "") + '><p class="pv-label" id="vtCandLabel">Quem foi o craque?</p><div class="vt-cands" id="vtCands" role="radiogroup" aria-labelledby="vtCandLabel"></div>' +
+        '<button type="button" class="pv-btn pv-green vt-submit" id="vtSubmit" disabled>Escolha um jogador</button></div><p class="pv-msg" id="vtMsg" role="status" aria-live="polite"></p>' +
         '<div class="pv-share"><a class="pv-btn pv-wa" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent("⭐ Votação do *CRAQUE DA NOITE* da Skalama aberta! Vote com seu nome e PIN:\n" + location.origin + "/#votacao") + '">Compartilhar no WhatsApp</a></div>';
     }
     const voter = pvNorm($("vtName")?.value || "");
@@ -4193,6 +4263,14 @@
   document.addEventListener("click", (event) => {
     const go = event.target.closest?.("[data-pz-go]");
     if (go && !go.disabled) { pzSubmit(go.dataset.pzGo === "1"); return; }
+    if (event.target.closest?.("#pzInviteGo")) { pzInviteSubmit(); return; }
+    const sw = event.target.closest?.("[data-pv-switch]");
+    if (sw) {
+      pvForgetMe();
+      if (sw.dataset.pvSwitch === "pz") { PZ.formSig = ""; PZ.msg = ""; renderPresence(); $("pzName")?.focus(); }
+      else { VT.formSig = ""; VT.msg = ""; VT.cand = ""; renderVoting(); $("vtName")?.focus(); }
+      return;
+    }
     const cand = event.target.closest?.("[data-vt-cand]");
     if (cand) { VT.cand = cand.dataset.vtCand; renderVoting(); $("vtCands")?.querySelector('[data-vt-cand="' + CSS.escape(VT.cand) + '"]')?.focus(); return; }
     if (event.target.closest?.("#vtSubmit")) vtSubmit();
@@ -4203,14 +4281,18 @@
   });
   // ----- Rotas próprias: #presenca e #votacao abrem só essa tela -----
   const PV_VIEWS = { "#presenca": "presenca", "#votacao": "votacao", "#hall": "hall" };
+  const PV_INVITE_RE = /^#presenca\/([A-Za-z0-9_-]{20,64})$/;
   function pvRoute() {
-    const view = PV_VIEWS[location.hash];
+    const invite = location.hash.match(PV_INVITE_RE);
+    const view = invite ? "presenca" : PV_VIEWS[location.hash];
+    if (!invite) PZ.invite = null;
     document.body.classList.toggle("pv-standalone", !!view);
     clearInterval(PZ.timer); clearInterval(VT.timer);
     if (!view) return false;
     setView(view);
     window.scrollTo(0, 0);
-    if (view === "presenca") { renderPresence(); pzLoad(); PZ.timer = setInterval(() => { if (!document.hidden) pzLoad(true); }, 10000); }
+    if (invite) pzInviteOpen(invite[1]);
+    else if (view === "presenca") { renderPresence(); pzLoad(); PZ.timer = setInterval(() => { if (!document.hidden) pzLoad(true); }, 10000); }
     else if (view === "votacao") { renderVoting(); vtLoad(); VT.timer = setInterval(() => { if (!document.hidden) vtLoad(true); }, 10000); }
     else hallOpen();
     return true;
@@ -4225,8 +4307,9 @@
     const key = state.matchDate || "";
     if (!key || !shared || !canManageShared) return;
     PZA.key = key; PZA.at = Date.now();
-    const data = await pvRpc("presence_get", { p_round: key });
+    const [data, access] = await Promise.all([pvRpc("presence_get", { p_round: key }), pvRpc("player_access_admin_list")]);
     if (data && data.round !== undefined) PZA.data = data;
+    if (access?.ok) { PZA.access = access; pzaCheckNewPins(access); }
     renderElPresence();
   }
   function renderElPresence() {
@@ -4239,11 +4322,11 @@
     const data = PZA.key === key ? PZA.data : null, round = data?.round && data.round.round_key === key ? data.round : null, players = round ? data.players : [], roster = data?.roster || [];
     const confirmed = players.filter((p) => p.status === "in"), waiting = players.filter((p) => p.status === "wait"), listed = new Set(players.map((p) => p.name));
     const item = (p) => '<li><span class="pv-name">' + escapeHtml(displayName(p.name)) + pvKeeperBadge(p.keeper) + '</span><button type="button" class="pza-x" data-pza-remove="' + escapeHtml(p.name) + '" aria-label="Tirar ' + escapeHtml(displayName(p.name)) + ' da lista">✕</button></li>';
-    const sig = JSON.stringify([key, round, players, roster.length]);
+    const sig = JSON.stringify([key, round, players, roster.map((r) => r.name + (r.has_pin ? "+" : "-")), PZA.access?.players, [...PZA.links.keys()], PZA.alerts]);
     if (box.dataset.sig === sig) return;
     box.dataset.sig = sig;
     box.innerHTML = '<div class="pza"><div class="pza-head"><h4 class="pza-title">📋 LISTA DE PRESENÇA PELO LINK</h4>' + (round ? '<span class="pza-state ' + (round.open ? "is-open" : "is-closed") + '">' + (round.open ? "ABERTA" : "FECHADA") + "</span>" : "") + "</div>" +
-      '<p class="pza-round">' + escapeHtml(pzaRoundLabel(key, round ? round.start_time : pzaTime())) + "</p>" +
+      '<p class="pza-round">' + escapeHtml(pzaRoundLabel(key, round ? round.start_time : pzaTime())) + "</p>" + pzaAlertsHtml() +
       (!data ? '<p class="pv-hint">Carregando…</p>' : !round
         ? '<p class="pv-hint">Os jogadores confirmam pelo link <b>' + escapeHtml(PV_LINK.replace("https://", "")) + '</b> com nome e PIN. A lista fecha sozinha no horário do jogo.</p><div class="pza-row"><label>Vagas<input type="number" id="pzaSlots" min="2" max="60" value="20" inputmode="numeric"></label><button type="button" class="button button-primary" data-pza="open">Abrir lista</button></div>'
         : '<p class="pza-count"><strong>' + confirmed.length + " de " + round.slots + "</strong> confirmados" + (waiting.length ? " · " + waiting.length + " na espera" : "") + "</p>" +
@@ -4252,12 +4335,86 @@
           '<div class="pza-row"><button type="button" class="lv-btn lv-black pza-copy" data-pza="invite">' + PZA_COPY_ICON + "Copiar convite</button></div>" +
           '<div class="pza-cols"><div><h5>CONFIRMADOS</h5>' + (confirmed.length ? '<ol class="pza-list">' + confirmed.map(item).join("") + "</ol>" : '<p class="pv-hint">Ninguém ainda.</p>') + "</div>" +
           (waiting.length ? '<div><h5>LISTA DE ESPERA</h5><ol class="pza-list">' + waiting.map(item).join("") + "</ol></div>" : "") + "</div>" +
-          '<div class="pza-row"><label class="pza-grow">Confirmar alguém sem celular<select id="pzaAdd"><option value="">Escolha</option>' + roster.filter((r) => !listed.has(r.name)).map((r) => '<option value="' + escapeHtml(r.name) + '">' + escapeHtml(displayName(r.name)) + "</option>").join("") + '</select></label><button type="button" class="button button-outline" data-pza="add">Confirmar</button></div>' +
-          '<div class="pza-row"><label class="pza-grow">Trocar PIN de<select id="pzaPinName"><option value="">Escolha</option>' + roster.map((r) => '<option value="' + escapeHtml(r.name) + '">' + escapeHtml(displayName(r.name)) + "</option>").join("") + '</select></label><label>Novo PIN<input type="text" id="pzaPin" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" autocomplete="off"></label><button type="button" class="button button-outline" data-pza="pin">Salvar PIN</button></div>' +
+          '<div class="pza-row"><label class="pza-grow">Confirmar presença (sem PIN ou sem celular)<select id="pzaAdd"><option value="">Escolha</option>' + roster.filter((r) => !listed.has(r.name)).map((r) => '<option value="' + escapeHtml(r.name) + '">' + escapeHtml(displayName(r.name)) + (r.has_pin ? " ✓" : " · sem PIN") + "</option>").join("") + '</select></label><button type="button" class="button button-outline" data-pza="add">Confirmar</button></div>' +
           '<button type="button" class="pv-btn pv-green pza-use" data-pza="use"' + (confirmed.length ? "" : " disabled") + ">✓ Usar a lista no Elenco (" + confirmed.length + " vão jogar)</button>") +
-      '<p class="pv-msg" id="pzaMsg" role="status" aria-live="polite"></p></div>';
+      '<p class="pv-msg" id="pzaMsg" role="status" aria-live="polite"></p>' + (data ? pzaAccessHtml() : "") + "</div>";
   }
   function pzaMsg(text, tone = "") { const el = $("pzaMsg"); if (el) { el.textContent = text; el.className = "pv-msg" + (tone ? " is-" + tone : ""); } if (text) notify(text, tone === "bad"); }
+  // ----- Acesso dos jogadores: link pessoal de primeiro acesso (o único jeito de criar PIN) -----
+  const PZA_SEEN_KEY = "skalama-pin-seen";
+  const pzaInviteLink = (token) => PV_LINK + "/" + token;
+  const pzaInviteText = (name, token) => "Fala, " + displayName(name) + "! Esse é seu link pessoal da lista da Skalama. Abra e crie seu PIN de 4 números (não passe esse link pra ninguém): " + pzaInviteLink(token);
+  // PIN criado desde a última vez que o organizador viu: alerta no painel (para perceber se foi alguém indevido).
+  function pzaCheckNewPins(access) {
+    let seen = "";
+    try { seen = localStorage.getItem(PZA_SEEN_KEY) || ""; } catch {}
+    if (!seen) { try { localStorage.setItem(PZA_SEEN_KEY, access.now); } catch {} return; } // primeira vez neste aparelho: só marca
+    const fresh = (access.players || []).filter((p) => p.pin_created_at && Date.parse(p.pin_created_at) > Date.parse(seen))
+      .sort((a, b) => Date.parse(a.pin_created_at) - Date.parse(b.pin_created_at));
+    PZA.alerts = fresh.map((p) => ({ name: p.name, at: p.pin_created_at }));
+    for (const p of fresh) {
+      const k = p.name + "|" + p.pin_created_at;
+      if (!PZA.alerted.has(k)) { PZA.alerted.add(k); notify(displayName(p.name) + " criou o PIN agora."); }
+    }
+  }
+  function pzaAlertsHtml() {
+    if (!PZA.alerts.length) return "";
+    const when = (at) => (nowMs() - Date.parse(at) < 5 * 60000 ? "agora" : "em " + new Date(at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }));
+    return '<div class="pza-alert" role="status"><ul>' + PZA.alerts.map((a) => "<li>🔔 <b>" + escapeHtml(displayName(a.name)) + "</b> criou o PIN " + when(a.at) + ".</li>").join("") + "</ul>" +
+      '<p class="pv-hint">Não foi ele? Use “Resetar acesso” em Acesso dos jogadores.</p><button type="button" class="button button-outline" data-pza="alerts-ok">Entendi</button></div>';
+  }
+  const PZA_ACC_LABEL = { pin: "Com PIN ✓", invite: "Link enviado (não usado)", expired: "Sem acesso (link venceu)", none: "Sem acesso" };
+  function pzaAccessHtml() {
+    const list = PZA.access?.players;
+    if (!list) return '<details class="pza-acc"><summary>ACESSO DOS JOGADORES</summary><p class="pv-hint">Carregando…</p></details>';
+    const withPin = list.filter((p) => p.status === "pin").length;
+    const row = (p) => {
+      const link = PZA.links.get(p.name);
+      const btn = p.status === "pin" ? '<button type="button" class="button button-outline" data-pza-acc="reset" data-name="' + escapeHtml(p.name) + '">Resetar acesso</button>'
+        : '<button type="button" class="button button-outline" data-pza-acc="gen" data-name="' + escapeHtml(p.name) + '">' + (p.status === "invite" ? "Gerar novo link" : "Gerar link") + "</button>";
+      return '<li class="pza-acc-item"><div class="pza-acc-main"><span class="pv-name">' + escapeHtml(displayName(p.name)) + pvKeeperBadge(p.keeper) + "</span>" +
+        '<span class="pza-acc-st is-' + p.status + '">' + PZA_ACC_LABEL[p.status] + (p.locked ? " · bloqueado 15 min" : "") + "</span>" + btn + "</div>" +
+        (link ? '<div class="pza-link"><code>' + escapeHtml(pzaInviteLink(link.token)) + '</code><button type="button" class="lv-btn lv-black pza-copy" data-pza-msg="' + escapeHtml(p.name) + '">' + PZA_COPY_ICON + "Copiar mensagem</button></div>" : "") + "</li>";
+    };
+    return '<details class="pza-acc"' + (PZA.accOpen ? " open" : "") + '><summary>ACESSO DOS JOGADORES · ' + withPin + " com PIN · " + (list.length - withPin) + " sem</summary>" +
+      '<p class="pv-hint">Quem não tem PIN só cria pelo <b>link pessoal</b> (vale 30 dias e uma vez). Mande no privado de cada um, nunca no grupo. O link aparece só na hora em que é gerado.</p>' +
+      '<div class="pza-row"><button type="button" class="button button-primary" data-pza="links-all">Gerar links para todos sem PIN</button></div>' +
+      '<ul class="pza-acc-list">' + list.map(row).join("") + "</ul></details>";
+  }
+  async function pzaAccess(kind, name) {
+    if (kind === "reset") {
+      const ok = await askConfirm({ title: "Resetar acesso de " + displayName(name) + "?", message: "O PIN atual deixa de valer e sai um link pessoal novo para ele criar outro. Mande o link só no privado dele.", confirmText: "Resetar acesso", tone: "red" });
+      if (!ok) return;
+    }
+    const r = await pvRpc(kind === "reset" ? "player_access_admin_reset" : "invite_admin_create", { p_name: name });
+    if (!r.ok) { pzaMsg(pvError(r), "bad"); return; }
+    (r.links || []).forEach((l) => PZA.links.set(l.name, l));
+    PZA.accOpen = true;
+    await pzaLoad();
+    pzaMsg((kind === "reset" ? "Acesso de " + displayName(name) + " resetado. " : "Link de " + displayName(name) + " gerado. ") + "Toque em “Copiar mensagem” e mande no privado.");
+    document.querySelector('[data-pza-msg="' + CSS.escape(name) + '"]')?.focus();
+  }
+  async function pzaSendInvite(name) {
+    const link = PZA.links.get(name);
+    if (!link) return;
+    const text = pzaInviteText(name, link.token);
+    // No celular, abre o compartilhar do aparelho (WhatsApp etc.); no PC, copia.
+    if (navigator.share && window.matchMedia?.("(pointer: coarse)").matches) {
+      try { await navigator.share({ text }); return; } catch (error) { if (error?.name === "AbortError") return; }
+    }
+    let copied = false;
+    try { if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); copied = true; } } catch {}
+    if (!copied) copied = pzaCopyLegacy(text);
+    if (copied) pzaMsg("Mensagem copiada! Mande no privado de " + displayName(name) + ".");
+    else pzaCopyDialog(text, "Copie a mensagem de " + displayName(name));
+  }
+  document.addEventListener("click", (event) => {
+    const acc = event.target.closest?.("#elPresence [data-pza-acc]");
+    if (acc) { pzaAccess(acc.dataset.pzaAcc, acc.dataset.name); return; }
+    const msg = event.target.closest?.("#elPresence [data-pza-msg]");
+    if (msg) pzaSendInvite(msg.dataset.pzaMsg);
+  });
+  document.addEventListener("toggle", (event) => { if (event.target.matches?.("#elPresence .pza-acc")) PZA.accOpen = event.target.open; }, true);
   const PZA_COPY_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><rect x="8" y="8" width="12" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 8V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
   // Navegador sem a API de área de transferência: tenta o jeito antigo (execCommand).
   function pzaCopyLegacy(text) {
@@ -4270,7 +4427,7 @@
     return ok;
   }
   // Não deu para copiar: janela com o convite já selecionado para copiar na mão.
-  function pzaCopyDialog(text) {
+  function pzaCopyDialog(text, title = "Copie o convite") {
     let dialog = $("pzaCopyDialog");
     if (!dialog) {
       dialog = document.createElement("dialog");
@@ -4281,8 +4438,8 @@
       dialog.addEventListener("click", (event) => { if (event.target === dialog || event.target.closest("[data-pza-copy-close]")) dialog.close(); });
     }
     const back = document.activeElement;
-    dialog.innerHTML = '<header class="lv-sheet-head"><h2 id="pzaCopyTitle">Copie o convite</h2></header><div class="lv-sheet-body"><p class="ask-message">O navegador não deixou copiar sozinho. O texto já está selecionado: segure em cima dele e toque em <b>Copiar</b> (no PC, Ctrl+C).</p>' +
-      '<label class="pza-copy-label" for="pzaCopyText">Convite</label><textarea id="pzaCopyText" class="pza-copy-text" readonly rows="9"></textarea></div>' +
+    dialog.innerHTML = '<header class="lv-sheet-head"><h2 id="pzaCopyTitle">' + escapeHtml(title) + '</h2></header><div class="lv-sheet-body"><p class="ask-message">O navegador não deixou copiar sozinho. O texto já está selecionado: segure em cima dele e toque em <b>Copiar</b> (no PC, Ctrl+C).</p>' +
+      '<label class="pza-copy-label" for="pzaCopyText">Texto</label><textarea id="pzaCopyText" class="pza-copy-text" readonly rows="9"></textarea></div>' +
       '<footer class="lv-sheet-foot"><button type="button" class="lv-btn lv-white" data-pza-copy-close>Fechar</button></footer>';
     const area = dialog.querySelector("textarea");
     area.value = text;
@@ -4366,11 +4523,17 @@
     } else if (kind === "add") {
       const name = $("pzaAdd")?.value; if (!name) { pzaMsg("Escolha quem confirmar.", "bad"); return; }
       after(await pvRpc("presence_admin_set", { p_round: key, p_name: name, p_going: true }), displayName(name) + " confirmado.");
-    } else if (kind === "pin") {
-      const name = $("pzaPinName")?.value, pin = $("pzaPin")?.value || "";
-      if (!name || !/^\d{4}$/.test(pin)) { pzaMsg("Escolha o jogador e digite 4 números.", "bad"); return; }
-      const r = await pvRpc("player_pin_admin_set", { p_name: name, p_pin: pin });
-      if (r.ok) { $("pzaPin").value = ""; pzaMsg("PIN de " + displayName(name) + " trocado. Avise o jogador."); } else pzaMsg(pvError(r), "bad");
+    } else if (kind === "alerts-ok") {
+      const last = PZA.alerts.reduce((m, a) => (Date.parse(a.at) > Date.parse(m) ? a.at : m), PZA.access?.now || new Date().toISOString());
+      try { localStorage.setItem(PZA_SEEN_KEY, last); } catch {}
+      PZA.alerts = []; $("elPresence").dataset.sig = ""; renderElPresence();
+    } else if (kind === "links-all") {
+      const r = await pvRpc("invite_admin_create_all");
+      if (!r.ok) { pzaMsg(pvError(r), "bad"); return; }
+      (r.links || []).forEach((l) => PZA.links.set(l.name, l));
+      PZA.accOpen = true;
+      await pzaLoad();
+      pzaMsg(r.links?.length ? r.links.length + (r.links.length === 1 ? " link gerado." : " links gerados.") + " Use “Copiar mensagem” em cada um e mande no privado." : "Todos já têm PIN ou um link válido.");
     } else if (kind === "invite") {
       if (!round) return;
       // Convite com os dados atuais: data/horário/local de Dados do jogo, vagas do campo (ou da lista gravada).
