@@ -247,7 +247,9 @@
     if (error) throw error;
     if (!data) throw new Error("O registro da rodada ainda não foi criado no banco.");
     const next = canManageShared ? normalizeState(data.state) : publicState(data.state);
+    const namesChanged = await loadDisplayNames();
     if (JSON.stringify(next) !== JSON.stringify(state)) { state = next; renderAll(); }
+    else if (namesChanged) renderAll();
   }
   async function refreshAdminAccess(session) {
     adminSession = session || null;
@@ -334,13 +336,35 @@
   function keeper(name) {
     return /\*\s*$/.test(String(name));
   }
-  function displayName(name) {
+  // Nome original (a chave de tudo): só tira o * de goleiro. Use para contas, filtros, ligações e comparações.
+  function baseName(name) {
     return String(name || "")
       .replace(/\*\s*$/, "")
       .trim();
   }
+  // Nome para MOSTRAR: o nome de exibição aprovado (player_display_names) ou o original sem o *.
+  // Nunca use para comparar ou ligar dados: para isso é baseName/playerKey.
+  const DN = { map: new Map(), at: 0, busy: false };
+  function displayName(name) {
+    const base = baseName(name);
+    return (base && DN.map.get(base.toLocaleUpperCase("pt-BR"))) || base;
+  }
   function playerKey(name) {
-    return displayName(name).toLocaleLowerCase("pt-BR");
+    return baseName(name).toLocaleLowerCase("pt-BR");
+  }
+  // Busca os nomes aprovados (leitura pública: só nome original -> nome de exibição). Redesenha se mudou.
+  async function loadDisplayNames(force = false) {
+    if (!shared || !client || DN.busy || (!force && Date.now() - DN.at < 30000)) return false;
+    DN.busy = true;
+    try {
+      const { data, error } = await client.rpc("display_names_public");
+      if (error || !Array.isArray(data)) return false;
+      DN.at = Date.now();
+      const next = new Map(data.filter((r) => r && r.name && r.display_name).map((r) => [baseName(r.name).toLocaleUpperCase("pt-BR"), String(r.display_name)]));
+      const changed = next.size !== DN.map.size || [...next].some(([k, v]) => DN.map.get(k) !== v);
+      DN.map = next;
+      return changed;
+    } catch { return false; } finally { DN.busy = false; }
   }
   function isInactive(name) {
     return (state.inactivePlayers || []).some((item) => playerKey(item) === playerKey(name));
@@ -481,7 +505,7 @@
       .subscribe((status) => { if (status === "SUBSCRIBED") updateAccessUI(); });
     // Aviso imediato: quando o organizador grava, os espectadores buscam o estado na hora (canal de broadcast, sem dados).
     stateChannel = client.channel("liga-skalama-state", { config: { broadcast: { self: false } } })
-      .on("broadcast", { event: "state" }, () => refreshSharedState().catch((error) => console.warn("Falha ao atualizar a rodada compartilhada:", error)))
+      .on("broadcast", { event: "state" }, () => { DN.at = 0; return refreshSharedState().catch((error) => console.warn("Falha ao atualizar a rodada compartilhada:", error)); })
       .subscribe();
     // Busca de segurança: a cada 2 s com jogo rolando, a cada 6 s sem jogo.
     if (sharedStatePoll) clearTimeout(sharedStatePoll);
@@ -492,6 +516,7 @@
       }, state?.currentGame ? 2000 : 6000);
     };
     poll();
+    await loadDisplayNames(true);
     renderAll();
     return true;
   }
@@ -906,7 +931,7 @@
       capacity = (state.timerMode || "liga") === "coca" ? 9 : 5;
     if (!team || !(state.teams || []).some((item) => item.name === team)) { notify("Escolha o time que vai receber o jogador.", true); return; }
     if (state.currentGame && [state.currentGame.home, state.currentGame.away].includes(team)) { notify("Esse time está jogando agora. Inscreva o jogador depois da partida.", true); return; }
-    if (!displayName(name)) { notify("Digite o nome do jogador.", true); return; }
+    if (!baseName(name)) { notify("Digite o nome do jogador.", true); return; }
     if (name.length > 50) { notify("O nome pode ter no máximo 50 caracteres.", true); return; }
     const lineups = Object.fromEntries((state.teams || []).map((item) => [item.name, [...lineupForTeam(item.name)]]));
     const everyone = [...(state.roster || []), ...Object.values(lineups).flat(), ...(state.reservePlayers || []), ...Object.keys(state.absentPlayers || {})];
@@ -975,7 +1000,7 @@
           const label = displayName(name), menuOpen = elUI.menu === index, editing = elUI.editing === index;
           return '<li class="el-player' + (off ? " is-off" : "") + '">' +
             (editing
-              ? '<form class="el-edit" data-el-edit-form="' + index + '"><label class="sr-only" for="elEditName">Novo nome de ' + escapeHtml(label) + '</label><input id="elEditName" maxlength="50" value="' + escapeHtml(label) + '"><button type="submit" class="el-btn el-black el-small">Salvar</button><button type="button" class="el-btn el-white el-small" data-el-edit-cancel>Cancelar</button></form>'
+              ? '<form class="el-edit" data-el-edit-form="' + index + '"><label class="sr-only" for="elEditName">Novo nome de ' + escapeHtml(label) + '</label><input id="elEditName" maxlength="50" value="' + escapeHtml(baseName(name)) + '"><button type="submit" class="el-btn el-black el-small">Salvar</button><button type="button" class="el-btn el-white el-small" data-el-edit-cancel>Cancelar</button></form>'
               : '<span class="el-pname">' + escapeHtml(label) + (keeper(name) ? ' <b class="el-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "</span>" +
                 '<button type="button" class="el-switch' + (off ? "" : " is-on") + '" role="switch" aria-checked="' + !off + '" aria-label="' + escapeHtml(label) + ": " + (off ? "não vai jogar" : "vai jogar") + '" data-toggle-player="' + index + '"><i aria-hidden="true"></i><span>' + (off ? "Não vai" : "Vai jogar") + "</span></button>" +
                 '<div class="el-menu-wrap"><button type="button" class="el-more" aria-haspopup="true" aria-expanded="' + menuOpen + '" aria-label="Mais opções para ' + escapeHtml(label) + '" data-el-menu="' + index + '">⋯</button>' +
@@ -1023,7 +1048,7 @@
     await saveState(patch, message);
   }
   function elKeeperFlag(name, on) {
-    return displayName(name) + (on ? "*" : "");
+    return baseName(name) + (on ? "*" : "");
   }
   function bindElenco() {
     const quem = $("elQuem");
@@ -1062,7 +1087,7 @@
       if (!name) return;
       if (!value) { notify("Digite o nome do jogador.", true); return; }
       elUI.editing = null;
-      if (value === displayName(name)) { renderRoster(); return; }
+      if (value === baseName(name)) { renderRoster(); return; }
       elReplacePlayer(index, elKeeperFlag(value, keeper(name)), "Nome atualizado: " + value + ".");
     });
     document.addEventListener("click", (event) => {
@@ -3982,6 +4007,12 @@
     bad_candidate: () => "Escolha alguém que jogou nessa noite.",
     forbidden: () => "Só o organizador pode fazer isso.",
     no_pin: () => "Você ainda não tem PIN. Peça seu link pessoal ao organizador para criar.",
+    name_length: () => "O nome precisa ter de 2 a 24 caracteres.",
+    name_chars: () => "Use só letras (com acento), números, espaço, ponto e hífen. Sem emoji.",
+    name_taken: () => "Esse nome já é de outro jogador. Escolha outro.",
+    name_same: () => "Esse já é o nome que aparece hoje.",
+    name_limit: () => "Limite de 2 trocas de nome em 60 dias atingido.",
+    no_request: () => "Esse pedido não está mais pendente. Atualize a lista.",
     invite_invalid: () => "Esse link não vale. Confira se copiou inteiro ou peça um novo ao organizador.",
     invite_used: () => "Esse link já foi usado para criar um PIN. Se não foi você, avise o organizador agora.",
     invite_expired: () => "Esse link venceu (vale 30 dias). Peça um novo ao organizador.",
@@ -3998,7 +4029,7 @@
       return data || {};
     } catch (error) { return { ok: false, error: "net", message: error.message }; }
   }
-  const pvNorm = (name) => displayName(name).toLocaleUpperCase("pt-BR");
+  const pvNorm = (name) => baseName(name).toLocaleUpperCase("pt-BR");
   const pvMe = () => { try { return localStorage.getItem(PV_ME_KEY) || ""; } catch { return ""; } };
   const pvSetMe = (name) => { try { localStorage.setItem(PV_ME_KEY, name); } catch {} };
   const pvForgetMe = () => { try { localStorage.removeItem(PV_ME_KEY); } catch {} };
@@ -4075,8 +4106,13 @@
     if (!box) return;
     if (!shared || !client) { box.innerHTML = '<div class="pv-wrap"><a class="pv-back" href="./">← Ir para o site</a><article class="pv-card"><p class="pv-kicker">CONVOCAÇÃO SKALAMA</p><p class="pv-empty">A lista de presença precisa de internet e do banco compartilhado.</p></article></div>'; return; }
     const data = PZ.data, round = data?.round, roster = data?.roster || [];
-    if (!box.querySelector(".pv-wrap")) box.innerHTML = '<div class="pv-wrap"><a class="pv-back" href="./">← Ir para o site</a><article class="pv-card" id="pzCard" aria-live="polite"></article><section class="pv-panel" id="pzForm" aria-labelledby="pzFormTitle"></section><section class="pv-panel" id="pzLists" aria-label="Lista de presença"></section></div>';
-    if (PZ.invite) { pzRenderInvite(); return; }
+    if (!box.querySelector(".pv-wrap")) box.innerHTML = '<div class="pv-wrap"><a class="pv-back" href="./">← Ir para o site</a><article class="pv-card" id="pzCard" aria-live="polite"></article><section class="pv-panel" id="pzForm" aria-labelledby="pzFormTitle"></section><section class="pv-panel" id="pzLists" aria-label="Lista de presença"></section><div class="pv-namebox" id="pzNameBox"></div></div>';
+    if (PZ.invite) { pzRenderInvite(); $("pzNameBox").innerHTML = ""; return; }
+    // "✎ Editar meu nome": quem o aparelho lembra já vem escolhido; senão escolhe na janela.
+    {
+      const meR = (data?.roster || []).find((r) => pvNorm(r.name) === pvNorm(pvMe()) && r.has_pin);
+      $("pzNameBox").innerHTML = data ? '<button type="button" class="pv-switch nm-open" data-nm-open="' + escapeHtml(meR ? meR.name : "") + '">✎ Editar meu nome</button>' : "";
+    }
     const counts = data?.counts || { in: 0, wait: 0 }, left = round ? Math.max(0, round.slots - counts.in) : 0;
     $("pzCard").innerHTML = '<p class="pv-kicker">CONVOCAÇÃO SKALAMA</p>' + (!data ? '<p class="pv-empty">Carregando…</p>' : !round ? '<p class="pv-empty">Ainda não tem lista aberta. Quando o organizador abrir, ela aparece aqui.</p>' :
       '<p class="pv-day">' + escapeHtml(pvWeekday(round.round_key)) + '</p><p class="pv-date">' + escapeHtml(pvDayMonth(round.round_key)) + "</p>" +
@@ -4173,6 +4209,100 @@
     } else { PZ.msg = pvError(r); PZ.tone = "bad"; if (r.error === "pin_wrong" || r.error === "locked") pvPinClear("pzPin"); }
     renderPresence();
   }
+  // ----- Nome de exibição: o jogador pede (com o PIN), o organizador aprova -----
+  // O nome original continua sendo a chave; só o que aparece muda. Regras de verdade ficam no banco.
+  const NM = { name: "", choose: false, step: "pin", pin: "", status: null, msg: "", tone: "", busy: false };
+  const NM_RE = /^[A-Za-zÀ-ÖØ-öø-ÿ0-9 .-]+$/;
+  const nmClean = (v) => String(v || "").replace(/\s+/g, " ").trim().toLocaleUpperCase("pt-BR");
+  const nmDate = (iso) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "");
+  const nmLimitText = (limit) => "Você já trocou de nome 2 vezes nos últimos 60 dias. Poderá trocar de novo a partir de " + nmDate(limit?.next_at) + ".";
+  function nmDialog() {
+    let dialog = $("nmDialog");
+    if (!dialog) {
+      dialog = document.createElement("dialog");
+      dialog.id = "nmDialog";
+      dialog.className = "lv-sheet ask-sheet nm-sheet";
+      dialog.setAttribute("aria-labelledby", "nmTitle");
+      document.body.appendChild(dialog);
+      dialog.addEventListener("click", (event) => {
+        if (event.target === dialog || event.target.closest("[data-nm-close]")) { dialog.close(); return; }
+        if (event.target.closest("#nmGo")) nmSubmit();
+      });
+      dialog.addEventListener("keydown", (event) => { if (event.key === "Enter" && event.target.matches("#nmInput, .pv-pin input")) { event.preventDefault(); nmSubmit(); } });
+      dialog.addEventListener("input", (event) => { if (event.target.id === "nmInput") { const pos = event.target.selectionStart; event.target.value = event.target.value.toLocaleUpperCase("pt-BR"); try { event.target.setSelectionRange(pos, pos); } catch {} } });
+      dialog.addEventListener("close", () => { NM.pin = ""; NM.status = null; NM.returnFocus?.focus?.(); });
+    }
+    return dialog;
+  }
+  function nmOpen(name) {
+    Object.assign(NM, { name: name || "", choose: !name, step: "pin", pin: "", status: null, msg: "", tone: "", busy: false, returnFocus: document.activeElement });
+    const dialog = nmDialog();
+    nmRender();
+    try { dialog.showModal(); } catch { dialog.setAttribute("open", ""); }
+    (NM.choose ? $("nmName") : document.querySelector("#nmPin input"))?.focus();
+  }
+  function nmRender() {
+    const dialog = nmDialog(), st = NM.status;
+    let body = "", go = "";
+    if (NM.step === "pin") {
+      const roster = (PZ.data?.roster || []).map((r) => ({ name: r.name, keeper: r.keeper, has_pin: r.has_pin !== false }));
+      body = (NM.choose ? pvNameField("nmName", roster, "") : '<p class="ask-message">Você é <b>' + escapeHtml(displayName(NM.name)) + "</b></p>") +
+        '<p class="pv-label">Seu PIN (4 números)</p>' + pvPinHtml("nmPin") +
+        '<p class="pv-hint">O nome que aparece no site muda só depois que o organizador aprovar. Seus números continuam os mesmos.</p>';
+      go = '<button type="button" class="lv-btn lv-big lv-green" id="nmGo"' + (NM.busy ? " disabled" : "") + ">Continuar</button>";
+    } else if (NM.step === "edit") {
+      const limited = (st.limit?.used || 0) >= 2;
+      body = (st.rejected ? '<p class="pv-hint pv-warn">Seu pedido de nome foi recusado.</p>' : "") +
+        (st.pending ? '<p class="pv-hint">Pedido aguardando aprovação: <b>' + escapeHtml(st.pending) + "</b>" + (st.requested_at ? " (enviado em " + nmDate(st.requested_at) + ")" : "") + ". Um novo pedido substitui esse.</p>" : "") +
+        (limited ? '<p class="pv-hint pv-warn">' + escapeHtml(nmLimitText(st.limit)) + "</p>"
+          : '<label class="pv-label" for="nmInput">Nome que vai aparecer no site</label><input id="nmInput" class="pv-select nm-input" maxlength="24" autocomplete="off" autocapitalize="characters" spellcheck="false" value="' + escapeHtml(st.display_name || "") + '">' +
+            '<p class="pv-hint">De 2 a 24 caracteres: letras (com acento), números, espaço, ponto e hífen. Até 2 trocas a cada 60 dias.</p>');
+      go = limited ? "" : '<button type="button" class="lv-btn lv-big lv-green" id="nmGo"' + (NM.busy ? " disabled" : "") + ">Enviar pedido</button>";
+    } else {
+      body = '<p class="ask-message">Pedido enviado! O organizador vai aprovar em breve.</p><p class="pv-hint">Até lá, continua aparecendo <b>' + escapeHtml(displayName(NM.name)) + "</b>.</p>";
+    }
+    dialog.innerHTML = '<header class="lv-sheet-head"><h2 id="nmTitle">✎ Editar meu nome</h2></header><div class="lv-sheet-body">' + body +
+      '<p class="pv-msg' + (NM.tone ? " is-" + NM.tone : "") + '" id="nmMsg" role="status" aria-live="polite">' + escapeHtml(NM.msg) + "</p></div>" +
+      '<footer class="lv-sheet-foot">' + go + '<button type="button" class="lv-btn lv-white" data-nm-close>' + (NM.step === "done" ? "Fechar" : "Cancelar") + "</button></footer>";
+  }
+  function nmFail(r, focus) {
+    NM.busy = false; NM.msg = r.error === "name_limit" ? nmLimitText(r.limit) : pvError(r); NM.tone = "bad";
+    if (r.error === "name_limit" && NM.status) NM.status.limit = r.limit;
+    const keepValue = $("nmInput")?.value;
+    nmRender();
+    if ($("nmInput") && keepValue != null) $("nmInput").value = keepValue;
+    if (focus === "pin") { pvPinClear("nmPin"); document.querySelector("#nmPin input")?.focus(); } else $("nmInput")?.focus();
+  }
+  async function nmSubmit() {
+    if (NM.busy) return;
+    if (NM.step === "pin") {
+      if (NM.choose) NM.name = $("nmName")?.value || "";
+      const pin = pvPinValue("nmPin");
+      if (!NM.name) { NM.msg = "Escolha seu nome."; NM.tone = "bad"; nmRender(); $("nmName")?.focus(); return; }
+      if (!/^\d{4}$/.test(pin)) { NM.msg = "Digite os 4 números do PIN."; NM.tone = "bad"; const n = NM.name; nmRender(); if (NM.choose && $("nmName")) $("nmName").value = n; document.querySelector("#nmPin input")?.focus(); return; }
+      NM.busy = true; nmRender();
+      const r = await pvRpc("display_name_status", { p_name: NM.name, p_pin: pin });
+      if (!r.ok) { const n = NM.name; nmFail(r, "pin"); if (NM.choose && $("nmName")) $("nmName").value = n; return; }
+      pvSetMe(r.name);
+      Object.assign(NM, { busy: false, step: "edit", pin, status: r, msg: "", tone: "", choose: false, name: r.name });
+      nmRender(); $("nmInput")?.focus(); $("nmInput")?.select();
+      return;
+    }
+    if (NM.step !== "edit") return;
+    const value = nmClean($("nmInput")?.value);
+    if (value.length < 2 || value.length > 24) return nmFail({ error: "name_length" });
+    if (!NM_RE.test(value) || !/[A-Za-zÀ-ÖØ-öø-ÿ]/.test(value)) return nmFail({ error: "name_chars" });
+    NM.busy = true;
+    const r = await pvRpc("request_display_name", { p_name: NM.name, p_pin: NM.pin, p_new: value });
+    if (!r.ok) return nmFail(r, r.error === "pin_wrong" || r.error === "locked" ? "pin" : "");
+    Object.assign(NM, { busy: false, step: "done", pin: "", msg: "", tone: "" });
+    nmRender(); dialogFocus("nmDialog");
+  }
+  function dialogFocus(id) { $(id)?.querySelector("[data-nm-close]")?.focus(); }
+  document.addEventListener("click", (event) => {
+    const b = event.target.closest?.("[data-nm-open]");
+    if (b) nmOpen(b.dataset.nmOpen);
+  });
   // ----- Tela do jogador: votação do craque da noite -----
   function vtNightStats(key) {
     const stats = new Map();
@@ -4307,9 +4437,10 @@
     const key = state.matchDate || "";
     if (!key || !shared || !canManageShared) return;
     PZA.key = key; PZA.at = Date.now();
-    const [data, access] = await Promise.all([pvRpc("presence_get", { p_round: key }), pvRpc("player_access_admin_list")]);
+    const [data, access, names] = await Promise.all([pvRpc("presence_get", { p_round: key }), pvRpc("player_access_admin_list"), pvRpc("display_name_admin_list")]);
     if (data && data.round !== undefined) PZA.data = data;
     if (access?.ok) { PZA.access = access; pzaCheckNewPins(access); }
+    if (names?.ok) PZA.names = names;
     renderElPresence();
   }
   function renderElPresence() {
@@ -4322,10 +4453,10 @@
     const data = PZA.key === key ? PZA.data : null, round = data?.round && data.round.round_key === key ? data.round : null, players = round ? data.players : [], roster = data?.roster || [];
     const confirmed = players.filter((p) => p.status === "in"), waiting = players.filter((p) => p.status === "wait"), listed = new Set(players.map((p) => p.name));
     const item = (p) => '<li><span class="pv-name">' + escapeHtml(displayName(p.name)) + pvKeeperBadge(p.keeper) + '</span><button type="button" class="pza-x" data-pza-remove="' + escapeHtml(p.name) + '" aria-label="Tirar ' + escapeHtml(displayName(p.name)) + ' da lista">✕</button></li>';
-    const sig = JSON.stringify([key, round, players, roster.map((r) => r.name + (r.has_pin ? "+" : "-")), PZA.access?.players, [...PZA.links.keys()], PZA.alerts]);
+    const sig = JSON.stringify([key, round, players, roster.map((r) => r.name + (r.has_pin ? "+" : "-")), PZA.access?.players, [...PZA.links.keys()], PZA.alerts, PZA.names, [...DN.map]]);
     if (box.dataset.sig === sig) return;
     box.dataset.sig = sig;
-    box.innerHTML = '<div class="pza"><div class="pza-head"><h4 class="pza-title">📋 LISTA DE PRESENÇA PELO LINK</h4>' + (round ? '<span class="pza-state ' + (round.open ? "is-open" : "is-closed") + '">' + (round.open ? "ABERTA" : "FECHADA") + "</span>" : "") + "</div>" +
+    box.innerHTML = '<div class="pza"><div class="pza-head"><h4 class="pza-title">📋 LISTA DE PRESENÇA PELO LINK</h4>' + (PZA.names?.pending?.length ? '<span class="pza-state nm-count">✎ ' + PZA.names.pending.length + (PZA.names.pending.length === 1 ? " pedido de nome" : " pedidos de nome") + "</span>" : "") + (round ? '<span class="pza-state ' + (round.open ? "is-open" : "is-closed") + '">' + (round.open ? "ABERTA" : "FECHADA") + "</span>" : "") + "</div>" +
       '<p class="pza-round">' + escapeHtml(pzaRoundLabel(key, round ? round.start_time : pzaTime())) + "</p>" + pzaAlertsHtml() +
       (!data ? '<p class="pv-hint">Carregando…</p>' : !round
         ? '<p class="pv-hint">Os jogadores confirmam pelo link <b>' + escapeHtml(PV_LINK.replace("https://", "")) + '</b> com nome e PIN. A lista fecha sozinha no horário do jogo.</p><div class="pza-row"><label>Vagas<input type="number" id="pzaSlots" min="2" max="60" value="20" inputmode="numeric"></label><button type="button" class="button button-primary" data-pza="open">Abrir lista</button></div>'
@@ -4337,7 +4468,7 @@
           (waiting.length ? '<div><h5>LISTA DE ESPERA</h5><ol class="pza-list">' + waiting.map(item).join("") + "</ol></div>" : "") + "</div>" +
           '<div class="pza-row"><label class="pza-grow">Confirmar presença (sem PIN ou sem celular)<select id="pzaAdd"><option value="">Escolha</option>' + roster.filter((r) => !listed.has(r.name)).map((r) => '<option value="' + escapeHtml(r.name) + '">' + escapeHtml(displayName(r.name)) + (r.has_pin ? " ✓" : " · sem PIN") + "</option>").join("") + '</select></label><button type="button" class="button button-outline" data-pza="add">Confirmar</button></div>' +
           '<button type="button" class="pv-btn pv-green pza-use" data-pza="use"' + (confirmed.length ? "" : " disabled") + ">✓ Usar a lista no Elenco (" + confirmed.length + " vão jogar)</button>") +
-      '<p class="pv-msg" id="pzaMsg" role="status" aria-live="polite"></p>' + (data ? pzaAccessHtml() : "") + "</div>";
+      '<p class="pv-msg" id="pzaMsg" role="status" aria-live="polite"></p>' + (data ? nmaPendingHtml() + pzaAccessHtml() : "") + "</div>";
   }
   function pzaMsg(text, tone = "") { const el = $("pzaMsg"); if (el) { el.textContent = text; el.className = "pv-msg" + (tone ? " is-" + tone : ""); } if (text) notify(text, tone === "bad"); }
   // ----- Acesso dos jogadores: link pessoal de primeiro acesso (o único jeito de criar PIN) -----
@@ -4372,8 +4503,10 @@
       const link = PZA.links.get(p.name);
       const btn = p.status === "pin" ? '<button type="button" class="button button-outline" data-pza-acc="reset" data-name="' + escapeHtml(p.name) + '">Resetar acesso</button>'
         : '<button type="button" class="button button-outline" data-pza-acc="gen" data-name="' + escapeHtml(p.name) + '">' + (p.status === "invite" ? "Gerar novo link" : "Gerar link") + "</button>";
-      return '<li class="pza-acc-item"><div class="pza-acc-main"><span class="pv-name">' + escapeHtml(displayName(p.name)) + pvKeeperBadge(p.keeper) + "</span>" +
-        '<span class="pza-acc-st is-' + p.status + '">' + PZA_ACC_LABEL[p.status] + (p.locked ? " · bloqueado 15 min" : "") + "</span>" + btn + "</div>" +
+      const shown = displayName(p.name), renamed = pvNorm(shown) !== pvNorm(p.name);
+      return '<li class="pza-acc-item"><div class="pza-acc-main"><span class="pv-name">' + escapeHtml(shown) + (renamed ? ' <small class="nm-orig">(' + escapeHtml(baseName(p.name)) + ")</small>" : "") + pvKeeperBadge(p.keeper) + "</span>" +
+        '<span class="pza-acc-st is-' + p.status + '">' + PZA_ACC_LABEL[p.status] + (p.locked ? " · bloqueado 15 min" : "") + "</span>" + btn +
+        '<button type="button" class="button button-outline" data-nma-edit="' + escapeHtml(p.name) + '">✎ Nome</button></div>' +
         (link ? '<div class="pza-link"><code>' + escapeHtml(pzaInviteLink(link.token)) + '</code><button type="button" class="lv-btn lv-black pza-copy" data-pza-msg="' + escapeHtml(p.name) + '">' + PZA_COPY_ICON + "Copiar mensagem</button></div>" : "") + "</li>";
     };
     return '<details class="pza-acc"' + (PZA.accOpen ? " open" : "") + '><summary>ACESSO DOS JOGADORES · ' + withPin + " com PIN · " + (list.length - withPin) + " sem</summary>" +
@@ -4415,6 +4548,86 @@
     if (msg) pzaSendInvite(msg.dataset.pzaMsg);
   });
   document.addEventListener("toggle", (event) => { if (event.target.matches?.("#elPresence .pza-acc")) PZA.accOpen = event.target.open; }, true);
+  // ----- Organizador: pedidos de troca de nome, edição direta e histórico -----
+  function nmaPendingHtml() {
+    const list = PZA.names?.pending || [];
+    if (!list.length) return "";
+    return '<section class="nma-pending" aria-labelledby="nmaTitle"><h5 id="nmaTitle">PEDIDOS DE TROCA DE NOME (' + list.length + ")</h5><ul>" + list.map((p) =>
+      '<li><p class="nma-change"><span>' + escapeHtml(p.display_name) + '</span> <b aria-hidden="true">→</b><span class="sr-only"> para </span> <strong>' + escapeHtml(p.requested) + "</strong></p>" +
+      '<p class="pv-hint">' + (pvNorm(p.display_name) !== pvNorm(p.name) ? "Nome original: " + escapeHtml(baseName(p.name)) + " · " : "") + "pedido em " + escapeHtml(new Date(p.requested_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })) +
+      (p.limit?.used ? " · " + p.limit.used + " de 2 trocas nos últimos 60 dias" : "") + "</p>" +
+      '<div class="nma-actions"><button type="button" class="lv-btn lv-green" data-nma-approve="' + escapeHtml(p.name) + '">Aprovar</button><button type="button" class="lv-btn lv-white" data-nma-reject="' + escapeHtml(p.name) + '">Recusar</button></div></li>').join("") + "</ul></section>";
+  }
+  // Depois de mudar um nome: recarrega os nomes, redesenha e avisa os outros aparelhos (eles buscam na hora).
+  async function nmaAfterChange(message) {
+    await loadDisplayNames(true);
+    await pzaLoad();
+    renderAll();
+    stateChannel?.send({ type: "broadcast", event: "state", payload: { at: nowMs() } }).catch?.(() => {});
+    pzaMsg(message);
+  }
+  async function nmaDecide(name, approve) {
+    const p = (PZA.names?.pending || []).find((x) => x.name === name);
+    if (!p) return;
+    const ok = await askConfirm(approve
+      ? { title: "Aprovar novo nome?", message: p.display_name + " passa a aparecer como " + p.requested + " no site inteiro, inclusive nos jogos antigos. Os números não mudam.", confirmText: "Aprovar", tone: "green" }
+      : { title: "Recusar pedido de nome?", message: "Continua aparecendo " + p.display_name + ". O jogador vê o aviso de recusa na próxima vez que abrir com o PIN.", confirmText: "Recusar", tone: "red" });
+    if (!ok) return;
+    const r = await pvRpc(approve ? "display_name_admin_approve" : "display_name_admin_reject", { p_name: name });
+    if (!r.ok) { pzaMsg(r.error === "name_limit" ? "Esse jogador já trocou 2 vezes nos últimos 60 dias (libera em " + nmDate(r.limit?.next_at) + ")." : pvError(r), "bad"); await pzaLoad(); return; }
+    await nmaAfterChange(approve ? "Nome aprovado: agora aparece " + p.requested + "." : "Pedido de " + p.display_name + " recusado.");
+  }
+  function nmaDialog(name) {
+    let dialog = $("nmaDialog");
+    if (!dialog) {
+      dialog = document.createElement("dialog");
+      dialog.id = "nmaDialog";
+      dialog.className = "lv-sheet ask-sheet nm-sheet";
+      dialog.setAttribute("aria-labelledby", "nmaDlgTitle");
+      document.body.appendChild(dialog);
+      dialog.addEventListener("click", (event) => {
+        if (event.target === dialog || event.target.closest("[data-nma-close]")) { dialog.close(); return; }
+        const b = event.target.closest("[data-nma-save]");
+        if (b) nmaSave(dialog.dataset.name, b.dataset.nmaSave === "original");
+      });
+      dialog.addEventListener("input", (event) => { if (event.target.id === "nmaInput") { const pos = event.target.selectionStart; event.target.value = event.target.value.toLocaleUpperCase("pt-BR"); try { event.target.setSelectionRange(pos, pos); } catch {} } });
+      dialog.addEventListener("keydown", (event) => { if (event.key === "Enter" && event.target.id === "nmaInput") { event.preventDefault(); nmaSave(dialog.dataset.name, false); } });
+    }
+    const shown = displayName(name), renamed = pvNorm(shown) !== pvNorm(name);
+    const hist = (PZA.names?.history || []).filter((h) => h.name === name);
+    dialog.dataset.name = name;
+    dialog.innerHTML = '<header class="lv-sheet-head"><h2 id="nmaDlgTitle">Nome de ' + escapeHtml(shown) + '</h2></header><div class="lv-sheet-body">' +
+      '<p class="pv-hint">Nome original (chave das estatísticas, não muda): <b>' + escapeHtml(baseName(name)) + "</b></p>" +
+      '<label class="pv-label" for="nmaInput">Nome que aparece no site</label><input id="nmaInput" class="pv-select nm-input" maxlength="24" autocomplete="off" autocapitalize="characters" spellcheck="false" value="' + escapeHtml(shown) + '">' +
+      '<p class="pv-hint">Edição do organizador: sem limite e não conta nas 2 trocas do jogador.</p>' +
+      '<p class="pv-msg" id="nmaMsg" role="status" aria-live="polite"></p>' +
+      '<h3 class="nma-hist-title">Histórico de trocas</h3>' + (hist.length ? '<ul class="nma-hist">' + hist.map((h) => "<li><span>" + escapeHtml(h.old) + " → <b>" + escapeHtml(h.new) + "</b></span><small>" + escapeHtml(new Date(h.at).toLocaleDateString("pt-BR")) + " · " + (h.by_organizer ? "organizador" : "pedido do jogador") + "</small></li>").join("") + "</ul>" : '<p class="pv-hint">Nenhuma troca ainda.</p>') +
+      '</div><footer class="lv-sheet-foot"><button type="button" class="lv-btn lv-big lv-green" data-nma-save="set">Salvar nome</button>' +
+      (renamed ? '<button type="button" class="lv-btn lv-white" data-nma-save="original">Voltar ao original (' + escapeHtml(baseName(name)) + ")</button>" : "") +
+      '<button type="button" class="lv-btn lv-white" data-nma-close>Cancelar</button></footer>';
+    try { dialog.showModal(); } catch { dialog.setAttribute("open", ""); }
+    $("nmaInput")?.focus();
+  }
+  async function nmaSave(name, original) {
+    const value = original ? "" : nmClean($("nmaInput")?.value);
+    const show = (text) => { const el = $("nmaMsg"); if (el) { el.textContent = text; el.className = "pv-msg is-bad"; } };
+    if (!original) {
+      if (value.length < 2 || value.length > 24) return show(pvError({ error: "name_length" }));
+      if (!NM_RE.test(value) || !/[A-Za-zÀ-ÖØ-öø-ÿ]/.test(value)) return show(pvError({ error: "name_chars" }));
+    }
+    const r = await pvRpc("display_name_admin_set", { p_name: name, p_display: value || null });
+    if (!r.ok) return show(pvError(r));
+    $("nmaDialog")?.close();
+    await nmaAfterChange(original ? baseName(name) + " voltou ao nome original." : baseName(name) + " agora aparece como " + r.display_name + ".");
+  }
+  document.addEventListener("click", (event) => {
+    const a = event.target.closest?.("#elPresence [data-nma-approve]");
+    if (a) { nmaDecide(a.dataset.nmaApprove, true); return; }
+    const x = event.target.closest?.("#elPresence [data-nma-reject]");
+    if (x) { nmaDecide(x.dataset.nmaReject, false); return; }
+    const e = event.target.closest?.("#elPresence [data-nma-edit]");
+    if (e) nmaDialog(e.dataset.nmaEdit);
+  });
   const PZA_COPY_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><rect x="8" y="8" width="12" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 8V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
   // Navegador sem a API de área de transferência: tenta o jeito antigo (execCommand).
   function pzaCopyLegacy(text) {
@@ -4637,7 +4850,7 @@
   // ---------- Perfil do jogador (#jogador/nome) e Hall da fama (#hall) ----------
   // Tudo calculado do histórico oficial (officialGames + gamePerformance); jogo de treino nunca entra.
   function pSlug(name) {
-    return displayName(name).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return baseName(name).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   }
   // Nome de jogador como link para o perfil (só em telas de leitura, nunca dentro de botão).
   function plink(name, text) {
@@ -4753,7 +4966,8 @@
     const tab = (mode, label, n) => '<button type="button" class="pf-tab' + (PF.mode === mode ? " is-on" : "") + '" role="tab" aria-selected="' + (PF.mode === mode) + '" data-pf-mode="' + mode + '">' + label + " <small>" + n + "</small></button>";
     box.innerHTML = '<div class="pf-wrap"><div class="pf-bar-top"><button type="button" class="pf-back" data-pf-back>← Voltar</button><button type="button" class="pf-share" data-pf-share>Compartilhar</button></div>' +
       '<header class="pf-head"><div class="pf-photo">' + (photo ? '<img src="' + escapeHtml(photo) + '" alt="Foto de ' + escapeHtml(displayName(name)) + '" onerror="this.remove()">' : "") + '<span aria-hidden="true">' + escapeHtml(initials || "?") + "</span></div>" +
-      '<div class="pf-id"><h2 id="pfTitle">' + escapeHtml(displayName(name) || "Jogador") + '</h2><p class="pf-tags"><span>' + (isKeeper ? "Goleiro" : "Linha") + "</span>" + (playerCurrentTeam(slug) ? "<span>" + escapeHtml(playerCurrentTeam(slug)) + "</span>" : "") + (first ? "<span>desde " + escapeHtml(first.toLocaleDateString("pt-BR", { month: "short", year: "numeric" }).replace(". de ", "/").replace(" de ", "/")) + "</span>" : "") + "</p></div></header>" +
+      '<div class="pf-id"><h2 id="pfTitle">' + escapeHtml(displayName(name) || "Jogador") + "</h2>" +
+        (shared && client && name ? '<button type="button" class="pv-switch nm-open" data-nm-open="' + escapeHtml(baseName(name)) + '">✎ Editar meu nome</button>' : "") + '<p class="pf-tags"><span>' + (isKeeper ? "Goleiro" : "Linha") + "</span>" + (playerCurrentTeam(slug) ? "<span>" + escapeHtml(playerCurrentTeam(slug)) + "</span>" : "") + (first ? "<span>desde " + escapeHtml(first.toLocaleDateString("pt-BR", { month: "short", year: "numeric" }).replace(". de ", "/").replace(" de ", "/")) + "</span>" : "") + "</p></div></header>" +
       (!total ? '<p class="pf-empty pf-card">Este jogador ainda não tem jogos oficiais.</p>' :
         '<div class="pf-tabs" role="tablist" aria-label="Modo">' + tab("liga", "Modo Liga", liga.games) + tab("super", "Super Liga", sup.games) + "</div>" +
         '<section class="pf-card" aria-label="Números"><div class="pf-nums">' + nums + '</div><div class="pf-ved"><div class="v"><strong>' + d.wins + '</strong><small>VITÓRIAS</small></div><div class="e"><strong>' + d.draws + '</strong><small>EMPATES</small></div><div class="d"><strong>' + d.losses + "</strong><small>DERROTAS</small></div></div></section>" +

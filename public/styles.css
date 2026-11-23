@@ -2203,3 +2203,22 @@ body:not(.light-theme) .el-strength-gap.is-good{color:#3dba6e}
 .pza-acc-st.is-expired{background:#b42318}
 .pza-link{display:grid;gap:8px}
 .pza-link code{display:block;padding:8px 10px;border-radius:8px;background:var(--panel2);font-size:13px;overflow-wrap:anywhere}
+/* Nome de exibição: pedido do jogador e aprovação do organizador */
+.pv-namebox{display:flex;justify-content:center;margin-top:4px}
+.pf-id .nm-open{margin:2px 0 4px}
+.nm-input{width:100%;text-transform:uppercase}
+.nm-sheet .lv-sheet-body{display:grid;gap:8px}
+.nm-sheet .pv-msg:empty{display:none}
+.nm-count{background:#1f4fd1;color:#fff}
+.nm-orig{font-weight:600;color:var(--muted)}
+.nma-pending{padding:12px 14px;border:2px solid #1f4fd1;border-radius:12px;background:#1f4fd11a}
+.nma-pending h5{margin:0 0 8px;font:900 15px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.5px}
+.nma-pending ul{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.nma-pending li{display:grid;gap:6px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.nma-change{margin:0;font-size:16px;overflow-wrap:anywhere}
+.nma-change strong{font-weight:900}
+.nma-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.nma-hist-title{margin:8px 0 0;font:900 15px/1.1 'Barlow Condensed',sans-serif;letter-spacing:.5px}
+.nma-hist{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.nma-hist li{display:grid;gap:2px;padding:8px 10px;border-radius:8px;background:var(--panel2);overflow-wrap:anywhere}
+.nma-hist small{color:var(--muted)}
