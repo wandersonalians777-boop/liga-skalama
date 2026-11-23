@@ -2224,3 +2224,130 @@ body:not(.light-theme) .el-strength-gap.is-good{color:#3dba6e}
 .nma-hist{display:grid;gap:6px;margin:0;padding:0;list-style:none}
 .nma-hist li{display:grid;gap:2px;padding:8px 10px;border-radius:8px;background:var(--panel2);overflow-wrap:anywhere}
 .nma-hist small{color:var(--muted)}
+/* ===== Tela principal: layout novo (nov/2026) =====
+   Ordem: topo (notícia 65% + próximo jogo 35% no PC) → Destaques (abas Da noite/Do mês) + Classificação →
+   Equipes da rodada → Rankings (abas, 3 primeiros + "Ver completo") → links Hall da fama / Regras oficiais. */
+.home-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;margin:4px 0 0}
+.home-layout>*{min-width:0;margin:0!important}
+.home-layout>[hidden],.home-tab[hidden],.home-tabs[hidden],.home-more[hidden],.home-gk-more[hidden],.home-panel[hidden],#publicacoes-semanais{display:none!important}
+.home-top{grid-template-columns:minmax(0,1fr)}
+.home-card{padding:18px!important;border-radius:20px}
+.home-card-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 12px;margin:0 0 12px}
+.home-card-head h2{margin:0;font:900 clamp(24px,2.4vw,30px)/1 'Barlow Condensed',sans-serif;letter-spacing:.3px;text-transform:uppercase}
+.home-head-link{display:inline-flex;align-items:center;gap:4px;min-height:44px;color:inherit;font-size:14px;font-weight:800;text-decoration:underline;text-underline-offset:3px}
+.home-head-link:focus-visible,.home-tab:focus-visible,.home-more:focus-visible,.home-link:focus-visible,.hx-pres-btn:focus-visible,.home-panel:focus-visible{outline:3px solid #6f8fe8;outline-offset:2px}
+/* abas */
+.home-tabs{display:flex;gap:4px;margin:0 0 12px;padding:4px;border-radius:12px;background:#232323}
+.home-tab{flex:1 1 0;min-width:0;min-height:44px;padding:0 8px;border:0;border-radius:9px;background:transparent;color:#f2f2ec;font-size:13px;font-weight:800;cursor:pointer}
+.home-tab:hover{background:#ffffff14}
+.home-tab[aria-selected="true"]{background:#0d0d0d;color:#ffc400;box-shadow:inset 0 0 0 1px #ffc40066}
+body.light-theme .home-tabs{background:#eeede7}
+body.light-theme .home-tab{color:#2b2b27}
+body.light-theme .home-tab:hover{background:#e0dfd8}
+body.light-theme .home-tab[aria-selected="true"]{background:#0d0d0d;color:#ffc400;box-shadow:none}
+.home-panel{margin:0!important;padding:0!important;border:0!important;background:none!important;box-shadow:none!important}
+.home-note{margin:10px 0 0!important;font-size:12px}
+/* destaques: Craque da noite numa faixa inteira, os outros 2 por linha */
+.home-dest .night-highlights-grid,.home-dest .season-highlight-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.home-dest .night-highlight-card,.home-dest .season-highlight-card{display:flex;flex-direction:column;justify-content:center;gap:4px;min-height:0;padding:12px 14px;border:1px solid #2a2a2a;border-radius:14px;background:#0d0d0d;color:#fff;box-shadow:none}
+.home-dest .night-highlight-card strong,.home-dest .season-highlight-card strong{color:#fff;font:900 22px/1.05 'Barlow Condensed',sans-serif;text-transform:uppercase;overflow-wrap:anywhere}
+.home-dest .night-highlight-card strong a,.home-dest .season-highlight-card strong a{color:inherit}
+.home-dest .night-highlight-card small,.home-dest .season-highlight-card small{color:#c9c9c1;font-size:12px;line-height:1.35}
+.home-dest .season-kicker{color:#ffc400!important;font-size:10px;font-weight:800;letter-spacing:1.4px}
+.home-dest .night-vote-card,.home-dest .season-keeper{grid-column:1/-1;border-left:5px solid #ffc400}
+.home-dest .season-empty{grid-column:1/-1}
+/* rankings: 3 primeiros, o resto abre em "Ver completo" */
+.home-rk .ranking-row{display:grid;grid-template-columns:32px minmax(0,1fr) auto;align-items:center;gap:12px;margin:0 0 8px;padding:10px 12px;border:1px solid #333;border-radius:12px;font-size:14px}
+.home-rk .ranking-row .rank{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#2c2c2c;color:#f2f2ec;font:800 12px/1 'DM Sans',sans-serif}
+.home-rk .ranking-row small{display:block;color:#b5b5ad;font-size:12px;font-weight:500}
+.home-rk .ranking-row strong{font:900 22px/1 'Barlow Condensed',sans-serif}
+.home-rk .ranking-row:first-child{border-color:#0d0d0d;background:#0d0d0d;color:#fff}
+.home-rk .ranking-row:first-child .rank{background:#ffc400;color:#0d0d0d}
+.home-rk .ranking-row:first-child strong{color:#ffc400}
+.home-rk .ranking-row:first-child small{color:#c9c9c1}
+.home-rk .ranking-row:first-child a{color:#fff}
+.home-rk .ranking-row:nth-child(2) .rank{background:#d9d9d4;color:#1b1b1b}
+.home-rk .ranking-row:nth-child(3) .rank{background:#e8c9a8;color:#1b1b1b}
+.home-rank .home-panel:not(.is-open) .home-rk:not(.home-rk-all) .ranking-row:nth-child(n+4){display:none}
+body.light-theme .home-rk .ranking-row{border-color:#e2e0d8}
+body.light-theme .home-rk .ranking-row .rank{background:#eeede7;color:#1b1b1b}
+body.light-theme .home-rk .ranking-row small{color:#5a5a54}
+body.light-theme .home-rk .ranking-row:first-child{border-color:#0d0d0d}
+body.light-theme .home-rk .ranking-row:first-child .rank{background:#ffc400;color:#0d0d0d}
+body.light-theme .home-rk .ranking-row:first-child small{color:#c9c9c1}
+body.light-theme .home-rk .ranking-row:nth-child(2) .rank{background:#d9d9d4}
+body.light-theme .home-rk .ranking-row:nth-child(3) .rank{background:#e8c9a8}
+.home-sub{margin:14px 0 8px;font:900 18px/1 'Barlow Condensed',sans-serif;letter-spacing:.4px;text-transform:uppercase}
+.home-more{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;min-height:44px;margin:4px 0 0;border:1px solid #4b4b43;border-radius:12px;background:transparent;color:inherit;font-size:14px;font-weight:800;cursor:pointer}
+.home-more:hover{background:#ffffff10}
+body.light-theme .home-more{border-color:#c9c7be;background:#fff;color:#1b1b1b}
+body.light-theme .home-more:hover{background:#f4f3ee}
+.home-rank .score-rules{margin-top:10px}
+/* Hall da fama e Regras oficiais: linhas de link */
+.home-links{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+.home-link{display:flex;align-items:center;gap:12px;width:100%;min-height:64px;padding:8px 16px;border:1px solid #333;border-radius:16px;background:var(--panel);color:var(--ink);font:inherit;text-align:left;text-decoration:none;cursor:pointer}
+.home-link:hover{border-color:#ffc40099}
+.home-link-ic{flex:0 0 auto;font-size:22px}
+.home-link-tx{display:grid;gap:2px;min-width:0}
+.home-link-tx strong{font-size:15px}
+.home-link-tx small{color:#b5b5ad;font-size:12px}
+.home-link-ar{margin-left:auto;color:#a3a39b;font-size:24px;line-height:1;transition:transform .15s}
+.home-link[aria-expanded="true"] .home-link-ar{transform:rotate(90deg)}
+body.light-theme .home-link{border-color:#e2e0d8;background:#fff;color:#1b1b1b}
+body.light-theme .home-link-tx small{color:#5a5a54}
+body.light-theme .home-link-ar{color:#6b6b64}
+/* Próximo jogo: lista de presença */
+.hx-pres{display:grid;gap:10px;margin:0 0 14px;padding:12px;border-radius:14px;background:#0d0d0d;color:#fff}
+.hx-pres-row{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 10px;margin:0;font-size:13px;font-weight:700}
+.hx-pres-row b{color:#ffc400}
+.hx-meter{height:10px;overflow:hidden;border-radius:999px;background:#2e2e2e}
+.hx-meter i{display:block;height:100%;border-radius:inherit;background:#ffc400}
+.hx-pres-btn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;border-radius:12px;background:#1e7a3c;color:#fff;font-size:14px;font-weight:800;text-decoration:none}
+.hx-pres-btn:hover{background:#18662f}
+.home-next .hx-list{margin-bottom:14px}
+.home-top.no-news .hx-pres{grid-column:1/-1;grid-row:auto;margin:16px 0 0}
+@media(min-width:640px){.home-links{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* PC (≥ 900px): medidas definidas pelo dono */
+@media(min-width:900px){
+  .home-layout{grid-template-columns:minmax(0,3fr) minmax(0,2fr);align-items:start}
+  .home-layout>*{grid-column:1/-1}
+  .home-layout>.home-dest{grid-column:1}
+  .home-layout>#homeStandings{grid-column:2}
+  .home-layout.home-pair-single>.home-dest,.home-layout.home-pair-single>#homeStandings{grid-column:1/-1}
+  .home-top{grid-template-columns:minmax(0,65fr) minmax(0,35fr);align-items:stretch}
+  .home-top.no-news{grid-template-columns:minmax(0,1fr)}
+  .hn-title{font-size:41px}
+  .hn-score b{font-size:61px}
+  .hn-crest{width:61px;height:61px}
+  .hn-team strong{font-size:21px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
+}
+.hn-crest-img img{object-fit:contain}
+.hn-tag{display:inline-flex;align-items:center;justify-content:center;height:24px;padding:0 10px;line-height:1}
+.hn-kicker>span:last-child{line-height:24px}
+/* Celular */
+@media(max-width:700px){
+  .hn-board{gap:8px;padding:14px 10px}
+  .hn-team,.hn-team:last-child{flex-direction:column;gap:8px;text-align:center}
+  .hn-title{font-size:clamp(24px,7.6vw,30px)}
+  .hn-score b{font-size:clamp(40px,12vw,48px)}
+  .hn-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .hn-btn{min-width:0;padding:0 10px;font-size:13px;white-space:nowrap}
+  .home-card{padding:14px!important;border-radius:16px}
+  .home-tab{font-size:12px;padding:0 4px}
+}
+/* Tela principal: cards de destaque e 1º do ranking ficam pretos nos dois temas (ganha das regras antigas do tema claro) */
+body .home-dest .night-highlight-card,body .home-dest .season-highlight-card,body.light-theme .home-dest .night-highlight-card,body.light-theme .home-dest .season-highlight-card{border:1px solid #2a2a2a!important;background:#0d0d0d!important;color:#fff!important;box-shadow:none!important}
+body .home-dest .night-vote-card,body .home-dest .season-keeper{border-left:5px solid #ffc400!important}
+body .home-dest .night-highlight-card strong,body .home-dest .season-highlight-card strong,body .home-dest .night-highlight-card strong a,body .home-dest .season-highlight-card strong a{color:#fff!important}
+body .home-dest .night-highlight-card small,body .home-dest .season-highlight-card small{color:#c9c9c1!important}
+body .home-dest .night-highlight-card small a{color:#fff!important}
+body .home-rk .ranking-row:first-child,body.light-theme .home-rk .ranking-row:first-child{border-color:#0d0d0d!important;background:#0d0d0d!important;color:#fff!important}
+body .home-rk .ranking-row:first-child a,body .home-rk .ranking-row:first-child span{color:#fff!important}
+body .home-rk .ranking-row:first-child .rank{background:#ffc400!important;color:#0d0d0d!important}
+body .home-rk .ranking-row:first-child strong{color:#ffc400!important}
+body .home-rk .ranking-row:first-child small{color:#c9c9c1!important}
+body.light-theme .home-rk .ranking-row:not(:first-child){background:#fff}
+body.light-theme .home-rk .ranking-row:not(:first-child) strong{color:#7a5c00}
+body.light-theme #homeStandings .standings-table tbody tr.standings-top-1{background:#fff3c4}
+body.light-theme #homeStandings .standings-table tbody tr.standings-top-1 th,body.light-theme #homeStandings .standings-table tbody tr.standings-top-1 td{color:#5c4500}
+.home-rank .score-rules summary{display:flex;align-items:center;min-height:44px;cursor:pointer}

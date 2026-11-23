@@ -228,7 +228,7 @@
     const publicTeams = $("publicTeamsSection");
     if (publicTeams) publicTeams.hidden = !locked || !(state?.teams || []).length;
     document.querySelectorAll("button,input,select,textarea").forEach((element) => {
-      if (element.id === "themeToggle" || element.id === "adminAccessButton" || element.id === "footerAdminButton" || element.closest(".home-top") || element.closest("#historico") || element.closest("#adminLogin") || element.closest("#artStudio") || element.closest("#newsPublic") || element.closest("#newsPush") || element.hasAttribute("data-view-button")) return;
+      if (element.id === "themeToggle" || element.id === "adminAccessButton" || element.id === "footerAdminButton" || element.closest(".home-top") || element.closest("#historico") || element.closest("#adminLogin") || element.closest("#artStudio") || element.closest("#newsPublic") || element.closest("#newsPush") || element.hasAttribute("data-view-button") || element.matches(".home-tab,.home-more,.home-link")) return;
       if (locked) {
         if (!element.hasAttribute("data-access-locked")) { element.dataset.accessWasDisabled = String(element.disabled); element.setAttribute("data-access-locked", ""); }
         element.disabled = true;
@@ -3396,35 +3396,138 @@
       (dayMonth ? '<p class="hx-date">' + escapeHtml(dayMonth) + "</p>" : "") +
       (rows.length ? '<ul class="hx-list">' + rows.map(([svg, text]) => "<li>" + svg + "<span>" + escapeHtml(text) + "</span></li>").join("") + "</ul>" : "") +
       (!weekday && !rows.length ? '<p class="hx-empty">A data da próxima rodada ainda vai ser definida.</p>' : "") +
+      homePresenceHtml() +
       (teams.length ? '<button type="button" class="hx-btn" data-home-teams>Ver equipes</button>' : "");
+    homePresenceLoad();
     const footerVenue = $("footerVenue");
     if (footerVenue) footerVenue.textContent = venue || "Quadra do Jemb";
+  }
+  // Próximo jogo: bloco da Lista de presença com os dados reais (só leitura; confirmar abre o fluxo de sempre, com PIN).
+  const HOME_PZ = { data: null, at: 0, busy: false };
+  async function homePresenceLoad() {
+    if (!shared || !client || HOME_PZ.busy || Date.now() - HOME_PZ.at < 30000) return;
+    HOME_PZ.busy = true; HOME_PZ.at = Date.now();
+    try {
+      const data = await pvRpc("presence_get", {});
+      if (data && data.round !== undefined) {
+        const changed = JSON.stringify(data.round) + JSON.stringify(data.counts) !== JSON.stringify(HOME_PZ.data?.round) + JSON.stringify(HOME_PZ.data?.counts);
+        HOME_PZ.data = data;
+        if (changed) renderHomeNext();
+      }
+    } finally { HOME_PZ.busy = false; }
+  }
+  function homePresenceHtml() {
+    const round = HOME_PZ.data?.round;
+    if (!round || !round.open) return ""; // sem lista aberta, o bloco não aparece
+    const inn = Number(HOME_PZ.data.counts?.in) || 0, slots = Number(round.slots) || 0, left = Math.max(0, slots - inn), full = slots > 0 && left === 0;
+    return '<div class="hx-pres"><p class="hx-pres-row"><span>Lista de presença</span><b>' + (full ? "Lista completa" : inn + " de " + slots + " · " + left + (left === 1 ? " vaga" : " vagas")) + "</b></p>" +
+      '<div class="hx-meter" role="progressbar" aria-label="Vagas preenchidas" aria-valuemin="0" aria-valuemax="' + slots + '" aria-valuenow="' + Math.min(inn, slots) + '"><i style="width:' + (slots ? Math.min(100, (inn / slots) * 100) : 0) + '%"></i></div>' +
+      // Lista cheia: o fluxo de presença já coloca na lista de espera.
+      '<a class="hx-pres-btn" href="#presenca">' + (full ? "Entrar na espera" : '<span aria-hidden="true">✅</span> Confirmar presença') + "</a></div>";
   }
   // Antes do primeiro jogo da rodada, os cards sem dados somem e aparece um aviso só.
   function renderHomeVisibility() {
     const roundId = state.roundId || state.currentGame?.roundId,
       roundGames = roundId ? officialGames().filter((game) => game.roundId === roundId).length : 0,
       empty = (id) => { const host = $(id); return !host || !host.children.length || (host.children.length === 1 && host.firstElementChild.classList.contains("empty-state")); },
-      cards = [
-        [$("homeGoalsCard"), empty("goalRanking")],
-        [$("playerScoreRanking")?.closest(".panel"), empty("playerScoreRanking")],
-        [$("keeperRanking")?.closest(".panel"), empty("keeperRanking")],
-        [$("keeperConcededRanking")?.closest(".panel"), empty("keeperConcededRanking")],
+      // Goleiros: com goleiro jogando mas ninguém com 3 jogos, a aba fica com o aviso de sempre (não some).
+      keeperWaiting = empty("keeperRanking") && /Entra no ranking/.test($("keeperRanking")?.textContent || ""),
+      rankTabs = [
+        ["rankGols", empty("goalRanking")],
+        ["rankScore", empty("playerScoreRanking")],
+        ["rankGk", empty("keeperRanking") && empty("keeperConcededRanking") && !keeperWaiting],
       ];
-    cards.forEach(([card, hide]) => { if (card) card.hidden = hide; });
-    const grid = document.querySelector('.score-grid[data-view="home"]');
-    if (grid) grid.hidden = cards.every(([, hide]) => hide);
+    homeTabsSync("homeRankings", rankTabs);
+    homeTabsSync("homeDestaques", [["destaques-noite", !roundGames], ["seasonPanel", empty("seasonHighlights")]]);
     $("homeStandings").hidden = !roundGames;
-    $("destaques-noite").hidden = !roundGames;
-    $("seasonHighlights").closest(".panel").hidden = empty("seasonHighlights");
+    // Destaques e Classificação lado a lado no PC; se só um aparece, ele ocupa a linha toda.
+    $("homeLayout")?.classList.toggle("home-pair-single", $("homeDestaques").hidden !== $("homeStandings").hidden);
+    homeMoreSync();
     const waiting = $("homeWaiting");
     waiting.hidden = !!roundGames;
-    $("homeWaitingText").textContent = cards.every(([, hide]) => hide)
+    $("homeWaitingText").textContent = rankTabs.every(([, hide]) => hide)
       ? "A rodada ainda não começou. Classificação, artilharia, rankings e destaques da noite aparecem aqui depois do primeiro jogo."
       : "A rodada ainda não começou. Classificação e destaques da noite aparecem aqui depois do primeiro jogo.";
     const badge = $("liveBadge");
     if (badge) badge.hidden = !state.currentGame;
   }
+  // ----- Tela principal: abas acessíveis (Destaques e Rankings) -----
+  const HOME_UI = { open: {} };
+  function homeTabSelect(tab, focus = false) {
+    const list = tab?.closest('[role="tablist"]');
+    if (!list) return;
+    list.querySelectorAll('[role="tab"]').forEach((item) => {
+      const on = item === tab, panel = $(item.getAttribute("aria-controls"));
+      item.setAttribute("aria-selected", String(on));
+      item.tabIndex = on ? 0 : -1;
+      if (panel) panel.hidden = !on;
+    });
+    if (focus) tab.focus();
+  }
+  // Aba sem dados some; card sem nenhuma aba some; com uma aba só, a barra de abas some.
+  function homeTabsSync(cardId, panels) {
+    const card = $(cardId);
+    if (!card) return;
+    panels.forEach(([id, hide]) => { const tab = card.querySelector('[aria-controls="' + id + '"]'); if (tab) tab.hidden = hide; });
+    const visible = panels.filter(([, hide]) => !hide);
+    card.hidden = !visible.length;
+    if (!visible.length) return;
+    let tab = card.querySelector('[role="tab"][aria-selected="true"]');
+    if (!tab || tab.hidden) tab = card.querySelector('[aria-controls="' + visible[0][0] + '"]');
+    homeTabSelect(tab);
+    const list = card.querySelector('[role="tablist"]');
+    if (list) list.hidden = visible.length < 2;
+  }
+  // "Ver ... completo": a aba mostra os 3 primeiros; o botão abre o ranking inteiro (top 11).
+  function homeMoreSync() {
+    const rows = (id) => ($(id)?.querySelectorAll(".ranking-row").length || 0);
+    const conf = {
+      gols: { n: rows("goalRanking"), panel: "rankGols", label: (n) => "Ver artilharia completa (" + n + ")" },
+      score: { n: rows("playerScoreRanking"), panel: "rankScore", label: (n) => "Ver ranking completo (top " + n + ")" },
+      gk: { n: rows("keeperRanking"), extra: rows("keeperConcededRanking"), panel: "rankGk", label: () => "Ver goleiros e gols sofridos" },
+    };
+    for (const [key, c] of Object.entries(conf)) {
+      const btn = document.querySelector('[data-home-more="' + key + '"]'), panel = $(c.panel);
+      if (!btn || !panel) continue;
+      const can = c.n > 3 || (c.extra || 0) > 0, open = can && !!HOME_UI.open[key];
+      btn.hidden = !can;
+      btn.setAttribute("aria-expanded", String(open));
+      btn.innerHTML = open ? "Mostrar só os 3 primeiros" : escapeHtml(c.label(c.n)) + ' <span aria-hidden="true">›</span>';
+      panel.classList.toggle("is-open", open);
+      if (key === "gk") $("homeGkMore").hidden = !open || !c.extra;
+    }
+    const gkNote = document.querySelector("#rankGk > .home-note");
+    if (gkNote) gkNote.hidden = !rows("keeperRanking");
+  }
+  document.addEventListener("click", (event) => {
+    const tab = event.target.closest?.('.home-tabs [role="tab"]');
+    if (tab) { homeTabSelect(tab); return; }
+    const more = event.target.closest?.("[data-home-more]");
+    if (more) { const key = more.dataset.homeMore; HOME_UI.open[key] = !HOME_UI.open[key]; homeMoreSync(); if (!HOME_UI.open[key]) more.closest(".home-card")?.scrollIntoView({ block: "nearest" }); return; }
+    const rules = event.target.closest?.("[data-home-rules]");
+    if (rules) {
+      const section = $("regras"), open = section.hidden;
+      section.hidden = !open;
+      rules.setAttribute("aria-expanded", String(open));
+      if (open) section.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (event.target.closest?.("[data-home-past]")) {
+      event.preventDefault();
+      setView("history");
+      setTimeout(() => $("rodadas-anteriores")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+    }
+  });
+  // Teclado nas abas: setas, Home e End (padrão WAI-ARIA, ativação automática).
+  document.addEventListener("keydown", (event) => {
+    const tab = event.target.closest?.('.home-tabs [role="tab"]');
+    if (!tab || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    const tabs = [...tab.closest('[role="tablist"]').querySelectorAll('[role="tab"]')].filter((item) => !item.hidden);
+    const i = tabs.indexOf(tab);
+    const next = event.key === "Home" ? tabs[0] : event.key === "End" ? tabs[tabs.length - 1] : tabs[(i + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length];
+    event.preventDefault();
+    homeTabSelect(next, true);
+  });
   function renderNews() {
     renderNewsHero();
     const box = $("newsPublic"), editor = $("newsEditor");
