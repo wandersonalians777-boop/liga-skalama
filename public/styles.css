@@ -2206,6 +2206,8 @@ body:not(.light-theme) .el-strength-gap.is-good{color:#3dba6e}
 /* Nome de exibição: pedido do jogador e aprovação do organizador */
 .pv-namebox{display:flex;justify-content:center;margin-top:4px}
 .pf-id .nm-open{margin:2px 0 4px}
+.pv-switch.nm-open{display:inline-flex;align-items:center;gap:6px;width:auto;padding:8px 18px;border:2px solid #ffc400;border-radius:999px;background:#6b2fb3;color:#fff;font-weight:800;text-decoration:none}
+.pv-switch.nm-open:hover{background:#5a2696}
 .nm-input{width:100%;text-transform:uppercase}
 .nm-sheet .lv-sheet-body{display:grid;gap:8px}
 .nm-sheet .pv-msg:empty{display:none}
