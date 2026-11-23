@@ -1186,43 +1186,45 @@
       else if (got && Number.isFinite(low)) clockOffset = Math.round(low);
     } finally { clockSyncing = false; }
   }
-  function pauseLimitMs(timer = state.timer || {}) {
-    return timer.mode === "coca" ? 120000 : 60000;
-  }
-  function pauseBudgetUsed(timer = state.timer || {}) {
-    const limit = pauseLimitMs(timer),
-      used = timer.pauseUsedMs || 0;
-    return Math.min(
-      limit,
-      used +
-        (timer.pauseStartedAt
-          ? Math.max(0, nowMs() - timer.pauseStartedAt)
-          : 0),
-    );
+  // Pausa sem limite: o tempo fica congelado até o organizador tocar em Continuar (nunca volta sozinho).
+  // Pausas gravadas antes desta regra (sem pauseNoLimit) seguem a regra antiga só para não pular nem congelar errado:
+  // se o limite antigo (60 s Liga / 120 s Super Liga, somando as pausas) já tinha acabado, o jogo voltou nesse instante.
+  function legacyResumeAt(timer) {
+    if (!timer.pauseStartedAt || timer.pauseNoLimit) return null;
+    return timer.pauseStartedAt + Math.max(0, (timer.mode === "coca" ? 120000 : 60000) - (timer.pauseUsedMs || 0));
   }
   function isPauseActive(timer = state.timer || {}) {
-    return (
-      !!timer.pauseStartedAt &&
-      nowMs() <
-        timer.pauseStartedAt +
-          Math.max(0, pauseLimitMs(timer) - (timer.pauseUsedMs || 0))
-    );
+    if (!timer.pauseStartedAt) return false;
+    const legacy = legacyResumeAt(timer);
+    return legacy == null || nowMs() < legacy;
   }
   function timerRemaining(timer = state.timer || {}) {
     const now = nowMs();
     if (timer.endsAt)
       return Math.max(0, Math.ceil((timer.endsAt - now) / 1000));
     if (timer.pauseStartedAt && timer.remainingAtPause != null) {
-      const resumeAt =
-        timer.pauseStartedAt +
-        Math.max(0, pauseLimitMs(timer) - (timer.pauseUsedMs || 0));
-      if (now < resumeAt) return timer.remainingAtPause;
-      return Math.max(
-        0,
-        Math.ceil((resumeAt + timer.remainingAtPause * 1000 - now) / 1000),
-      );
+      const legacy = legacyResumeAt(timer);
+      if (legacy == null || now < legacy) return timer.remainingAtPause;
+      return Math.max(0, Math.ceil((legacy + timer.remainingAtPause * 1000 - now) / 1000));
     }
     return timer.duration || 480;
+  }
+  // Pausa antiga no estado: o organizador grava uma vez na regra nova (passou do limite antigo = retomado naquele instante;
+  // dentro do limite = continua pausado, agora sem limite).
+  let legacyPauseFixing = false;
+  async function fixLegacyPause() {
+    const timer = state.timer;
+    if (legacyPauseFixing || !state.currentGame || !timer?.pauseStartedAt || timer.pauseNoLimit) return;
+    if ((shared && !canManageShared) || (!shared && window.LIGA_CONFIG?.publicReadOnly === true)) return;
+    legacyPauseFixing = true;
+    try {
+      const legacy = legacyResumeAt(timer), now = nowMs();
+      const next = now >= legacy
+        ? { ...timer, endsAt: legacy + (timer.remainingAtPause || 0) * 1000, remainingAtPause: null, pauseStartedAt: null, pauseUsedMs: (timer.pauseUsedMs || 0) + (legacy - timer.pauseStartedAt) }
+        : { ...timer, pauseNoLimit: true };
+      const game = now >= legacy ? { ...state.currentGame, pauseLog: [...(state.currentGame.pauseLog || []), { kind: "resume", minute: Math.max(1, Math.ceil(((timer.duration || 480) - (timer.remainingAtPause || 0)) / 60)), at: legacy }] } : state.currentGame;
+      await saveState({ timer: next, currentGame: game });
+    } finally { legacyPauseFixing = false; }
   }
   function timerElapsed(timer = state.timer || {}) {
     return Math.max(0, (timer.duration || 480) - timerRemaining(timer));
@@ -1313,8 +1315,6 @@
       remaining = timerRemaining(timer),
       elapsed = timerElapsed(timer),
       activePause = isPauseActive(timer),
-      used = pauseBudgetUsed({ ...timer, mode }),
-      limit = mode === "coca" ? 120000 : 60000,
       pendingNow = currentPending(),
       home =
         state.currentGame?.home || pendingNow?.home || "Time Águia",
@@ -1345,9 +1345,7 @@
         ? "Partida preparada. Toque em Começar jogo."
         : "A sequência é definida automaticamente pela fila.";
     if (hasGame && activePause)
-      status = "Pausa · saldo " + clockText(Math.ceil((limit - used) / 1000));
-    else if (hasGame && used >= limit && timer.pauseStartedAt)
-      status = "Pausa acumulada esgotada · tempo retomado";
+      status = "Pausado · toque em Continuar para voltar a contar";
     else if (hasGame && remaining === 0)
       status = currentScore(home) === currentScore(away)
         ? "Tempo encerrado · empate: escolha Pênaltis ou Encerrar partida"
@@ -1357,20 +1355,10 @@
       status = "Disputa de pênaltis · " + teamLabel(home) + " " + sc.home + " × " + sc.away + " " + teamLabel(away);
     }
     $("timerStatus").textContent = status;
-    $("pauseBudget").textContent =
-      "Pausa acumulada: " +
-      clockText(Math.ceil(used / 1000)) +
-      " / " +
-      (mode === "coca" ? "02:00" : "01:00");
-    const running = !!timer.endsAt;
-    $("pauseTimer").disabled =
-      !hasGame ||
-      remaining === 0 ||
-      (!activePause && (!running || used >= limit));
-    $("pauseTimer").textContent = activePause
-      ? "Retomar agora"
-      : "Pausar · saldo " +
-        clockText(Math.floor(Math.max(0, limit - used) / 1000));
+    $("pauseBudget").textContent = "";
+    // Pausar só fica desabilitado sem jogo, com o tempo zerado ou na disputa de pênaltis (nunca por saldo).
+    $("pauseTimer").disabled = !hasGame || remaining === 0 || !!(shootNow && !shootNow.finished);
+    $("pauseTimer").textContent = activePause ? "▶ Continuar" : "Pausar";
     $("finishGame").disabled = !hasGame || gameFinishing;
     const tied = hasGame && currentScore(home) === currentScore(away);
     const shoot = shootoutOf(state.currentGame);
@@ -5355,6 +5343,7 @@
   }
   function renderAll() {
     if (!state) return;
+    fixLegacyPause();
     renderDrawMode();
     renderElStrength();
     if (PF.slug) renderProfile();
@@ -6231,7 +6220,7 @@
     await saveState({ inactivePlayers }, displayName(name) + (inactive ? " está ativo" : " está inativo") + ". Vale para o próximo sorteio.");
   }
   function freshTimer(mode = "liga", duration = 480) {
-    return { mode, duration, endsAt: null, runningSince: null, elapsedBeforeRun: 0, remainingAtPause: null, pauseStartedAt: null, pauseUsedMs: 0 };
+    return { mode, duration, endsAt: null, runningSince: null, elapsedBeforeRun: 0, remainingAtPause: null, pauseStartedAt: null, pauseUsedMs: 0, pauseNoLimit: true };
   }
   async function drawTeams() {
     const pool = activeRoster();
@@ -6639,11 +6628,11 @@
   async function pauseTimer() {
     if (!state.currentGame) return;
     const timer = state.timer || freshTimer(state.currentGame.timerMode),
-      now = nowMs(),
-      limit = pauseLimitMs(timer);
+      now = nowMs();
+    const shoot = shootoutOf(state.currentGame);
+    if (shoot && !shoot.finished) return;
     const pauseLog = (kind) => ({ ...state.currentGame, pauseLog: [...(state.currentGame.pauseLog || []), { kind, minute: Math.max(1, Math.ceil(timerElapsed(timer) / 60)), at: now }] });
     if (isPauseActive(timer)) {
-      const used = pauseBudgetUsed(timer);
       await saveState(
         {
           currentGame: pauseLog("resume"),
@@ -6652,28 +6641,28 @@
             endsAt: now + timerRemaining(timer) * 1000,
             remainingAtPause: null,
             pauseStartedAt: null,
-            pauseUsedMs: used,
+            pauseNoLimit: true,
+            // Só a soma das pausas, para informação (sem limite).
+            pauseUsedMs: (timer.pauseUsedMs || 0) + Math.max(0, now - timer.pauseStartedAt),
           },
         },
-        "Cronômetro retomado; a pausa foi contabilizada.",
+        "Cronômetro retomado.",
       );
       return;
     }
-    const used = pauseBudgetUsed(timer);
-    if (used >= limit) return;
-    if (!timer.endsAt || timerRemaining() === 0) return;
+    if (!timer.endsAt || timerRemaining(timer) === 0) return;
     await saveState(
       {
         currentGame: pauseLog("pause"),
         timer: {
           ...timer,
           endsAt: null,
-          remainingAtPause: timerRemaining(),
+          remainingAtPause: timerRemaining(timer),
           pauseStartedAt: now,
-          pauseUsedMs: used,
+          pauseNoLimit: true,
         },
       },
-      "Pausa iniciada. Você pode retomar quando quiser; o limite total é " + (timer.mode === "coca" ? "2 minutos." : "1 minuto."),
+      "Pausa iniciada. Toque em Continuar para voltar a contar.",
     );
   }
   async function addGoal() {
@@ -7275,12 +7264,11 @@
     $("lvGoalsHome").closest(".lv-clock")?.classList.toggle("has-goals", !!(gh || ga));
     if (gChanged) { lvFit($("lvGoalsHome")); lvFit($("lvGoalsAway")); }
     // Cronômetro e estado
-    const timer = state.timer || {}, remaining = game ? timerRemaining(timer) : minutes * 60, paused = !!game && isPauseActive(timer),
-      used = pauseBudgetUsed({ ...timer, mode: game ? timer.mode || "liga" : state.timerMode || "liga" }), limitText = (game ? timer.mode : state.timerMode) === "coca" ? "02:00" : "01:00";
+    const timer = state.timer || {}, remaining = game ? timerRemaining(timer) : minutes * 60, paused = !!game && isPauseActive(timer);
     const timerEl = $("lvTimer");
     if (timerEl.textContent !== clockText(remaining)) timerEl.textContent = clockText(remaining);
     timerEl.classList.toggle("is-paused", paused);
-    const stateText = !game ? "AGUARDANDO INÍCIO" : shootoutOf(game) && !shootoutOf(game).finished ? "🥅 PÊNALTIS" : remaining === 0 ? "⏹ FIM DO TEMPO" : (paused ? "⏸ PAUSADO" : "● RODANDO") + " · PAUSA USADA " + clockText(Math.ceil(used / 1000)) + " / " + limitText;
+    const stateText = !game ? "AGUARDANDO INÍCIO" : shootoutOf(game) && !shootoutOf(game).finished ? "🥅 PÊNALTIS" : remaining === 0 ? "⏹ FIM DO TEMPO" : (paused ? "⏸ PAUSADO" : "● RODANDO");
     const stateEl = $("lvState");
     if (stateEl.textContent !== stateText) stateEl.textContent = stateText;
     stateEl.className = "lv-state" + (paused ? " is-paused" : game && remaining > 0 ? " is-running" : "");
