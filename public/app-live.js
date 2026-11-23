@@ -3010,11 +3010,54 @@
     });
   }
   window.addEventListener("resize", () => document.querySelectorAll(".pt-grid").forEach(ptFit));
+  // Times já sorteados para a rodada atual? Times de uma rodada antiga (jogos numa noite anterior à data do jogo) não contam.
+  function ligaDrawnForRound() {
+    if (state.currentGame) return true;
+    if (!(state.teams || []).length) return false;
+    const nights = officialGames().filter((g) => state.roundId && g.roundId === state.roundId).map(nightKeyOf).filter(Boolean).sort();
+    if (!nights.length || !state.matchDate) return true;
+    return nights[nights.length - 1] >= state.matchDate;
+  }
+  // Lista de presença pública (só leitura): aparece na aba Modo Liga enquanto o sorteio da rodada não sai.
+  function ligaListRound() {
+    const round = HOME_PZ.data?.round;
+    return round && state.matchDate && round.round_key === state.matchDate && !ligaDrawnForRound() ? round : null;
+  }
+  function ligaListHtml(round) {
+    const players = HOME_PZ.data?.players || [], confirmed = players.filter((p) => p.status === "in"), waiting = players.filter((p) => p.status === "wait");
+    const left = Math.max(0, round.slots - confirmed.length);
+    const card = (p, i, wait) => '<li class="pza-card ' + (wait ? "is-wait" : "is-ok") + (p.keeper ? " is-keeper" : "") + '"><span class="pza-n">' + (i + 1) + '</span><span class="pza-nm"><span class="pza-nm-t">' + plink(p.name) + "</span>" +
+      (wait ? "<small>" + (i === 0 ? "próximo a entrar" : "espera nº " + (i + 1)) + "</small>" : "") + "</span>" + (p.keeper ? '<b class="pza-gk" title="Goleiro" aria-label="goleiro">G</b>' : "") + "</li>";
+    const foot = !round.open ? '<p class="pzp-note">Fale com o organizador</p>'
+      : '<a class="pza-btn is-green" href="#presenca">' + (left ? '<span aria-hidden="true">✅</span> Confirmar presença' : "Entrar na espera") + "</a>";
+    return '<div class="pza pzp">' + pzaHeadHtml(round.round_key, round, confirmed, waiting, "h2") +
+      '<p class="pzp-lead">Os times saem no sorteio, antes do primeiro jogo.</p>' +
+      '<div class="pza-sec"><p class="pza-legend"><span><i></i>Confirmado</span><span><i class="is-wait"></i>Lista de espera</span></p>' +
+      '<div class="pza-sh"><h3>Confirmados</h3><span class="pza-tag is-ok">' + confirmed.length + " de " + round.slots + "</span></div>" +
+      (confirmed.length ? '<ol class="pza-cards">' + confirmed.map((p, i) => card(p, i, false)).join("") + "</ol>" : '<p class="pv-hint">Ninguém confirmou ainda.</p>') +
+      (waiting.length ? '<div class="pza-waitsec"><div class="pza-sh"><h3>Lista de espera</h3><span class="pza-tag is-wait">' + waiting.length + ' na espera</span></div><ol class="pza-cards">' + waiting.map((p, i) => card(p, i, true)).join("") + "</ol></div>" : "") +
+      '<div class="pzp-foot">' + foot + "</div></div></div>";
+  }
   function renderLigaPublicTeams(otherMode) {
     const section = $("ligaPublicTeams");
     if (!section) return;
-    const teams = state.teams || [],
-      show = isEditLocked() && shownLiveMode() === "liga" && teams.length > 0;
+    const teams = state.teams || [], list = $("ligaPublicList");
+    const listRound = shownLiveMode() === "liga" ? ligaListRound() : null;
+    if (shownLiveMode() === "liga" && !HOME_PZ.data) homePresenceLoad();
+    if (listRound) {
+      section.hidden = false;
+      section.classList.add("is-list");
+      $("ligaPublicNote").hidden = true;
+      $("ligaPublicTeamsGrid").hidden = true;
+      list.hidden = false;
+      const markup = ligaListHtml(listRound);
+      if (list.dataset.markup !== markup) { list.dataset.markup = markup; list.innerHTML = markup; }
+      return;
+    }
+    section.classList.remove("is-list");
+    list.hidden = true; list.dataset.markup = ""; list.innerHTML = "";
+    $("ligaPublicTeamsGrid").hidden = false;
+    const show = isEditLocked() && shownLiveMode() === "liga" && teams.length > 0;
     section.hidden = !show;
     if (!show) return;
     const note = $("ligaPublicNote");
@@ -3404,6 +3447,8 @@
   }
   // Próximo jogo: bloco da Lista de presença com os dados reais (só leitura; confirmar abre o fluxo de sempre, com PIN).
   const HOME_PZ = { data: null, at: 0, busy: false };
+  // Uma leitura só (a cada 30 s) para o Próximo jogo da Tela principal e a lista da aba Modo Liga.
+  setInterval(() => { if (document.visibilityState === "visible") homePresenceLoad(); }, 30000);
   async function homePresenceLoad() {
     if (!shared || !client || HOME_PZ.busy || Date.now() - HOME_PZ.at < 30000) return;
     HOME_PZ.busy = true; HOME_PZ.at = Date.now();
@@ -3412,7 +3457,7 @@
       if (data && data.round !== undefined) {
         const changed = JSON.stringify(data.round) + JSON.stringify(data.counts) !== JSON.stringify(HOME_PZ.data?.round) + JSON.stringify(HOME_PZ.data?.counts);
         HOME_PZ.data = data;
-        if (changed) renderHomeNext();
+        if (changed) { renderHomeNext(); renderLigaPublicTeams(shownLiveMode() !== activeLiveMode()); }
       }
     } finally { HOME_PZ.busy = false; }
   }
@@ -3421,13 +3466,14 @@
     // Sem rodada para a data do jogo, o bloco não aparece. Fechada (na mão ou pelo horário): fica, sem o botão.
     if (!round || (state.matchDate && round.round_key !== state.matchDate)) return "";
     const inn = Number(HOME_PZ.data.counts?.in) || 0, slots = Number(round.slots) || 0, left = Math.max(0, slots - inn), full = slots > 0 && left === 0;
+    const listLink = ligaDrawnForRound() ? "" : '<button type="button" class="hx-pres-link" data-home-list>Ver lista ›</button>';
     const meter = '<div class="hx-meter" role="progressbar" aria-label="Vagas preenchidas" aria-valuemin="0" aria-valuemax="' + slots + '" aria-valuenow="' + Math.min(inn, slots) + '"><i style="width:' + (slots ? Math.min(100, (inn / slots) * 100) : 0) + '%"></i></div>';
     if (!round.open) return '<div class="hx-pres is-closed"><p class="hx-pres-row"><span>Lista de presença</span><span class="pza-st is-full">FECHADA</span></p>' +
-      '<p class="hx-pres-closed"><b>Lista fechada · ' + inn + (inn === 1 ? " confirmado" : " confirmados") + "</b></p>" + meter + '<p class="hx-pres-note">Fale com o organizador</p></div>';
+      '<p class="hx-pres-closed"><b>Lista fechada · ' + inn + (inn === 1 ? " confirmado" : " confirmados") + "</b></p>" + meter + '<p class="hx-pres-note">Fale com o organizador</p>' + listLink + "</div>";
     return '<div class="hx-pres"><p class="hx-pres-row"><span>Lista de presença</span><b>' + (full ? "Lista completa" : inn + " de " + slots + " · " + left + (left === 1 ? " vaga" : " vagas")) + "</b></p>" +
       meter +
       // Lista cheia: o fluxo de presença já coloca na lista de espera.
-      '<a class="hx-pres-btn" href="#presenca">' + (full ? "Entrar na espera" : '<span aria-hidden="true">✅</span> Confirmar presença') + "</a></div>";
+      '<a class="hx-pres-btn" href="#presenca">' + (full ? "Entrar na espera" : '<span aria-hidden="true">✅</span> Confirmar presença') + "</a>" + listLink + "</div>";
   }
   // Antes do primeiro jogo da rodada, os cards sem dados somem e aparece um aviso só.
   function renderHomeVisibility() {
@@ -4590,6 +4636,20 @@
     if (names?.ok) PZA.names = names;
     renderElPresence();
   }
+  // ✕ desenhado (não depende da fonte do aparelho, que às vezes pinta o símbolo como emoji colorido).
+  const PZA_X_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
+  // Cabeçalho preto da lista (painel do organizador e lista pública da aba Modo Liga).
+  function pzaHeadHtml(key, round, confirmed, waiting, tag) {
+    const d = pvDate(key), dayName = d ? d.toLocaleDateString("pt-BR", { weekday: "long" }).split("-")[0] : "";
+    const time = round ? round.start_time : pzaTime(), past = (pzaClosesMs(key, time) ?? Infinity) <= nowMs();
+    const full = !!round && confirmed.length >= round.slots;
+    const keepers = confirmed.filter((p) => p.keeper).length, left = round ? Math.max(0, round.slots - confirmed.length) : 0;
+    const status = !round ? "" : !round.open ? '<span class="pza-st is-full">FECHADA</span>' : full ? '<span class="pza-st is-full">LISTA COMPLETA</span>' : '<span class="pza-st is-open">ABERTA</span>';
+    return '<div class="pza-top"><div class="pza-hrow"><' + tag + ' class="pza-kick">📋 LISTA DE PRESENÇA</' + tag + ">" + status + "</div>" +
+      '<p class="pza-when">' + escapeHtml(dayName.replace(/^./, (c) => c.toUpperCase()) + ", " + pvDayMonth(key)) + "<small>" + escapeHtml([time ? (past ? "Fechou às " : "Fecha às ") + time : "Sem horário definido", (round?.venue || state.venue || "").trim()].filter(Boolean).join(" · ")) + "</small></p>" +
+      (round ? '<div class="pza-count"><b>' + confirmed.length + "<span>/" + round.slots + "</span></b><p><strong>" + (confirmed.length - keepers) + " de linha</strong> · " + keepers + (keepers === 1 ? " goleiro" : " goleiros") + "<br>" + (left ? left + (left === 1 ? " vaga" : " vagas") : "Sem vagas") + (waiting.length ? " · " + waiting.length + " na espera" : "") + "</p></div>" +
+        '<div class="pza-meter" role="progressbar" aria-label="Vagas preenchidas" aria-valuemin="0" aria-valuemax="' + round.slots + '" aria-valuenow="' + Math.min(confirmed.length, round.slots) + '"><i style="width:' + Math.min(100, (confirmed.length / round.slots) * 100) + '%"></i></div>' : "") + "</div>";
+  }
   function renderElPresence() {
     const box = $("elPresence");
     if (!box) return;
@@ -4610,7 +4670,7 @@
       return '<li class="pza-card ' + (wait ? "is-wait" : "is-ok") + (p.keeper ? " is-keeper" : "") + '"><span class="pza-n">' + (i + 1) + '</span><span class="pza-nm"><span class="pza-nm-t">' + nm + "</span>" + (sub ? "<small>" + sub + "</small>" : "") + "</span>" +
         (p.keeper ? '<b class="pza-gk" title="Goleiro" aria-label="goleiro">G</b>' : "") +
         (wait && freeSlot ? '<button type="button" class="pza-up" data-pza-up="' + escapeHtml(p.name) + '" aria-label="Subir ' + nm + ' para os confirmados">Subir</button>' : "") +
-        '<button type="button" class="pza-x" data-pza-remove="' + escapeHtml(p.name) + '" data-pza-wait="' + (wait ? "1" : "") + '" aria-label="Tirar ' + nm + (wait ? " da lista de espera" : " da lista") + '">✕</button></li>';
+        '<button type="button" class="pza-x" data-pza-remove="' + escapeHtml(p.name) + '" data-pza-wait="' + (wait ? "1" : "") + '" aria-label="Tirar ' + nm + (wait ? " da lista de espera" : " da lista") + '">' + PZA_X_ICON + "</button></li>";
     };
     const stepper = '<div class="pza-vagas"><span class="pza-vagas-l" id="pzaSlotsLabel">Vagas<small>Limite da lista</small></span><div class="pza-step" role="group" aria-labelledby="pzaSlotsLabel">' +
       '<button type="button" data-pza-step="-1" aria-label="Diminuir vagas"' + (slots <= 2 ? " disabled" : "") + '>−</button><output id="pzaSlots" aria-live="polite">' + slots + '</output><button type="button" data-pza-step="1" aria-label="Aumentar vagas"' + (slots >= 40 ? " disabled" : "") + ">+</button></div>" +
@@ -4619,14 +4679,7 @@
     if (box.dataset.sig === sig) return;
     box.dataset.sig = sig;
     const focusKey = document.activeElement && box.contains(document.activeElement) ? ["data-pza-step", "data-pza", "data-pza-up", "data-pza-remove"].map((a) => document.activeElement.getAttribute(a) !== null && "[" + a + '="' + CSS.escape(document.activeElement.getAttribute(a)) + '"]').find(Boolean) : "";
-    const d = pvDate(key), dayName = d ? d.toLocaleDateString("pt-BR", { weekday: "long" }).split("-")[0] : "";
-    const time = round ? round.start_time : pzaTime(), past = (pzaClosesMs(key, time) ?? Infinity) <= nowMs();
-    const keepers = confirmed.filter((p) => p.keeper).length, left = round ? Math.max(0, round.slots - confirmed.length) : 0;
-    const status = !round ? "" : !round.open ? '<span class="pza-st is-full">FECHADA</span>' : full ? '<span class="pza-st is-full">LISTA COMPLETA</span>' : '<span class="pza-st is-open">ABERTA</span>';
-    const head = '<div class="pza-top"><div class="pza-hrow"><h4 class="pza-kick">📋 LISTA DE PRESENÇA</h4>' + status + "</div>" +
-      '<p class="pza-when">' + escapeHtml(dayName.replace(/^./, (c) => c.toUpperCase()) + ", " + pvDayMonth(key)) + "<small>" + escapeHtml([time ? (past ? "Fechou às " : "Fecha às ") + time : "Sem horário definido", (round?.venue || state.venue || "").trim()].filter(Boolean).join(" · ")) + "</small></p>" +
-      (round ? '<div class="pza-count"><b>' + confirmed.length + "<span>/" + round.slots + "</span></b><p><strong>" + (confirmed.length - keepers) + " de linha</strong> · " + keepers + (keepers === 1 ? " goleiro" : " goleiros") + "<br>" + (left ? left + (left === 1 ? " vaga" : " vagas") : "Sem vagas") + (waiting.length ? " · " + waiting.length + " na espera" : "") + "</p></div>" +
-        '<div class="pza-meter" role="progressbar" aria-label="Vagas preenchidas" aria-valuemin="0" aria-valuemax="' + round.slots + '" aria-valuenow="' + Math.min(confirmed.length, round.slots) + '"><i style="width:' + Math.min(100, (confirmed.length / round.slots) * 100) + '%"></i></div>' : "") + "</div>";
+    const head = pzaHeadHtml(key, round, confirmed, waiting, "h4");
     const names = PZA.names?.pending?.length ? '<p class="pza-namesreq"><span class="pza-state nm-count">✎ ' + PZA.names.pending.length + (PZA.names.pending.length === 1 ? " pedido de nome" : " pedidos de nome") + "</span></p>" : "";
     box.innerHTML = '<div class="pza">' + head + names + pzaAlertsHtml() +
       (!data ? '<p class="pv-hint pza-pad">Carregando…</p>' : !round
@@ -7759,6 +7812,9 @@
         if (location.hash.startsWith("#noticia-")) history.pushState(null, "", location.pathname + location.search);
         setView("news");
         window.scrollTo({ top: 0, behavior: "smooth" });
+      } else if (event.target.closest("[data-home-list]")) {
+        document.querySelector('[data-view-button="live"][data-live-mode="liga"]')?.click();
+        setTimeout(() => { const section = $("ligaPublicTeams"); if (section && !section.hidden) { section.scrollIntoView({ behavior: "smooth", block: "start" }); section.querySelector(".pza-kick")?.setAttribute("tabindex", "-1"); section.querySelector(".pza-kick")?.focus({ preventScroll: true }); } }, 120);
       } else if (event.target.closest("[data-home-teams]")) {
         const section = $("publicTeamsSection");
         if (section && !section.hidden) section.scrollIntoView({ behavior: "smooth", block: "start" });

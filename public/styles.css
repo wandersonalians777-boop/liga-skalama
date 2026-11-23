@@ -2460,3 +2460,33 @@ body.light-theme .pza-manual .pza-allin{color:#5a5a54}
 .hx-pres-row .pza-st{height:24px;font-size:11px}
 .hx-pres-closed{margin:0;font-size:15px;color:#fff}
 .hx-pres-note{margin:0;font-size:12px;font-weight:600;color:#bdbdb5}
+/* Painel do organizador: ✕ sempre cinza (vermelho só no hover/foco) e legenda com as cores certas */
+.pza-card .pza-x,body.light-theme .pza-card .pza-x,body:not(.light-theme) .pza-card .pza-x{display:inline-flex;align-items:center;justify-content:center;padding:0;border:0;background:transparent;color:#8a8a82}
+.pza-card .pza-x svg{display:block;pointer-events:none}
+.pza-card .pza-x:hover,.pza-card .pza-x:focus-visible,body.light-theme .pza-card .pza-x:hover,body.light-theme .pza-card .pza-x:focus-visible{background:#fdecea;color:#b42318}
+body:not(.light-theme) .pza-card .pza-x:hover,body:not(.light-theme) .pza-card .pza-x:focus-visible{background:#b4231833;color:#ff7267}
+.pza-legend i{display:inline-block;flex:none;box-sizing:border-box;width:14px;height:14px;border:2px solid #1e7a3c;border-radius:4px;background:transparent}
+.pza-legend i.is-wait{border-color:#c2560c}
+
+/* ===== Lista de presença pública (aba Modo Liga, antes do sorteio; só leitura) ===== */
+.liga-public-teams.is-list>.section-heading{display:none}
+.pzp{margin:0}
+.pzp .pza-kick{font-size:13px}
+.pzp-lead{margin:0;padding:12px 16px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;color:#9a9a92}
+body.light-theme .pzp-lead{color:#5a5a54}
+.pzp .pza-sh h3{margin:0;font:900 22px/1 'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:0}
+.pzp .pza-cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+@media(min-width:900px){.pzp .pza-cards{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}}
+.pzp .pza-card{min-height:40px;gap:8px;padding:4px 8px}
+.pzp .pza-n{width:24px;height:24px;font-size:11px}
+.pzp .pza-nm{font-size:13px}
+.pzp .pza-nm small{font-size:11px}
+.pzp .pza-gk{width:20px;height:20px;font-size:11px;line-height:20px}
+.pzp .plink{color:inherit}
+.pzp-foot{margin-top:16px}
+.pzp-foot .pza-btn{width:100%;min-height:48px;text-decoration:none}
+.pzp-note{margin:0;padding:12px;border:1px dashed #8a8a82;border-radius:12px;text-align:center;font-weight:700;font-size:14px;color:#9a9a92}
+body.light-theme .pzp-note{color:#5a5a54}
+/* Próximo jogo: link para a lista na aba Modo Liga */
+.hx-pres-link{justify-self:start;min-height:44px;padding:0 4px;border:0;background:transparent;color:#ffc400;font-family:inherit;font-weight:800;font-size:14px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.hx-pres-link:focus-visible{outline:3px solid #6f8fe8;outline-offset:2px;border-radius:6px}
