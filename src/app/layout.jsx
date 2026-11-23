@@ -37,7 +37,12 @@ export default function RootLayout({ children }) {
   preconnect('https://cdn.jsdelivr.net', { crossOrigin: 'anonymous' });
   if (ligaConfig.supabaseUrl) preconnect(ligaConfig.supabaseUrl, { crossOrigin: 'anonymous' });
   preload(`/app-markup.html?v=${assetVersion}`, { as: 'fetch', crossOrigin: 'anonymous' });
-  preload('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js', { as: 'script' });
+  // integrity/crossOrigin iguais aos do page.jsx, senão o navegador baixa o arquivo duas vezes.
+  preload('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js', {
+    as: 'script',
+    crossOrigin: 'anonymous',
+    integrity: 'sha384-rwykjmWNwVxboyFmvK9OXN0wj9hnMHA2aAHtits54DuACyCq0M2PrSNxhRb+hvXT',
+  });
   preload(`/app-live.js?v=${assetVersion}`, { as: 'script' });
   preload('/assets/fonts/barlow-condensed-900.woff2', { as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' });
   preload('/assets/fonts/dm-sans-latin.woff2', { as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' });
