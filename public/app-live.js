@@ -228,7 +228,7 @@
     const publicTeams = $("publicTeamsSection");
     if (publicTeams) publicTeams.hidden = !locked || !(state?.teams || []).length;
     document.querySelectorAll("button,input,select,textarea").forEach((element) => {
-      if (element.id === "themeToggle" || element.id === "adminAccessButton" || element.id === "footerAdminButton" || element.closest(".home-top") || element.closest("#historico") || element.closest("#adminLogin") || element.closest("#artStudio") || element.closest("#newsPublic") || element.closest("#newsPush") || element.hasAttribute("data-view-button") || element.matches(".home-tab,.home-more,.home-link")) return;
+      if (element.id === "themeToggle" || element.id === "adminAccessButton" || element.id === "footerAdminButton" || element.closest(".home-top") || element.closest("#historico") || element.closest("#adminLogin") || element.closest("#artStudio") || element.closest("#newsPublic") || element.closest("#newsPush") || element.closest("#cartas") || element.closest("#jogador") || element.hasAttribute("data-view-button") || element.matches(".home-tab,.home-more,.home-link")) return;
       if (locked) {
         if (!element.hasAttribute("data-access-locked")) { element.dataset.accessWasDisabled = String(element.disabled); element.setAttribute("data-access-locked", ""); }
         element.disabled = true;
@@ -4591,7 +4591,7 @@
     if (event.target.id === "vtName") { renderVoting(); }
   });
   // ----- Rotas próprias: #presenca e #votacao abrem só essa tela -----
-  const PV_VIEWS = { "#presenca": "presenca", "#votacao": "votacao", "#hall": "hall" };
+  const PV_VIEWS = { "#presenca": "presenca", "#votacao": "votacao", "#hall": "hall", "#cartas": "cartas" };
   const PV_INVITE_RE = /^#presenca\/([A-Za-z0-9_-]{20,64})$/;
   function pvRoute() {
     const invite = location.hash.match(PV_INVITE_RE);
@@ -4605,6 +4605,7 @@
     if (invite) pzInviteOpen(invite[1]);
     else if (view === "presenca") { renderPresence(); pzLoad(); PZ.timer = setInterval(() => { if (!document.hidden) pzLoad(true); }, 10000); }
     else if (view === "votacao") { renderVoting(); vtLoad(); VT.timer = setInterval(() => { if (!document.hidden) vtLoad(true); }, 10000); }
+    else if (view === "cartas") cardsOpen();
     else hallOpen();
     return true;
   }
@@ -5228,7 +5229,7 @@
     })() : '<p class="pf-empty">Ainda sem jogos neste modo.</p>';
     const ach = playerAchievements(slug);
     const tab = (mode, label, n) => '<button type="button" class="pf-tab' + (PF.mode === mode ? " is-on" : "") + '" role="tab" aria-selected="' + (PF.mode === mode) + '" data-pf-mode="' + mode + '">' + label + " <small>" + n + "</small></button>";
-    box.innerHTML = '<div class="pf-wrap"><div class="pf-bar-top"><button type="button" class="pf-back" data-pf-back>← Voltar</button><button type="button" class="pf-share" data-pf-share>Compartilhar</button></div>' +
+    box.innerHTML = '<div class="pf-wrap"><div class="pf-bar-top"><button type="button" class="pf-back" data-pf-back>← Voltar</button><button type="button" class="pf-share" data-pf-share>Compartilhar</button></div>' + profileCardsHtml(slug) +
       '<header class="pf-head"><div class="pf-photo">' + (photo ? '<img src="' + escapeHtml(photo) + '" alt="Foto de ' + escapeHtml(displayName(name)) + '" onerror="this.remove()">' : "") + '<span aria-hidden="true">' + escapeHtml(initials || "?") + "</span></div>" +
       '<div class="pf-id"><h2 id="pfTitle">' + escapeHtml(displayName(name) || "Jogador") + "</h2>" +
         (shared && client && name ? '<button type="button" class="pv-switch nm-open" data-nm-open="' + escapeHtml(baseName(name)) + '">✎ Editar meu nome</button>' : "") + '<p class="pf-tags"><span>' + (isKeeper ? "Goleiro" : "Linha") + "</span>" + (playerCurrentTeam(slug) ? "<span>" + escapeHtml(playerCurrentTeam(slug)) + "</span>" : "") + (first ? "<span>desde " + escapeHtml(first.toLocaleDateString("pt-BR", { month: "short", year: "numeric" }).replace(". de ", "/").replace(" de ", "/")) + "</span>" : "") + "</p></div></header>" +
@@ -5237,9 +5238,10 @@
         '<section class="pf-card" aria-label="Números"><div class="pf-nums">' + nums + '</div><div class="pf-ved"><div class="v"><strong>' + d.wins + '</strong><small>VITÓRIAS</small></div><div class="e"><strong>' + d.draws + '</strong><small>EMPATES</small></div><div class="d"><strong>' + d.losses + "</strong><small>DERROTAS</small></div></div></section>" +
         '<section class="pf-card" aria-labelledby="pfBarsTitle"><h3 id="pfBarsTitle" class="pf-h">NOTAS DOS ÚLTIMOS JOGOS</h3>' + bars + "</section>" +
         '<section class="pf-card" aria-labelledby="pfBestTitle"><h3 id="pfBestTitle" class="pf-h">MELHOR JOGO</h3>' + bestHtml + "</section>") +
-      '<section class="pf-card" aria-labelledby="pfAchTitle"><h3 id="pfAchTitle" class="pf-h">CONQUISTAS</h3>' + (ach.length ? '<ul class="pf-ach">' + ach.map(([icon, label, n]) => '<li><span aria-hidden="true">' + icon + "</span><strong>" + label + "</strong>" + (n > 1 ? "<small>×" + n + "</small>" : "") + "</li>").join("") + "</ul>" : '<p class="pf-empty">Ainda sem conquistas. Bora!</p>') + "</section>" +
+      '<section class="pf-card" aria-labelledby="pfAchTitle"><h3 id="pfAchTitle" class="pf-h">CONQUISTAS</h3>' + (ach.length ? '<ul class="pf-ach">' + ach.map(([icon, label, n]) => '<li><span aria-hidden="true">' + icon + "</span><strong>" + label + "</strong>" + (n > 1 ? "<small>×" + n + "</small>" : "") + "</li>").join("") + "</ul>" : '<p class="pf-empty">Ainda sem conquistas. Bora!</p>') + "</section>" + profileCardsExtraHtml(slug) +
       (PLAYER_PHOTOS_ENABLED && !isEditLocked() && shared && client ? '<section class="pf-card pf-admin"><h3 class="pf-h">FOTO (ORGANIZADOR)</h3><p class="pf-empty">A foto é reduzida para 400×400 e guardada em WebP.</p><label class="button button-outline pf-upload">Escolher foto<input type="file" accept="image/*" id="pfPhotoInput" hidden></label>' + (photo ? '<button type="button" class="button button-outline" data-pf-photo-remove>Tirar foto</button>' : "") + '<p class="pv-msg" id="pfPhotoMsg" role="status"></p></section>' : "") +
       "</div>";
+    cardsAfterRender(box);
   }
   function openProfile(slug, fromSite) {
     PF.slug = slug; PF.mode = ""; PF.fromSite = fromSite;
@@ -5341,6 +5343,392 @@
         return '<article class="hall-month"><h4>' + escapeHtml(monthLabel(key)) + '</h4><p><span>⚽ Artilheiro</span>' + (m.scorers.length ? m.scorers.map((n) => plink(n)).join(" · ") + " <small>" + m.goals + (m.goals === 1 ? " gol" : " gols") + "</small>" : "<small>sem gols</small>") + '</p><p><span>🧤 Goleiro</span>' + (m.keepers.length ? m.keepers.map((r) => plink(r.player)).join(" · ") + " <small>nota " + fmt1(m.keepers[0].average) + "</small>" : "<small>ninguém com " + MIN_KEEPER_GAMES + " jogos no gol</small>") + "</p></article>";
       }).join("") + "</div>" : '<p class="pv-hint">Ainda sem jogos do Modo Liga.</p>') + "</section></div>";
   }
+  // ---------- Coleção de cartas Skalama (#cartas) ----------
+  // Só leitura: tudo de officialGames() + gamePerformance() (Modo Liga e Super Liga juntos), monthLeaders, vote_winners e superChampions.
+  const CARD_NEW_UNTIL = Date.parse("2026-12-23T03:00:00Z"); // selo "NOVO" do card da Tela principal (30 dias)
+  const CARD_TIER_LABEL = { bronze: "BRONZE", prata: "PRATA", ouro: "OURO", elite: "ELITE" };
+  const CARD_SP = { mes: ["Jogador do mês", "⭐"], art: ["Artilheiro do mês", "🔥"], gk: ["Goleiro do mês", "🧤"], con: ["Constância", "📈"] };
+  const CARD_SP_ORDER = ["mes", "art", "gk", "con"];
+  const CARD_MON = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
+  const CARDS = { sig: "", data: null, filter: "all", winnersLoading: false };
+  const cardTier = (avg) => (avg >= 8 ? "elite" : avg >= 7 ? "ouro" : avg >= 6 ? "prata" : "bronze");
+  const cardMon = (key) => CARD_MON[Number(String(key).slice(5, 7)) - 1] || "";
+  const cardYear = () => new Date(nowMs()).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }).slice(0, 4);
+  const cardNowMonth = () => new Date(nowMs()).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }).slice(0, 7);
+  const cardPct = (a, b) => (b ? Math.round((a / b) * 100) : 0) + "%";
+  const cardDec = (a, b, digits = 2) => (b ? (a / b).toFixed(digits) : (0).toFixed(digits)).replace(".", ",");
+  const cardTime = (game) => hxTime(game.finishedAt)?.getTime() || 0;
+  const cardWinners = () => VOTE.allWinners || VOTE.winners || [];
+  // Craque da noite de todas as noites (até 20): carregado uma vez, quando alguma carta aparece.
+  function cardLoadWinners() {
+    if (VOTE.hallLoaded || CARDS.winnersLoading || !shared || !client) return;
+    CARDS.winnersLoading = true;
+    pvRpc("vote_winners", { p_limit: 20 }).then((r) => {
+      if (Array.isArray(r)) { VOTE.allWinners = r; VOTE.hallLoaded = true; CARDS.sig = ""; cardsRefresh(); }
+    }).finally(() => { CARDS.winnersLoading = false; });
+  }
+  function cardEmptyRow(slug, name) {
+    return { slug, name, games: 0, sum: 0, goals: 0, assists: 0, wins: 0, kGames: 0, kSum: 0, kWins: 0, conceded: 0, clean: 0, last: null };
+  }
+  // Soma uma linha de gamePerformance num acumulador.
+  function cardAdd(row, p, game) {
+    const score = Number(p.score) || 0;
+    row.games++; row.sum += score; row.goals += Number(p.goalsFor) || 0; row.assists += Number(p.assists) || 0;
+    if (p.result === "vitória") row.wins++;
+    if (p.role === "goleiro") { row.kGames++; row.kSum += score; if (p.result === "vitória") row.kWins++; const ga = Number(p.goalsAgainst) || 0; row.conceded += ga; if (!ga) row.clean++; }
+    (row.scores = row.scores || []).push(score);
+    row.last = { game, team: p.team };
+  }
+  // Especiais de um mês (chave AAAA-MM). Jogador do mês e Constância: Modo Liga + Super Liga; Artilheiro e Goleiro: regra dos destaques (monthLeaders).
+  function cardMonthSpecials(key, partial) {
+    const games = officialGames().filter((game) => monthKeyOf(game) === key).sort((a, b) => cardTime(a) - cardTime(b));
+    const rows = new Map(), liga = new Map();
+    for (const game of games) for (const p of gamePerformance(game)) {
+      const slug = pSlug(p.player); if (!slug) continue;
+      if (!rows.has(slug)) rows.set(slug, cardEmptyRow(slug, p.player));
+      cardAdd(rows.get(slug), p, game);
+      if (!game.superLigaId) { if (!liga.has(slug)) liga.set(slug, cardEmptyRow(slug, p.player)); cardAdd(liga.get(slug), p, game); }
+    }
+    const out = {}, avg = (r) => (r.games ? r.sum / r.games : 0), byName = (a, b) => a.name.localeCompare(b.name, "pt-BR");
+    const mes = [...rows.values()].filter((r) => r.games >= 3).sort((a, b) => avg(b) - avg(a) || b.games - a.games || byName(a, b))[0];
+    if (mes) out.mes = { type: "mes", key, partial, slug: mes.slug, name: mes.name, ovr: Math.round(avg(mes) * 10), hl: [fmt1(avg(mes)), "NOTA MÉDIA NO MÊS"] };
+    const leaders = monthLeaders(key);
+    if (leaders.scorers.length) {
+      const pick = leaders.scorers.map((n) => liga.get(pSlug(n)) || cardEmptyRow(pSlug(n), n)).sort((a, b) => a.games - b.games || avg(b) - avg(a) || byName(a, b))[0];
+      const all = rows.get(pick.slug) || pick;
+      out.art = { type: "art", key, partial, slug: pick.slug, name: pick.name, ovr: Math.round(avg(all) * 10), hl: [String(leaders.goals), leaders.goals === 1 ? "GOL NO MÊS" : "GOLS NO MÊS"] };
+    }
+    if (leaders.keepers.length) {
+      const k = leaders.keepers.slice().sort((a, b) => b.games - a.games || a.player.localeCompare(b.player, "pt-BR"))[0], r = liga.get(pSlug(k.player)) || cardEmptyRow(pSlug(k.player), k.player);
+      out.gk = { type: "gk", key, partial, slug: pSlug(k.player), name: k.player, ovr: Math.round(k.average * 10), keeper: true,
+        hl: r.clean ? [String(r.clean), r.clean === 1 ? "JOGO SEM SOFRER" : "JOGOS SEM SOFRER"] : [cardDec(k.conceded, k.games, 1), "SOFRIDOS POR JOGO"] };
+    }
+    const sd = (r) => { const m = avg(r); return Math.sqrt(r.scores.reduce((s, x) => s + (x - m) ** 2, 0) / r.scores.length); };
+    const con = [...rows.values()].filter((r) => r.games >= 4 && avg(r) >= 7).sort((a, b) => sd(a) - sd(b) || b.games - a.games || avg(b) - avg(a) || byName(a, b))[0];
+    if (con) out.con = { type: "con", key, partial, slug: con.slug, name: con.name, ovr: Math.round(avg(con) * 10), hl: ["±" + fmt1(sd(con)), con.games + (con.games === 1 ? " JOGO SEM CAIR" : " JOGOS SEM CAIR")] };
+    return out;
+  }
+  // Monta tudo uma vez (cache pela assinatura dos dados).
+  function cardsData() {
+    if (!state) return { players: [], waiting: [], cur: {}, months: [], bySlug: new Map() };
+    const games = officialGames().slice().sort((a, b) => cardTime(a) - cardTime(b)), winners = cardWinners(), curKey = cardNowMonth();
+    const sig = JSON.stringify([games.length, games.at(-1)?.id, games.at(-1)?.finishedAt, winners.map((w) => w.round_key + w.name), state.scoreRules?.assist, state.roster, curKey, [...DN.map]]);
+    if (CARDS.sig === sig && CARDS.data) return CARDS.data;
+    const rows = new Map();
+    for (const game of games) for (const p of gamePerformance(game)) {
+      const slug = pSlug(p.player); if (!slug) continue;
+      if (!rows.has(slug)) rows.set(slug, cardEmptyRow(slug, p.player));
+      cardAdd(rows.get(slug), p, game);
+    }
+    // Especiais: mês atual (parcial) e meses fechados.
+    const keys = [...new Set(games.map(monthKeyOf).filter(Boolean))].sort().reverse(), months = keys.map((key) => ({ key, specials: cardMonthSpecials(key, key === curKey) }));
+    const cur = months.find((m) => m.key === curKey)?.specials || {};
+    const champs = superChampions();
+    const players = [], waiting = [], bySlug = new Map();
+    for (const r of rows.values()) {
+      const rosterName = (state.roster || []).find((n) => pSlug(n) === r.slug), isKeeper = keeper(rosterName || r.name) || r.kGames > r.games - r.kGames;
+      const eligible = isKeeper ? r.kGames >= MIN_KEEPER_GAMES : r.games >= 3;
+      const mvp = winners.filter((w) => pSlug(w.name) === r.slug).length;
+      // Selo: a conquista mais recente (craque da noite, artilheiro/goleiro/especial de mês fechado, campeão da Super Liga).
+      const badges = [];
+      winners.filter((w) => pSlug(w.name) === r.slug).forEach((w) => badges.push({ at: Date.parse(w.round_key + "T23:00:00-03:00"), text: "CRAQUE " + pvDayMonth(w.round_key) }));
+      for (const m of months) {
+        if (m.key === curKey) continue;
+        const end = Date.parse(m.key + "-01T00:00:00-03:00") + 31 * 864e5, mon = cardMon(m.key), lead = monthLeaders(m.key);
+        if (lead.scorers.some((n) => pSlug(n) === r.slug)) badges.push({ at: end, text: "ARTILHEIRO " + mon });
+        if (lead.keepers.some((k) => pSlug(k.player) === r.slug)) badges.push({ at: end, text: "GOLEIRO " + mon });
+        if (m.specials.mes?.slug === r.slug) badges.push({ at: end + 1, text: "JOGADOR DO MÊS " + mon });
+        if (m.specials.con?.slug === r.slug) badges.push({ at: end, text: "CONSTÂNCIA " + mon });
+      }
+      champs.filter((g) => gamePerformance(g).some((p) => p.team === g.winner && pSlug(p.player) === r.slug)).forEach((g) => badges.push({ at: cardTime(g), text: "CAMPEÃO SUPER LIGA" }));
+      const badge = badges.sort((a, b) => b.at - a.at)[0]?.text || "";
+      const avg = isKeeper ? (r.kGames ? r.kSum / r.kGames : 0) : r.games ? r.sum / r.games : 0;
+      const crest = r.last ? crestFor(r.last.team, teamName(r.last.game, r.last.team)) : "";
+      const stats = isKeeper
+        ? [["JOG", r.kGames], ["SOF", r.conceded], ["S/J", cardDec(r.conceded, r.kGames, 1)], ["JSS", r.clean], ["VIT", cardPct(r.kWins, r.kGames)], ["MVP", mvp]]
+        : [["JOG", r.games], ["GOL", r.goals], ["AST", r.assists], ["VIT", cardPct(r.wins, r.games)], ["G/J", cardDec(r.goals, r.games)], ["MVP", mvp]];
+      const card = { slug: r.slug, name: rosterName || r.name, keeper: isKeeper, games: isKeeper ? r.kGames : r.games, avg, ovr: Math.round(avg * 10), tier: cardTier(avg), stats, crest, badge, eligible };
+      bySlug.set(r.slug, card);
+      if (eligible) players.push(card); else waiting.push(card);
+    }
+    players.sort((a, b) => b.ovr - a.ovr || b.games - a.games || a.name.localeCompare(b.name, "pt-BR"));
+    waiting.sort((a, b) => b.games - a.games || a.name.localeCompare(b.name, "pt-BR"));
+    CARDS.sig = sig;
+    CARDS.data = { players, waiting, cur, curKey, months, bySlug };
+    return CARDS.data;
+  }
+  // Especial principal do jogador neste mês (prioridade: Jogador do mês > Artilheiro > Goleiro > Constância).
+  function cardSpecialOf(slug, data = cardsData()) {
+    for (const type of CARD_SP_ORDER) if (data.cur[type]?.slug === slug) return data.cur[type];
+    return null;
+  }
+  // Informações para desenhar uma carta (nível ou especial) de um jogador.
+  function cardInfo(slug, sp, data = cardsData()) {
+    const base = data.bySlug.get(slug);
+    if (!base) return null;
+    if (!sp) return { ...base, cls: base.tier === "ouro" ? "ouro" : base.tier, tierText: CARD_TIER_LABEL[base.tier] };
+    return { ...base, keeper: sp.type === "gk" ? true : base.keeper, stats: sp.type === "gk" && !base.keeper ? cardKeeperStats(slug, data) : base.stats, ovr: sp.ovr, cls: sp.type, sp, tierText: "ESPECIAL" };
+  }
+  function cardKeeperStats(slug, data) {
+    const base = data.bySlug.get(slug), rows = cardEmptyRow(slug, base.name);
+    for (const game of officialGames()) for (const p of gamePerformance(game)) if (pSlug(p.player) === slug) cardAdd(rows, p, game);
+    const mvp = base.stats.find((s) => s[0] === "MVP")?.[1] || 0;
+    return [["JOG", rows.kGames], ["SOF", rows.conceded], ["S/J", cardDec(rows.conceded, rows.kGames, 1)], ["JSS", rows.clean], ["VIT", cardPct(rows.kWins, rows.kGames)], ["MVP", mvp]];
+  }
+  const CARD_SIL = '<svg class="skc-sil" viewBox="0 0 170 180" aria-hidden="true" focusable="false"><circle cx="85" cy="62" r="38"/><path d="M12 180c5-46 34-72 73-72s68 26 73 72Z"/></svg>';
+  const CARD_MOTIF = {
+    mes: '<svg class="skc-motif" viewBox="0 0 300 490" aria-hidden="true">' + [[40, 90, 9], [250, 150, 7], [60, 200, 6], [230, 60, 5], [150, 40, 4], [270, 220, 6], [30, 150, 4]].map(([x, y, r]) => '<path transform="translate(' + x + " " + y + ") scale(" + r / 10 + ')" d="M0-10 2.9-3.1 10-3.1 4.3 1.2 6.2 8.1 0 4 -6.2 8.1 -4.3 1.2 -10-3.1 -2.9-3.1Z" fill="#FFC400" opacity=".55"/>').join("") + "</svg>",
+    gk: '<svg class="skc-motif" viewBox="0 0 300 490" opacity=".12" aria-hidden="true"><g fill="none" stroke="#fff" stroke-width="2">' + Array.from({ length: 9 }, (_, i) => '<path d="M' + i * 36 + ' 0V490"/>').join("") + Array.from({ length: 14 }, (_, i) => '<path d="M0 ' + i * 36 + 'H300"/>').join("") + "</g></svg>",
+    art: '<svg class="skc-motif" viewBox="0 0 300 490" aria-hidden="true"><path d="M150 470c-70 0-110-50-100-110 8-46 46-62 40-110 34 22 44 52 40 80 20-18 22-50 12-82 60 34 104 90 96 150-6 46-38 72-88 72Z" fill="#FFD27A" opacity=".18"/></svg>',
+    con: '<svg class="skc-motif" viewBox="0 0 300 490" aria-hidden="true"><polyline points="10,330 50,300 90,312 130,280 170,290 210,262 250,270 290,240" fill="none" stroke="#fff" stroke-width="4" opacity=".22"/>' + [[10, 330], [50, 300], [90, 312], [130, 280], [170, 290], [210, 262], [250, 270], [290, 240]].map(([x, y]) => '<circle cx="' + x + '" cy="' + y + '" r="6" fill="#fff" opacity=".3"/>').join("") + "</svg>",
+  };
+  // A carta: um componente só. mode "link" abre o perfil; "share" (perfil) abre a arte; "none" só mostra.
+  function cardHtml(info, mode = "link") {
+    if (!info) return "";
+    const name = displayName(info.name), sp = info.sp, photo = playerPhotoUrl(info.slug);
+    const size = name.length > 14 ? 22 : name.length > 11 ? 26 : 31;
+    const label = mode === "share" ? "Compartilhar a carta de " + name : "Abrir perfil de " + name;
+    const attrs = mode === "none" ? ' aria-hidden="true"' : ' role="' + (mode === "share" ? "button" : "link") + '" tabindex="0" aria-label="' + escapeHtml(label) + '" ' + (mode === "share" ? 'data-card-share="' + escapeHtml(info.slug) + '"' : 'data-card-slug="' + escapeHtml(info.slug) + '"');
+    const ribbon = sp ? CARD_SP[sp.type][0] + " · " + cardMon(sp.key).charAt(0) + cardMon(sp.key).slice(1).toLowerCase() + (sp.partial ? " · parcial" : "") : "";
+    return '<div class="skc skc-' + info.cls + (sp ? " skc-sp" : "") + '"' + attrs + '><div class="skc-fr"></div><div class="skc-in">' + (sp ? CARD_MOTIF[sp.type] : "") +
+      (sp ? '<span class="skc-rib">' + escapeHtml(ribbon) + "</span>" : "") +
+      '<div class="skc-top"><span class="skc-ovr">' + info.ovr + '</span><span class="skc-pos">' + (info.keeper ? "GOL" : "LIN") + '</span><span class="skc-dv"></span>' + (info.crest ? '<img class="skc-tm" src="' + escapeHtml(info.crest) + '" alt="">' : '<span class="skc-tm"></span>') + "</div>" +
+      '<img class="skc-lg" src="./assets/escudo-skalama-oficial.png" alt="">' +
+      '<div class="skc-ph">' + (photo ? '<img src="' + escapeHtml(photo) + '" alt="">' : CARD_SIL) + "</div>" +
+      '<div class="skc-nm"><b style="font-size:' + size + 'px">' + escapeHtml(name) + "</b></div>" +
+      '<div class="skc-st">' + info.stats.map(([k, v]) => "<div><span>" + k + "</span><b>" + escapeHtml(String(v)) + "</b></div>").join("") + "</div>" +
+      (sp ? '<div class="skc-hl"><b>' + escapeHtml(sp.hl[0]) + "</b><span>" + escapeHtml(sp.hl[1]) + "</span></div>" : "") +
+      '<div class="skc-ft">' + (info.badge ? "<i>" + escapeHtml(info.badge) + "</i>" : "") + '<span class="skc-tier">' + info.tierText + " · SKALAMA " + cardYear() + "</span></div>" +
+      '<div class="skc-shine"></div></div></div>';
+  }
+  // Nome nunca cortado: diminui a fonte se não couber na plaquinha. Animação só nas cartas visíveis.
+  let cardObserver = null;
+  function cardsAfterRender(root) {
+    root.querySelectorAll(".skc-nm b").forEach((el) => {
+      let size = parseFloat(el.style.fontSize) || 31, guard = 0;
+      while (el.scrollWidth > el.clientWidth + 0.5 && size > 12 && guard++ < 30) { size -= 1; el.style.fontSize = size + "px"; }
+    });
+    if (!("IntersectionObserver" in window)) { root.querySelectorAll(".skc").forEach((c) => c.classList.add("is-on")); return; }
+    cardObserver = cardObserver || new IntersectionObserver((entries) => entries.forEach((e) => e.target.classList.toggle("is-on", e.isIntersecting)), { rootMargin: "60px" });
+    root.querySelectorAll(".skc").forEach((c) => cardObserver.observe(c));
+  }
+  function cardOpen(slug) { if (slug) location.hash = "#jogador/" + slug; }
+  document.addEventListener("click", (event) => {
+    const share = event.target.closest?.("[data-card-share]");
+    if (share) { cardShareArt(share.dataset.cardShare); return; }
+    const card = event.target.closest?.("[data-card-slug]");
+    if (card) cardOpen(card.dataset.cardSlug);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const el = event.target.closest?.("[data-card-slug],[data-card-share]");
+    if (!el || el !== event.target) return;
+    event.preventDefault();
+    el.click();
+  });
+  // ----- Página "Cartas dos jogadores" -----
+  function cardsOpen() { cardLoadWinners(); renderCards(); }
+  function cardsRefresh() {
+    if (location.hash === "#cartas") renderCards();
+    if (PF.slug) renderProfile();
+    renderHomeLinks();
+  }
+  const CARD_FILTERS = [["all", "Todas"], ["elite", "💎 Elite"], ["ouro", "🥇 Ouro"], ["prata", "🥈 Prata"], ["bronze", "🥉 Bronze"], ["gk", "🧤 Goleiros"]];
+  function renderCards() {
+    const box = $("cartas");
+    if (!box) return;
+    const data = cardsData(), f = CARDS.filter;
+    const slot = (info) => '<div class="skc-slot"><div class="skc-fit">' + cardHtml(info) + "</div></div>";
+    const specials = CARD_SP_ORDER.map((type) => data.cur[type]).filter(Boolean);
+    const list = data.players.filter((c) => f === "all" || (f === "gk" ? c.keeper : c.tier === f)).map((c) => cardInfo(c.slug, cardSpecialOf(c.slug, data), data));
+    const nothing = !officialGames().length;
+    box.innerHTML = '<div class="cards-wrap"><a class="pv-back cards-back" href="./" data-cards-back>← Voltar</a>' +
+      '<header class="cards-head"><img src="./assets/escudo-skalama-oficial.png" alt="" width="48" height="64"><div><h2 id="cardsTitle">Coleção de cartas <span>Skalama</span></h2><p>Temporada ' + cardYear() + " · Modo Liga e Super Liga</p></div></header>" +
+      (nothing ? '<p class="cards-empty">As cartas aparecem depois dos primeiros jogos.</p>' :
+        (specials.length ? '<section class="cards-sec" aria-labelledby="cardsSpTitle"><h3 class="cards-h" id="cardsSpTitle">Especiais do mês <small>' + escapeHtml(monthLabel(data.curKey)) + (specials.some((s) => s.partial) ? " · parcial" : "") + '</small></h3><div class="cards-grid">' + specials.map((sp) => slot(cardInfo(sp.slug, sp, data))).join("") + "</div></section>" : "") +
+        '<section class="cards-sec" aria-labelledby="cardsAllTitle"><h3 class="cards-h" id="cardsAllTitle">Cartas por nota <small>' + data.players.length + (data.players.length === 1 ? " carta" : " cartas") + "</small></h3>" +
+        '<div class="cards-filters" role="group" aria-label="Filtrar cartas">' + CARD_FILTERS.map(([key, label]) => '<button type="button" class="cards-filter' + (f === key ? " is-on" : "") + '" data-cards-filter="' + key + '" aria-pressed="' + (f === key) + '">' + label + "</button>").join("") + "</div>" +
+        (list.length ? '<div class="cards-grid">' + list.map(slot).join("") + "</div>" : '<p class="cards-empty">Nenhuma carta neste filtro.</p>') + "</section>" +
+        (data.waiting.length ? '<section class="cards-wait" aria-labelledby="cardsWaitTitle"><h3 id="cardsWaitTitle">Ainda sem carta (menos de 3 jogos)</h3><p>A carta aparece depois do 3º jogo oficial (goleiro: 3 jogos no gol).</p><ul>' + data.waiting.map((c) => "<li>" + plink(c.name, displayName(c.name) + " · " + c.games + (c.games === 1 ? " jogo" : " jogos")) + "</li>").join("") + "</ul></section>" : "")) +
+      '<section class="cards-legend" aria-label="Como funcionam as cartas"><div><b>🥉 Bronze · 🥈 Prata · 🥇 Ouro</b>Nota média abaixo de 6,0 · de 6,0 a 6,9 · de 7,0 a 7,9. Mínimo de 3 jogos oficiais.</div><div><b>💎 Elite (nota 8,0+)</b>Moldura holográfica, brilho em volta da carta e fundo com raios. Só os melhores chegam nela.</div>' +
+      '<div><b>⭐ Jogador do mês</b>Maior nota média do mês (mínimo 3 jogos).</div><div><b>🧤 Goleiro do mês</b>Melhor goleiro do mês, com a regra dos destaques (mínimo 3 jogos no gol).</div><div><b>🔥 Artilheiro do mês</b>Mais gols no mês (empate: menos jogos, depois maior nota).</div><div><b>📈 Constância</b>Menor variação de nota no mês, com pelo menos 4 jogos e média 7,0 ou mais.</div></section></div>';
+    cardsAfterRender(box);
+  }
+  document.addEventListener("click", (event) => {
+    const f = event.target.closest?.("[data-cards-filter]");
+    if (f) { CARDS.filter = f.dataset.cardsFilter; renderCards(); $("cartas").querySelector('[data-cards-filter="' + CARDS.filter + '"]')?.focus(); return; }
+    if (event.target.closest?.("[data-cards-back]")) { event.preventDefault(); cardsClose(); }
+  });
+  function cardsClose() {
+    if (history.length > 1 && document.referrer.startsWith(location.origin)) history.back();
+    else { history.pushState(null, "", location.pathname + location.search); document.body.classList.remove("pv-standalone"); setView("home"); }
+  }
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && location.hash === "#cartas" && !PF.slug && !document.querySelector("dialog[open]")) cardsClose();
+  });
+  // ----- Perfil: carta grande, carta da temporada e cartas especiais -----
+  function profileCardsHtml(slug) {
+    const data = cardsData(), base = data.bySlug.get(slug);
+    if (!base) return "";
+    cardLoadWinners();
+    if (!base.eligible) return '<section class="pf-cardbox is-empty"><p>A carta aparece depois do 3º jogo oficial' + (base.keeper ? " no gol" : "") + " (" + Math.min(base.games, 3) + " de 3).</p></section>";
+    const sp = cardSpecialOf(slug, data);
+    return '<section class="pf-cardbox" aria-label="Carta do jogador"><div class="pf-cardfit">' + cardHtml(cardInfo(slug, sp, data), "share") + "</div>" +
+      '<div class="pf-cardacts"><button type="button" class="pf-cardbtn is-y" data-card-share="' + escapeHtml(slug) + '">📲 Compartilhar carta</button><a class="pf-cardbtn is-o" href="#cartas">Ver todas as cartas</a></div></section>';
+  }
+  function profileCardsExtraHtml(slug) {
+    const data = cardsData(), base = data.bySlug.get(slug);
+    if (!base) return "";
+    const sp = base.eligible && cardSpecialOf(slug, data);
+    const past = [];
+    for (const m of data.months) if (m.key !== data.curKey) for (const type of CARD_SP_ORDER) if (m.specials[type]?.slug === slug) past.push({ key: m.key, type });
+    return (sp ? '<section class="pf-card" aria-labelledby="pfSeasonTitle"><h3 id="pfSeasonTitle" class="pf-h">CARTA DA TEMPORADA</h3><div class="pf-seasonfit">' + cardHtml(cardInfo(slug, null, data), "none") + "</div></section>" : "") +
+      (past.length ? '<section class="pf-card" aria-labelledby="pfSpTitle"><h3 id="pfSpTitle" class="pf-h">CARTAS ESPECIAIS</h3><ul class="pf-ach">' + past.map((x) => '<li><span aria-hidden="true">' + CARD_SP[x.type][1] + "</span><strong>" + CARD_SP[x.type][0] + "</strong><small>" + escapeHtml(monthLabel(x.key)) + "</small></li>").join("") + "</ul></section>" : "");
+  }
+  // "Compartilhar carta": abre a Divulgação com a arte da carta já escolhida.
+  function cardShareArt(slug) {
+    const data = cardsData(), sp = cardSpecialOf(slug, data);
+    ART.type = "card"; ART.cardSlug = slug; ART.cardKind = sp ? sp.type : "level";
+    history.pushState(null, "", location.pathname + location.search);
+    pfPrevHash = ""; closeProfile();
+    document.body.classList.remove("pv-standalone");
+    setView("arte"); renderArt();
+    window.scrollTo({ top: 0 });
+    // Celular: compartilha o PNG; PC: baixa.
+    const mobile = matchMedia("(pointer: coarse)").matches;
+    (async () => {
+      const file = await artFile();
+      if (mobile && navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: "Carta Skalama" }); return; } catch (error) { if (error.name === "AbortError") return; } }
+      if (!mobile) downloadArt();
+    })();
+  }
+  // ----- Tela principal: cards de atalho (Hall da fama, Cartas, Regras) -----
+  function renderHomeLinks() {
+    const hallChip = $("hkHallChip"), cardChip = $("hkCardsChip"), isNew = $("hkCardsNew");
+    if (!hallChip || !state) return;
+    const champ = superChampions()[0];
+    hallChip.textContent = champ ? "🏆 Último campeão: " + gameTeamLabel(champ, champ.winner === champ.home ? "home" : "away") : "🏆 Campeões e recordes";
+    const data = cardsData();
+    cardChip.textContent = data.players.length ? "🃏 " + data.players.length + (data.players.length === 1 ? " carta" : " cartas") + " · melhor: " + data.players[0].ovr : "🃏 Saem depois do 3º jogo";
+    isNew.hidden = nowMs() > CARD_NEW_UNTIL;
+  }
+  // ----- Divulgação: arte "Carta do jogador" (canvas) -----
+  const AX_CARD_COLORS = {
+    bronze: { f: ["#FFD9B0", "#8A4A17", "#E8A970"], b: ["#F0C59A", "#C27B3E", "#7E4314"], t: "#1F0E00", sub: "#4A2508", line: "rgba(0,0,0,.15)", bar: "#0B0B0B", barT: "#FFC400", acc: "#0B0B0B", accT: "#FFC400" },
+    prata: { f: ["#FFFFFF", "#8E8E88", "#E6E6E2"], b: ["#F4F4F1", "#C9C9C4", "#8E8E88"], t: "#141414", sub: "#3A3A35", line: "rgba(0,0,0,.15)", bar: "#0B0B0B", barT: "#FFC400", acc: "#0B0B0B", accT: "#FFC400" },
+    ouro: { f: ["#FFF1A8", "#B8860B", "#FFE27A"], b: ["#FFE07A", "#E0A800", "#9C7400"], t: "#1A1200", sub: "#5C4500", line: "rgba(0,0,0,.15)", bar: "#0B0B0B", barT: "#FFC400", acc: "#0B0B0B", accT: "#FFC400" },
+    elite: { f: ["#FFF6C8", "#FFC400", "#FF8A00", "#7AF0FF"], b: ["#FFE98F", "#F2B600", "#8F6A00"], t: "#1A1200", sub: "#5C4500", line: "rgba(0,0,0,.15)", bar: "#0B0B0B", barT: "#FFC400", acc: "#0B0B0B", accT: "#FFC400", glow: "rgba(255,196,0,.55)" },
+    mes: { f: ["#FFF1A8", "#8A6500", "#FFC400"], b: ["#2C2C2C", "#131313", "#000000"], t: "#FFFFFF", sub: "#FFC400", line: "rgba(255,255,255,.14)", bar: "#FFC400", barT: "#0B0B0B", acc: "#FFC400", accT: "#0B0B0B", rib: "#FFC400", ribT: "#0B0B0B", glow: "rgba(255,196,0,.4)", ovr: "#FFC400" },
+    gk: { f: ["#C9F7D8", "#14532D", "#3DBA6E"], b: ["#2E8F55", "#1F6E3A", "#0B3A1E"], t: "#FFFFFF", sub: "#C9F7D8", line: "rgba(255,255,255,.16)", bar: "#0B0B0B", barT: "#3DBA6E", acc: "#0B0B0B", accT: "#3DBA6E", rib: "#0B0B0B", ribT: "#3DBA6E", glow: "rgba(61,186,110,.35)" },
+    art: { f: ["#FFE0B0", "#7A1A0C", "#FF7A1A"], b: ["#FF8A2B", "#D9361C", "#6E0F08"], t: "#FFFFFF", sub: "#FFE0B0", line: "rgba(255,255,255,.18)", bar: "#0B0B0B", barT: "#FFB347", acc: "#0B0B0B", accT: "#FFB347", rib: "#0B0B0B", ribT: "#FFB347", glow: "rgba(255,106,0,.35)" },
+    con: { f: ["#D6E0FF", "#1A2F75", "#7A9BFF"], b: ["#3B5FCC", "#23439C", "#0E1D4D"], t: "#FFFFFF", sub: "#D6E0FF", line: "rgba(255,255,255,.16)", bar: "#0B0B0B", barT: "#7A9BFF", acc: "#0B0B0B", accT: "#7A9BFF", rib: "#0B0B0B", ribT: "#7A9BFF", glow: "rgba(79,123,255,.35)" },
+  };
+  function axCardInfo() {
+    const data = cardsData(), slug = ART.cardSlug && data.bySlug.get(ART.cardSlug)?.eligible ? ART.cardSlug : data.players[0]?.slug;
+    if (!slug) return { warn: "As cartas aparecem depois do 3º jogo oficial de cada jogador." };
+    ART.cardSlug = slug;
+    const sp = ART.cardKind && ART.cardKind !== "level" ? data.cur[ART.cardKind] : null;
+    const special = sp && sp.slug === slug ? sp : null;
+    if (!special) ART.cardKind = "level";
+    return { type: "card", card: cardInfo(slug, special, data) };
+  }
+  function axCardShape(ctx, x, y, w, h) {
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.16, y); ctx.lineTo(x + w * 0.84, y); ctx.lineTo(x + w, y + h * 0.06); ctx.lineTo(x + w, y + h * 0.86);
+    ctx.lineTo(x + w * 0.5, y + h); ctx.lineTo(x, y + h * 0.86); ctx.lineTo(x, y + h * 0.06); ctx.closePath();
+  }
+  // Desenha a carta (300×490 de referência) na escala s, com o canto de cima à esquerda em (x, y).
+  function axDrawCardShape(ctx, info, x, y, s) {
+    const c = AX_CARD_COLORS[info.cls] || AX_CARD_COLORS.ouro, W = 300 * s, H = 490 * s, sp = info.sp;
+    ctx.save();
+    if (c.glow) { ctx.shadowColor = c.glow; ctx.shadowBlur = 60 * s; }
+    axCardShape(ctx, x, y, W, H);
+    const fr = ctx.createLinearGradient(x, y, x + W, y + H);
+    c.f.forEach((col, i) => fr.addColorStop(i / Math.max(1, c.f.length - 1), col));
+    if (info.cls === "elite") { fr.addColorStop(0, "#FFF6C8"); fr.addColorStop(0.25, "#FFC400"); fr.addColorStop(0.45, "#FF8A00"); fr.addColorStop(0.65, "#7AF0FF"); fr.addColorStop(0.85, "#FFC400"); fr.addColorStop(1, "#FFF6C8"); }
+    ctx.fillStyle = fr; ctx.fill();
+    ctx.restore();
+    const ix = x + 6 * s, iy = y + 6 * s, iw = W - 12 * s, ih = H - 12 * s;
+    ctx.save();
+    axCardShape(ctx, ix, iy, iw, ih); ctx.clip();
+    const bg = ctx.createLinearGradient(ix, iy, ix + iw * 0.3, iy + ih);
+    bg.addColorStop(0, c.b[0]); bg.addColorStop(0.55, c.b[1]); bg.addColorStop(1, c.b[2]);
+    ctx.fillStyle = bg; ctx.fillRect(ix, iy, iw, ih);
+    const light = ctx.createRadialGradient(ix + iw * 0.62, iy + ih * 0.28, 0, ix + iw * 0.62, iy + ih * 0.28, iw * 0.55);
+    light.addColorStop(0, info.cls === "mes" ? "rgba(255,196,0,.33)" : "rgba(255,255,255,.4)"); light.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = light; ctx.fillRect(ix, iy, iw, ih);
+    ctx.strokeStyle = "rgba(255,255,255,.06)"; ctx.lineWidth = 2 * s;
+    for (let k = -ih; k < iw + ih; k += 12 * s) { ctx.beginPath(); ctx.moveTo(ix + k, iy); ctx.lineTo(ix + k - ih * 0.58, iy + ih); ctx.stroke(); }
+    const shield = axImg(AX_SHIELD);
+    if (shield) { ctx.save(); ctx.globalAlpha = sp ? 0.1 : 0.08; if ("filter" in ctx) ctx.filter = "grayscale(1)"; const sw = 250 * s, sh = (sw * shield.naturalHeight) / shield.naturalWidth; ctx.drawImage(shield, x + W / 2 - sw / 2, y + H * 0.66 - sh / 2, sw, sh); ctx.restore(); }
+    // Motivos das especiais
+    if (sp && sp.type === "mes") [[40, 90, 9], [250, 150, 7], [60, 200, 6], [230, 60, 5], [150, 40, 4], [270, 220, 6], [30, 150, 4]].forEach(([sx, sy, r]) => { ctx.save(); ctx.globalAlpha = 0.55; axStar(ctx, x + sx * s, y + sy * s, r * s, "#FFC400"); ctx.restore(); });
+    if (sp && sp.type === "gk") { ctx.save(); ctx.globalAlpha = 0.12; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2 * s; for (let k = 0; k < 9; k++) { ctx.beginPath(); ctx.moveTo(x + k * 36 * s, y); ctx.lineTo(x + k * 36 * s, y + H); ctx.stroke(); } for (let k = 0; k < 14; k++) { ctx.beginPath(); ctx.moveTo(x, y + k * 36 * s); ctx.lineTo(x + W, y + k * 36 * s); ctx.stroke(); } ctx.restore(); }
+    if (sp && sp.type === "con") { ctx.save(); ctx.globalAlpha = 0.22; ctx.strokeStyle = "#fff"; ctx.lineWidth = 4 * s; ctx.beginPath(); [[10, 330], [50, 300], [90, 312], [130, 280], [170, 290], [210, 262], [250, 270], [290, 240]].forEach(([px, py], k) => (k ? ctx.lineTo(x + px * s, y + py * s) : ctx.moveTo(x + px * s, y + py * s))); ctx.stroke(); ctx.restore(); }
+    if (sp && sp.type === "art") { ctx.save(); ctx.globalAlpha = 0.18; ctx.fillStyle = "#FFD27A"; ctx.beginPath(); ctx.ellipse(x + 150 * s, y + 380 * s, 100 * s, 110 * s, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
+    const dy = sp ? 16 * s : 0;
+    // Faixa das especiais
+    if (sp) {
+      const text = (CARD_SP[sp.type][0] + " · " + cardMon(sp.key) + (sp.partial ? " · PARCIAL" : "")).toUpperCase();
+      ctx.font = "900 " + 13 * s + 'px "Barlow Condensed", sans-serif'; axSpacing(ctx, 2 * s);
+      const tw = ctx.measureText(text).width + 28 * s;
+      ctx.fillStyle = c.rib; axRound(ctx, x + W / 2 - tw / 2, y + 6 * s, tw, 25 * s, 10 * s); ctx.fill();
+      ctx.fillStyle = c.ribT; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(text, x + W / 2, y + 19 * s); axSpacing(ctx, 0);
+    }
+    // Topo: nota, posição, divisória, escudo
+    ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    const cx = x + 54 * s;
+    ctx.fillStyle = c.ovr || c.t; axFont(ctx, 0, 62 * s, true); ctx.fillText(String(info.ovr), cx, y + 84 * s + dy);
+    ctx.fillStyle = c.sub; ctx.font = "900 " + 20 * s + 'px "Barlow Condensed", sans-serif'; axSpacing(ctx, 2 * s); ctx.fillText(info.keeper ? "GOL" : "LIN", cx, y + 110 * s + dy); axSpacing(ctx, 0);
+    ctx.fillStyle = c.line; ctx.fillRect(cx - 17 * s, y + 122 * s + dy, 34 * s, 2 * s);
+    const crest = axImg(info.crest);
+    if (crest) { const r = crest.naturalWidth / crest.naturalHeight, w = r >= 1 ? 42 * s : 42 * s * r, h = r >= 1 ? 42 * s / r : 42 * s; ctx.drawImage(crest, cx - w / 2, y + 134 * s + dy + (42 * s - h) / 2, w, h); }
+    if (shield) { const h = 40 * s, w = (h * shield.naturalWidth) / shield.naturalHeight; ctx.drawImage(shield, x + W - 24 * s - w, y + 24 * s + dy, w, h); }
+    // Foto (silhueta)
+    ctx.save(); ctx.globalAlpha = 0.5; ctx.fillStyle = "#000";
+    const px = x + 78 * s + (W - 88 * s) / 2, py = y + 32 * s + dy;
+    ctx.beginPath(); ctx.arc(px, py + 62 * s, 38 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(px - 73 * s, py + 182 * s); ctx.bezierCurveTo(px - 68 * s, py + 136 * s, px - 39 * s, py + 110 * s, px, py + 110 * s); ctx.bezierCurveTo(px + 39 * s, py + 110 * s, px + 68 * s, py + 136 * s, px + 73 * s, py + 182 * s); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    // Nome
+    const name = displayName(info.name).toUpperCase();
+    let size = (name.length > 14 ? 22 : name.length > 11 ? 26 : 31) * s;
+    ctx.font = "900 " + size + 'px "Barlow Condensed", sans-serif';
+    while (ctx.measureText(name).width > 220 * s && size > 10 * s) { size -= s; ctx.font = "900 " + size + 'px "Barlow Condensed", sans-serif'; }
+    const nw = ctx.measureText(name).width + 32 * s, ny = y + (sp ? 224 : 220) * s;
+    ctx.fillStyle = c.bar; axRound(ctx, x + W / 2 - nw / 2, ny, nw, size + 12 * s, 8 * s); ctx.fill();
+    ctx.fillStyle = c.barT; ctx.textBaseline = "middle"; ctx.fillText(name, x + W / 2, ny + (size + 12 * s) / 2 + s);
+    // Estatísticas 3×2
+    const sy = y + (sp ? 270 : 272) * s, colW = (W - 60 * s) / 3, rowH = (sp ? 46 : 52) * s;
+    info.stats.forEach(([k, v], i) => {
+      const col = i % 3, row = Math.floor(i / 3), scx = x + 30 * s + colW * col + colW / 2, top = sy + row * rowH;
+      if (col) { ctx.fillStyle = c.line; ctx.fillRect(x + 30 * s + colW * col, top, s, rowH - 6 * s); }
+      ctx.fillStyle = c.sub; axFont(ctx, 800, 10 * s); axSpacing(ctx, 1.5 * s); ctx.textBaseline = "top"; ctx.fillText(k, scx, top); axSpacing(ctx, 0);
+      ctx.fillStyle = c.t; axFont(ctx, 0, (sp ? 24 : 27) * s, true); ctx.fillText(String(v), scx, top + 15 * s);
+    });
+    ctx.textBaseline = "alphabetic";
+    // Destaque das especiais
+    if (sp) {
+      axFont(ctx, 0, 26 * s, true); const bw = ctx.measureText(sp.hl[0]).width; axFont(ctx, 800, 11 * s); axSpacing(ctx, 1.5 * s); const lw = ctx.measureText(sp.hl[1]).width; axSpacing(ctx, 0);
+      const pw = bw + lw + 34 * s, ph = 38 * s, pyy = y + H - 74 * s - ph;
+      ctx.fillStyle = c.acc; axRound(ctx, x + W / 2 - pw / 2, pyy, pw, ph, 12 * s); ctx.fill();
+      ctx.fillStyle = c.accT; ctx.textAlign = "left"; axFont(ctx, 0, 26 * s, true); ctx.fillText(sp.hl[0], x + W / 2 - pw / 2 + 14 * s, pyy + 29 * s);
+      axFont(ctx, 800, 11 * s); axSpacing(ctx, 1.5 * s); ctx.fillText(sp.hl[1], x + W / 2 - pw / 2 + 20 * s + bw, pyy + 25 * s); axSpacing(ctx, 0); ctx.textAlign = "center";
+    }
+    // Rodapé
+    const fy = y + H - (sp ? 50 : 46) * s;
+    if (info.badge && !sp) { axFont(ctx, 800, 10 * s); axSpacing(ctx, 1.5 * s); const bw = ctx.measureText(info.badge).width + 20 * s; ctx.fillStyle = c.acc; axRound(ctx, x + W / 2 - bw / 2, fy - 34 * s, bw, 20 * s, 10 * s); ctx.fill(); ctx.fillStyle = c.accT; ctx.textBaseline = "middle"; ctx.fillText(info.badge, x + W / 2, fy - 24 * s); axSpacing(ctx, 0); }
+    ctx.fillStyle = c.sub; axFont(ctx, 800, 9 * s); axSpacing(ctx, 3 * s); ctx.textBaseline = "alphabetic"; ctx.fillText(info.tierText + " · SKALAMA " + cardYear(), x + W / 2, fy); axSpacing(ctx, 0);
+    ctx.restore();
+  }
+  function axDrawCard(ctx, W, H, story, info) {
+    const top = story ? 220 : 70, bottom = story ? H - 230 : H - 70, card = info.card;
+    let y = axBrand(ctx, W, top, story);
+    y = axPills(ctx, W, y + (story ? 6 : 0), [{ text: card.sp ? CARD_SP[card.sp.type][0].toUpperCase() : "CARTA DO JOGADOR", style: "yellow" }], story) + (story ? 40 : 24);
+    const avail = bottom - 60 - y, s = Math.min(avail / 490, (W - 200) / 300), cw = 300 * s;
+    axDrawCardShape(ctx, card, (W - cw) / 2, y + (avail - 490 * s) / 2, s);
+    axFooter(ctx, W, bottom - 6);
+  }
   function renderAll() {
     if (!state) return;
     fixLegacyPause();
@@ -5348,6 +5736,8 @@
     renderElStrength();
     if (PF.slug) renderProfile();
     if (location.hash === "#hall") renderHall();
+    if (location.hash === "#cartas") renderCards();
+    renderHomeLinks();
     renderElPresence();
     renderNightVoteCard();
     if (document.activeElement !== $("venue"))
@@ -5450,8 +5840,9 @@
     craque: '<circle cx="12" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="m12 6 1 2.1 2.3.3-1.7 1.6.4 2.3-2-1.1-2 1.1.4-2.3-1.7-1.6 2.3-.3Z" fill="currentColor"/><path d="m8.5 14-1.5 7 5-2.5 5 2.5-1.5-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
     scorers: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path fill="currentColor" d="m12 7.5 3.2 2.3-1.2 3.8h-4l-1.2-3.8Z"/>',
     next: '<rect x="3.5" y="5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3.5 10h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="2"/>',
+    card: '<path d="M6 3h12l3 2v12l-9 5-9-5V5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="13.5" cy="9" r="2.4" fill="currentColor"/><path d="M9.5 15h7" stroke="currentColor" stroke-width="2"/>',
   };
-  const AX_TYPES = [["result", "Resultado de jogo"], ["teams", "Times sorteados"], ["champion", "Campeão"], ["night", "Destaques da noite"], ["craque", "Craque da noite"], ["scorers", "Artilharia"], ["next", "Próximo jogo"]];
+  const AX_TYPES = [["result", "Resultado de jogo"], ["teams", "Times sorteados"], ["champion", "Campeão"], ["night", "Destaques da noite"], ["craque", "Craque da noite"], ["scorers", "Artilharia"], ["next", "Próximo jogo"], ["card", "Carta do jogador"]];
   let artKey = "", artToken = 0, artDone = Promise.resolve(), axFontsPromise = null;
   const axImages = new Map();
   function colorOf(name) {
@@ -5469,7 +5860,7 @@
   function axFontsReady() {
     if (!axFontsPromise) {
       axFontsPromise = document.fonts?.load
-        ? Promise.all(['400 100px "Anton"', '600 40px "Inter"', '700 40px "Inter"', '800 40px "Inter"'].map((font) => document.fonts.load(font))).then(() => document.fonts.ready).catch(() => {})
+        ? Promise.all(['400 100px "Anton"', '600 40px "Inter"', '700 40px "Inter"', '800 40px "Inter"', '900 40px "Barlow Condensed"'].map((font) => document.fonts.load(font))).then(() => document.fonts.ready).catch(() => {})
         : Promise.resolve();
     }
     return axFontsPromise;
@@ -5572,6 +5963,7 @@
         spots = teams.length ? teams.reduce((sum, team) => sum + Math.max(0, 5 - lineupForTeam(team.key).length), 0) : Array.isArray(state.roster) && state.roster.length ? Math.max(0, 20 - activeRoster().length) : 0;
       return { type, date: state.matchDate, time: state.startTime || "", venue: state.venue || "", teams, spots };
     }
+    if (type === "card") return axCardInfo();
     return { warn: "Escolha o que divulgar." };
   }
   function axImagesFor(info) {
@@ -5583,6 +5975,7 @@
     if (info.player) add(info.player.team, info.player.teamLabel);
     if (info.keeper) add(info.keeper.team, info.keeper.teamLabel);
     if (info.winner) add(info.winner.team, info.winner.label);
+    if (info.card?.crest) list.push(info.card.crest);
     return [...new Set(list.filter(Boolean))];
   }
   // ---------- Desenho: peças comuns ----------
@@ -5960,6 +6353,7 @@
     else if (info.type === "craque") axDrawCraque(ctx, W, H, story, info);
     else if (info.type === "scorers") axDrawScorers(ctx, W, H, story, info);
     else if (info.type === "next") axDrawNext(ctx, W, H, story, info);
+    else if (info.type === "card") axDrawCard(ctx, W, H, story, info);
     canvas.dataset.drawn = JSON.stringify([ART.type, ART.format]);
   }
   // Desenha só depois das fontes e dos escudos; descarta desenhos antigos se a escolha mudar no meio.
@@ -5987,9 +6381,9 @@
     if (ART.type === "result" && games.length && !games.some((game) => game.id === ART.gameId)) ART.gameId = games[0].id;
     $("axTypes").innerHTML = AX_TYPES.map(([key, label]) => '<button type="button" class="ax-type' + (ART.type === key ? " is-on" : "") + '" data-ax-type="' + key + '" aria-pressed="' + (ART.type === key) + '"><svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" focusable="false">' + AX_ICONS[key] + "</svg><span>" + label + "</span></button>").join("");
     // Passo 2: jogo (resultado) ou período (artilharia)
-    const step2 = $("axStep2"), needsGame = axTypeNeedsGame(), needsScope = ART.type === "scorers";
-    step2.hidden = !needsGame && !needsScope;
-    $("axStep2Title").textContent = needsScope ? "QUAL PERÍODO?" : "QUAL JOGO?";
+    const step2 = $("axStep2"), needsGame = axTypeNeedsGame(), needsScope = ART.type === "scorers", needsCard = ART.type === "card" && !info.warn;
+    step2.hidden = !needsGame && !needsScope && !needsCard;
+    $("axStep2Title").textContent = needsCard ? "QUAL JOGADOR E QUAL CARTA?" : needsScope ? "QUAL PERÍODO?" : "QUAL JOGO?";
     $("axStep3Num").textContent = step2.hidden ? "2" : "3";
     if (needsGame) {
       const markup = games.length ? games.map((game) => {
@@ -6000,6 +6394,11 @@
       if ($("axGames").innerHTML !== markup) $("axGames").innerHTML = markup;
     } else if (needsScope) {
       $("axGames").innerHTML = '<div class="ax-seg">' + AX_SCOPES.map(([key, label]) => '<button type="button" class="ax-segbtn' + (ART.scope === key ? " is-on" : "") + '" data-ax-scope="' + key + '" aria-pressed="' + (ART.scope === key) + '">' + label + "</button>").join("") + "</div>";
+    } else if (needsCard) {
+      const data = cardsData(), sp = CARD_SP_ORDER.map((t) => data.cur[t]).filter((x) => x && x.slug === ART.cardSlug);
+      const markup = '<label class="ax-card-pick"><span>Jogador</span><select data-ax-card-player>' + data.players.map((c) => '<option value="' + escapeHtml(c.slug) + '"' + (c.slug === ART.cardSlug ? " selected" : "") + ">" + escapeHtml(displayName(c.name) + " · " + c.ovr) + "</option>").join("") + "</select></label>" +
+        '<div class="ax-seg">' + [["level", "Carta de nível"], ...sp.map((x) => [x.type, CARD_SP[x.type][1] + " " + CARD_SP[x.type][0]])].map(([key, label]) => '<button type="button" class="ax-segbtn' + (ART.cardKind === key ? " is-on" : "") + '" data-ax-card-kind="' + key + '" aria-pressed="' + (ART.cardKind === key) + '">' + escapeHtml(label) + "</button>").join("") + "</div>";
+      if ($("axGames").innerHTML !== markup) $("axGames").innerHTML = markup;
     } else $("axGames").innerHTML = "";
     // Passo 3
     $("axFormats").innerHTML = [["story", "Story", "1080 × 1920"], ["feed", "Feed", "1080 × 1350"]].map(([key, label, size]) => '<button type="button" class="ax-segbtn ax-format' + (ART.format === key ? " is-on" : "") + '" data-ax-format="' + key + '" aria-pressed="' + (ART.format === key) + '"><strong>' + label + "</strong><small>" + size + "</small></button>").join("");
@@ -6038,7 +6437,7 @@
     return list;
   }
   function axFileName() {
-    const info = axData(), part = info.type === "result" ? "jogo-" + (info.game?.number || "") : info.type;
+    const info = axData(), part = info.type === "result" ? "jogo-" + (info.game?.number || "") : info.type === "card" ? "carta-" + (info.card?.slug || "") : info.type;
     return "liga-skalama-" + part + "-" + ART.format + ".png";
   }
   async function artFile() {
@@ -6077,7 +6476,8 @@
       const target = event.target.closest("button");
       if (!target || target.disabled) return;
       const data = target.dataset;
-      if (data.axType) { ART.type = data.axType; renderArt(); }
+      if (data.axType) { ART.type = data.axType; if (ART.type === "card") { cardLoadWinners(); ART.cardKind = ART.cardKind || "level"; } renderArt(); }
+      else if (data.axCardKind) { ART.cardKind = data.axCardKind; renderArt(); }
       else if (data.axGame) { ART.gameId = data.axGame; renderArt(); }
       else if (data.axScope) { ART.scope = data.axScope; renderArt(); }
       else if (data.axFormat) { ART.format = data.axFormat; renderArt(); }
@@ -6089,6 +6489,7 @@
     box.addEventListener("change", (event) => {
       const target = event.target;
       if (target.dataset.axCheck) { ART[target.dataset.axCheck] = target.checked; renderArt(); }
+      else if (target.hasAttribute("data-ax-card-player")) { ART.cardSlug = target.value; ART.cardKind = "level"; renderArt(); }
       else if (target.dataset.logoTeam) { uploadTeamLogo(target.dataset.logoTeam, target.files?.[0]); target.value = ""; }
     });
   }
@@ -6101,7 +6502,7 @@
         element.classList.toggle("view-hidden", element.dataset.view !== view),
       );
     markActiveTab(view);
-    if (view !== "presenca" && view !== "votacao" && view !== "hall") localStorage.setItem("liga-skalama-view", view);
+    if (view !== "presenca" && view !== "votacao" && view !== "hall" && view !== "cartas") localStorage.setItem("liga-skalama-view", view);
     if (view === "news") { renderNews(); loadNews(); }
     if (view === "home") renderNightVoteCard();
   }
