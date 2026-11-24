@@ -2719,3 +2719,9 @@ body .home-link.hk-cards{background:linear-gradient(135deg,#FFD84D,#FFC400 55%,#
 .score-rules-list{margin:6px 0 0;padding-left:18px;color:var(--muted)}
 .score-rules-list li+li{margin-top:2px}
 .score-rules-list b,.score-rules p b{color:var(--ink)}
+
+/* Foto fixa do jogador na carta (PLAYER_PHOTO_FILES): área maior que a da silhueta, some em degradê atrás da faixa do nome. Sem filter (memória do iPhone). */
+.skc-ph.is-photo{left:44px;right:6px;top:18px;height:206px;overflow:hidden;-webkit-mask-image:linear-gradient(180deg,#000 70%,transparent 100%);mask-image:linear-gradient(180deg,#000 70%,transparent 100%)}
+.skc-ph.is-photo img{width:auto;height:100%;max-width:100%;object-fit:contain;object-position:50% 100%;border-radius:0}
+.skc-sp .skc-ph.is-photo{top:84px;height:142px}
+.skc-sp .skc-ph.is-photo img{width:auto;height:100%}

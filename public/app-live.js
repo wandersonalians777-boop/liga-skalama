@@ -5250,6 +5250,11 @@
     const v = PLAYER_PHOTOS_ENABLED && state?.playerPhotos?.[slug], base = window.LIGA_CONFIG?.supabaseUrl;
     return v && base ? base.replace(/\/$/, "") + "/storage/v1/object/public/player-photos/" + slug + ".webp?v=" + encodeURIComponent(v) : "";
   }
+  // Fotos fixas por jogador (arquivos em assets/jogadores/), ligadas pelo slug do nome original (nunca pelo displayName).
+  // Valem mesmo com PLAYER_PHOTOS_ENABLED = false; se um dia houver foto pelo banco, a do banco vence.
+  const PLAYER_PHOTO_FILES = { [pSlug("WANDERSON")]: "./assets/jogadores/wanderson.webp" };
+  const PLAYER_PHOTO_SIZE = { "./assets/jogadores/wanderson.webp": [520, 475] };
+  function cardPhotoUrl(slug) { return playerPhotoUrl(slug) || PLAYER_PHOTO_FILES[slug] || ""; }
   function playerCurrentTeam(slug) {
     for (const team of state.teams || []) if (lineupForTeam(team.name).some((n) => pSlug(n) === slug)) return teamLabel(team.name);
     for (const team of state.superLiga?.teams || []) if ((team.players || []).some((n) => pSlug(n) === slug)) return team.name;
@@ -5569,7 +5574,7 @@
   // A carta: um componente só. mode "link" abre o perfil; "share" (perfil) abre a arte; "none" só mostra.
   function cardHtml(info, mode = "link") {
     if (!info) return "";
-    const name = displayName(info.name), sp = info.sp, photo = playerPhotoUrl(info.slug), cls = info.cls;
+    const name = displayName(info.name), sp = info.sp, photo = cardPhotoUrl(info.slug), cls = info.cls;
     const size = name.length > 14 ? 22 : name.length > 11 ? 26 : 31;
     const label = mode === "share" ? "Compartilhar a carta de " + name : "Abrir perfil de " + name;
     const attrs = mode === "none" ? ' aria-hidden="true"' : ' role="' + (mode === "share" ? "button" : "link") + '" tabindex="0" aria-label="' + escapeHtml(label) + '" ' + (mode === "share" ? 'data-card-share="' + escapeHtml(info.slug) + '"' : 'data-card-slug="' + escapeHtml(info.slug) + '"');
@@ -5579,7 +5584,7 @@
       (sp ? '<span class="skc-emb" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false">' + CARD_EMB[sp.type] + '</svg></span><span class="skc-stamp" aria-hidden="true">ESPECIAL</span><span class="skc-rib' + (sp.partial ? " is-partial" : "") + '">' + escapeHtml(ribbon) + "</span>" : "") +
       '<div class="skc-top"><span class="skc-ovr">' + info.ovr + '</span><span class="skc-pos">' + (info.keeper ? "GOL" : "LIN") + "</span></div>" +
       (info.crest ? '<img class="skc-lg" src="' + escapeHtml(info.crest) + '" alt="">' : "") +
-      '<div class="skc-ph">' + (photo ? '<img src="' + escapeHtml(photo) + '" alt="">' : CARD_SIL) + "</div>" +
+      (photo ? '<div class="skc-ph is-photo"><img src="' + escapeHtml(photo) + '" alt="" loading="lazy" decoding="async" width="' + (PLAYER_PHOTO_SIZE[photo]?.[0] || 400) + '" height="' + (PLAYER_PHOTO_SIZE[photo]?.[1] || 400) + '"></div>' : '<div class="skc-ph">' + CARD_SIL + "</div>") +
       '<div class="skc-nm"><b style="font-size:' + size + 'px">' + escapeHtml(name) + "</b></div>" +
       '<div class="skc-st">' + info.stats.map(([k, v]) => "<div><span>" + k + "</span><b>" + escapeHtml(String(v)) + "</b></div>").join("") + "</div>" +
       (sp ? '<div class="skc-hl"><b>' + escapeHtml(sp.hl[0]) + "</b><span>" + escapeHtml(sp.hl[1]) + "</span></div>" : "") +
@@ -5828,7 +5833,7 @@
     const sp = ART.cardKind && ART.cardKind !== "level" ? data.cur[ART.cardKind] : null;
     const special = sp && sp.slug === slug ? sp : null;
     if (!special) ART.cardKind = "level";
-    return { type: "card", card: cardInfo(slug, special, data) };
+    return { type: "card", card: { ...cardInfo(slug, special, data), photo: cardPhotoUrl(slug) } };
   }
   function axCardShape(ctx, x, y, w, h) {
     ctx.beginPath();
@@ -5885,12 +5890,23 @@
     ctx.fillStyle = c.sub; ctx.font = "900 " + 20 * s + 'px "Barlow Condensed", sans-serif'; axSpacing(ctx, 2 * s); ctx.fillText(info.keeper ? "GOL" : "LIN", cx, iy + 108 * s + oy); axSpacing(ctx, 0);
     const crest = axImg(info.crest);
     if (crest) { const r = crest.naturalWidth / crest.naturalHeight, w = r >= 1 ? 46 * s : 46 * s * r, h = r >= 1 ? (46 * s) / r : 46 * s; ctx.drawImage(crest, ix + iw - 22 * s - 46 * s + (46 * s - w) / 2, iy + 26 * s + (sp ? 66 * s : 0) + (46 * s - h) / 2, w, h); }
-    // Foto (silhueta)
+    // Foto do jogador (mesma área da carta: do canto da nota até a borda direita, some em degradê atrás da faixa do nome)
+    const photo = axImg(info.photo);
+    if (photo) {
+      const ax0 = ix + 44 * s, aw = iw - 50 * s, at = iy + (sp ? 84 : 18) * s, ah = (sp ? 142 : 206) * s;
+      const r = photo.naturalWidth / photo.naturalHeight; let dh = ah, dw = dh * r; if (dw > aw) { dw = aw; dh = dw / r; }
+      const off = document.createElement("canvas"); off.width = Math.ceil(aw); off.height = Math.ceil(ah);
+      const o = off.getContext("2d"); o.drawImage(photo, (aw - dw) / 2, ah - dh, dw, dh);
+      const fade = o.createLinearGradient(0, 0, 0, ah); fade.addColorStop(0.7, "rgba(0,0,0,1)"); fade.addColorStop(1, "rgba(0,0,0,0)");
+      o.globalCompositeOperation = "destination-in"; o.fillStyle = fade; o.fillRect(0, 0, aw, ah);
+      ctx.drawImage(off, ax0, at);
+    } else {
     ctx.save(); ctx.globalAlpha = 0.5; ctx.fillStyle = "#000";
     const k = sp ? 120 / 176 : 1, pcx = ix + 70 * s + (iw - 90 * s) / 2, ptop = iy + 40 * s + py, base = ptop + 176 * s * (sp ? 120 / 176 : 1);
     ctx.beginPath(); ctx.arc(pcx, base - (176 - 62) * s * k, 38 * s * k, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.moveTo(pcx - 73 * s * k, base); ctx.bezierCurveTo(pcx - 68 * s * k, base - 46 * s * k, pcx - 39 * s * k, base - 72 * s * k, pcx, base - 72 * s * k); ctx.bezierCurveTo(pcx + 39 * s * k, base - 72 * s * k, pcx + 68 * s * k, base - 46 * s * k, pcx + 73 * s * k, base); ctx.closePath(); ctx.fill();
     ctx.restore();
+    }
     // Nome em faixa de ponta a ponta
     const name = displayName(info.name).toUpperCase(), bandX = ix + 6 * s, bandW = iw - 12 * s;
     let size = (name.length > 14 ? 22 : name.length > 11 ? 26 : 31) * s;
@@ -6179,6 +6195,7 @@
     if (info.keeper) add(info.keeper.team, info.keeper.teamLabel);
     if (info.winner) add(info.winner.team, info.winner.label);
     if (info.card?.crest) list.push(info.card.crest);
+    if (info.card?.photo) list.push(info.card.photo);
     return [...new Set(list.filter(Boolean))];
   }
   // ---------- Desenho: peças comuns ----------
