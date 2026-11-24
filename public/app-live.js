@@ -5357,12 +5357,13 @@
   // ---------- Coleção de cartas Skalama (#cartas) ----------
   // Só leitura: tudo de officialGames() + gamePerformance() (Modo Liga e Super Liga juntos), monthLeaders, vote_winners e superChampions.
   const CARD_NEW_UNTIL = Date.parse("2026-12-23T03:00:00Z"); // selo "NOVO" do card da Tela principal (30 dias)
-  const CARD_TIER_LABEL = { bronze: "BRONZE", prata: "PRATA", ouro: "OURO", elite: "ELITE" };
+  const CARD_TIER_LABEL = { prata: "PRATA", ouro: "OURO", dia: "DIAMANTE", elite: "ELITE", lend: "LENDÁRIO" };
   const CARD_SP = { mes: ["Jogador do mês", "⭐"], art: ["Artilheiro do mês", "🔥"], gk: ["Goleiro do mês", "🧤"], con: ["Constância", "📈"] };
   const CARD_SP_ORDER = ["mes", "art", "gk", "con"];
   const CARD_MON = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
   const CARDS = { sig: "", data: null, filter: "all", winnersLoading: false };
-  const cardTier = (avg) => (avg >= 8 ? "elite" : avg >= 7 ? "ouro" : avg >= 6 ? "prata" : "bronze");
+  // Níveis pela nota média: Prata < 6,0 · Ouro 6,0–6,9 · Diamante 7,0–7,9 · Elite 8,0–8,9 · Lendário 9,0+.
+  const cardTier = (avg) => (avg >= 9 ? "lend" : avg >= 8 ? "elite" : avg >= 7 ? "dia" : avg >= 6 ? "ouro" : "prata");
   const cardMon = (key) => CARD_MON[Number(String(key).slice(5, 7)) - 1] || "";
   const cardYear = () => new Date(nowMs()).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }).slice(0, 4);
   const cardNowMonth = () => new Date(nowMs()).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }).slice(0, 7);
@@ -5400,22 +5401,23 @@
       cardAdd(rows.get(slug), p, game);
       if (!game.superLigaId) { if (!liga.has(slug)) liga.set(slug, cardEmptyRow(slug, p.player)); cardAdd(liga.get(slug), p, game); }
     }
-    const out = {}, avg = (r) => (r.games ? r.sum / r.games : 0), byName = (a, b) => a.name.localeCompare(b.name, "pt-BR");
-    const mes = [...rows.values()].filter((r) => r.games >= 3).sort((a, b) => avg(b) - avg(a) || b.games - a.games || byName(a, b))[0];
+    // Um jogador só pode ter UMA especial no mês. Ordem: Jogador do mês → Artilheiro → Goleiro → Constância;
+    // se o primeiro da lista já ganhou uma, vai para o próximo da lista daquela categoria (com os mesmos mínimos).
+    const out = {}, used = new Set(), avg = (r) => (r.games ? r.sum / r.games : 0), kAvg = (r) => (r.kGames ? r.kSum / r.kGames : 0), byName = (a, b) => a.name.localeCompare(b.name, "pt-BR");
+    const take = (list) => { const r = list.find((x) => !used.has(x.slug)); if (r) used.add(r.slug); return r; };
+    const mes = take([...rows.values()].filter((r) => r.games >= 3).sort((a, b) => avg(b) - avg(a) || b.games - a.games || byName(a, b)));
     if (mes) out.mes = { type: "mes", key, partial, slug: mes.slug, name: mes.name, ovr: Math.round(avg(mes) * 10), hl: [fmt1(avg(mes)), "NOTA MÉDIA NO MÊS"] };
-    const leaders = monthLeaders(key);
-    if (leaders.scorers.length) {
-      const pick = leaders.scorers.map((n) => liga.get(pSlug(n)) || cardEmptyRow(pSlug(n), n)).sort((a, b) => a.games - b.games || avg(b) - avg(a) || byName(a, b))[0];
-      const all = rows.get(pick.slug) || pick;
-      out.art = { type: "art", key, partial, slug: pick.slug, name: pick.name, ovr: Math.round(avg(all) * 10), hl: [String(leaders.goals), leaders.goals === 1 ? "GOL NO MÊS" : "GOLS NO MÊS"] };
-    }
-    if (leaders.keepers.length) {
-      const k = leaders.keepers.slice().sort((a, b) => b.games - a.games || a.player.localeCompare(b.player, "pt-BR"))[0], r = liga.get(pSlug(k.player)) || cardEmptyRow(pSlug(k.player), k.player);
-      out.gk = { type: "gk", key, partial, slug: pSlug(k.player), name: k.player, ovr: Math.round(k.average * 10), keeper: true,
-        hl: r.clean ? [String(r.clean), r.clean === 1 ? "JOGO SEM SOFRER" : "JOGOS SEM SOFRER"] : [cardDec(k.conceded, k.games, 1), "SOFRIDOS POR JOGO"] };
-    }
-    const sd = (r) => { const m = avg(r); return Math.sqrt(r.scores.reduce((s, x) => s + (x - m) ** 2, 0) / r.scores.length); };
-    const con = [...rows.values()].filter((r) => r.games >= 4 && avg(r) >= 7).sort((a, b) => sd(a) - sd(b) || b.games - a.games || avg(b) - avg(a) || byName(a, b))[0];
+    // Artilheiro: mesma contagem do Artilheiro do mês (Modo Liga, sem gol contra); empate: menos jogos, depois maior nota.
+    const goals = new Map();
+    for (const game of games) if (!game.superLigaId) (game.goals || []).filter((g) => !g.ownGoal && g.player).forEach((g) => { const k = pSlug(g.player); goals.set(k, (goals.get(k) || 0) + 1); });
+    const art = take([...goals.entries()].map(([slug, n]) => ({ ...(liga.get(slug) || cardEmptyRow(slug, slug)), slug, n })).filter((r) => r.n > 0).sort((a, b) => b.n - a.n || a.games - b.games || avg(b) - avg(a) || byName(a, b)));
+    if (art) out.art = { type: "art", key, partial, slug: art.slug, name: art.name, ovr: Math.round(avg(rows.get(art.slug) || art) * 10), hl: [String(art.n), art.n === 1 ? "GOL NO MÊS" : "GOLS NO MÊS"] };
+    // Goleiro: mesma regra do Goleiro do mês (Modo Liga, mínimo de jogos no gol, maior nota média no gol).
+    const gk = take([...liga.values()].filter((r) => r.kGames >= MIN_KEEPER_GAMES).sort((a, b) => kAvg(b) - kAvg(a) || b.kGames - a.kGames || byName(a, b)));
+    if (gk) out.gk = { type: "gk", key, partial, slug: gk.slug, name: gk.name, ovr: Math.round(kAvg(gk) * 10), keeper: true,
+      hl: gk.clean ? [String(gk.clean), gk.clean === 1 ? "JOGO SEM SOFRER" : "JOGOS SEM SOFRER"] : [cardDec(gk.conceded, gk.kGames, 1), "SOFRIDOS POR JOGO"] };
+    const sd = (r) => { const m = avg(r); return Math.sqrt(r.scores.reduce((sum, x) => sum + (x - m) ** 2, 0) / r.scores.length); };
+    const con = take([...rows.values()].filter((r) => r.games >= 4 && avg(r) >= 7).sort((a, b) => sd(a) - sd(b) || b.games - a.games || avg(b) - avg(a) || byName(a, b)));
     if (con) out.con = { type: "con", key, partial, slug: con.slug, name: con.name, ovr: Math.round(avg(con) * 10), hl: ["±" + fmt1(sd(con)), con.games + (con.games === 1 ? " JOGO SEM CAIR" : " JOGOS SEM CAIR")] };
     return out;
   }
@@ -5479,7 +5481,7 @@
   function cardInfo(slug, sp, data = cardsData()) {
     const base = data.bySlug.get(slug);
     if (!base) return null;
-    if (!sp) return { ...base, cls: base.tier === "ouro" ? "ouro" : base.tier, tierText: CARD_TIER_LABEL[base.tier] };
+    if (!sp) return { ...base, cls: base.tier, tierText: CARD_TIER_LABEL[base.tier] };
     return { ...base, keeper: sp.type === "gk" ? true : base.keeper, stats: sp.type === "gk" && !base.keeper ? cardKeeperStats(slug, data) : base.stats, ovr: sp.ovr, cls: sp.type, sp, tierText: "ESPECIAL" };
   }
   function cardKeeperStats(slug, data) {
@@ -5496,33 +5498,49 @@
     con: '<svg class="skc-motif" viewBox="0 0 300 490" aria-hidden="true"><polyline points="10,330 50,300 90,312 130,280 170,290 210,262 250,270 290,240" fill="none" stroke="#fff" stroke-width="4" opacity=".22"/>' + [[10, 330], [50, 300], [90, 312], [130, 280], [170, 290], [210, 262], [250, 270], [290, 240]].map(([x, y]) => '<circle cx="' + x + '" cy="' + y + '" r="6" fill="#fff" opacity=".3"/>').join("") + "</svg>",
   };
   // A carta: um componente só. mode "link" abre o perfil; "share" (perfil) abre a arte; "none" só mostra.
+  // Emblema das especiais (SVG, sem emoji), estrelinhas e coroa do Lendário.
+  const CARD_EMB = {
+    mes: '<path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4 6.1 20.5l1.2-6.5L2.5 9.4l6.6-.9z" fill="currentColor"/>',
+    gk: '<path d="M7 11V5.5a1.5 1.5 0 0 1 3 0V10m0-4.5a1.5 1.5 0 0 1 3 0V10m0-3.5a1.5 1.5 0 0 1 3 0V11m0-2a1.5 1.5 0 0 1 3 0v5a7 7 0 0 1-7 7h-1a7 7 0 0 1-6-3.4L3.5 13a1.5 1.5 0 0 1 2.6-1.5L7 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+    art: '<path d="M12 22c-4 0-7-3-6.5-7 .4-3 2.6-4 2.3-7 2 1.3 2.6 3 2.4 4.6 1.2-1 1.3-3 .7-4.9 3.6 2 6.2 5.4 5.7 9-.4 3-3 5.3-4.6 5.3Z" fill="currentColor"/>',
+    con: '<path d="M3 17l5-5 4 3 7-8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 7h4v4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>',
+  };
+  const CARD_SPK = [[40, 70, 24, 0], [245, 120, 18, 0.6], [50, 250, 16, 1.2], [235, 300, 22, 1.8], [150, 40, 14, 0.9], [262, 215, 16, 1.5], [100, 160, 12, 2.1]]
+    .map(([x, y, z, d]) => '<i class="skc-spk" style="left:' + x + "px;top:" + y + "px;--s:" + z + "px;animation-delay:" + d + 's"></i>').join("");
+  const CARD_CROWN = '<svg class="skc-crown" viewBox="0 0 24 16" aria-hidden="true" focusable="false"><path d="M2 14 1 3l6 5 5-7 5 7 6-5-1 11Z" fill="currentColor"/></svg>';
+  // A carta: um componente só. mode "link" abre o perfil; "share" (perfil) abre a arte; "none" só mostra.
   function cardHtml(info, mode = "link") {
     if (!info) return "";
-    const name = displayName(info.name), sp = info.sp, photo = playerPhotoUrl(info.slug);
+    const name = displayName(info.name), sp = info.sp, photo = playerPhotoUrl(info.slug), cls = info.cls;
     const size = name.length > 14 ? 22 : name.length > 11 ? 26 : 31;
     const label = mode === "share" ? "Compartilhar a carta de " + name : "Abrir perfil de " + name;
     const attrs = mode === "none" ? ' aria-hidden="true"' : ' role="' + (mode === "share" ? "button" : "link") + '" tabindex="0" aria-label="' + escapeHtml(label) + '" ' + (mode === "share" ? 'data-card-share="' + escapeHtml(info.slug) + '"' : 'data-card-slug="' + escapeHtml(info.slug) + '"');
     const ribbon = sp ? CARD_SP[sp.type][0] + " · " + cardMon(sp.key).charAt(0) + cardMon(sp.key).slice(1).toLowerCase() + (sp.partial ? " · parcial" : "") : "";
-    return '<div class="skc skc-' + info.cls + (sp ? " skc-sp" : "") + '"' + attrs + '><div class="skc-fr"></div><div class="skc-in">' + (sp ? CARD_MOTIF[sp.type] : "") +
-      (sp ? '<span class="skc-rib">' + escapeHtml(ribbon) + "</span>" : "") +
-      '<div class="skc-top"><span class="skc-ovr">' + info.ovr + '</span><span class="skc-pos">' + (info.keeper ? "GOL" : "LIN") + '</span><span class="skc-dv"></span>' + (info.crest ? '<img class="skc-tm" src="' + escapeHtml(info.crest) + '" alt="">' : '<span class="skc-tm"></span>') + "</div>" +
-      '<img class="skc-lg" src="./assets/escudo-skalama-oficial.png" alt="">' +
+    const sparkles = sp || cls === "dia" || cls === "elite" || cls === "lend";
+    return '<div class="skc skc-' + cls + (sp ? " skc-sp" : "") + '"' + attrs + '><div class="skc-fr"></div><div class="skc-in">' + (sp ? CARD_MOTIF[sp.type] : "") +
+      (sp ? '<span class="skc-emb" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false">' + CARD_EMB[sp.type] + '</svg></span><span class="skc-stamp" aria-hidden="true">ESPECIAL</span><span class="skc-rib' + (sp.partial ? " is-partial" : "") + '">' + escapeHtml(ribbon) + "</span>" : "") +
+      '<div class="skc-top"><span class="skc-ovr">' + info.ovr + '</span><span class="skc-pos">' + (info.keeper ? "GOL" : "LIN") + "</span></div>" +
+      (info.crest ? '<img class="skc-lg" src="' + escapeHtml(info.crest) + '" alt="">' : "") +
       '<div class="skc-ph">' + (photo ? '<img src="' + escapeHtml(photo) + '" alt="">' : CARD_SIL) + "</div>" +
       '<div class="skc-nm"><b style="font-size:' + size + 'px">' + escapeHtml(name) + "</b></div>" +
       '<div class="skc-st">' + info.stats.map(([k, v]) => "<div><span>" + k + "</span><b>" + escapeHtml(String(v)) + "</b></div>").join("") + "</div>" +
       (sp ? '<div class="skc-hl"><b>' + escapeHtml(sp.hl[0]) + "</b><span>" + escapeHtml(sp.hl[1]) + "</span></div>" : "") +
-      '<div class="skc-ft">' + (info.badge ? "<i>" + escapeHtml(info.badge) + "</i>" : "") + '<span class="skc-tier">' + info.tierText + " · SKALAMA " + cardYear() + "</span></div>" +
-      '<div class="skc-shine"></div></div></div>';
+      '<div class="skc-ft">' + (info.badge && !sp ? "<i>" + escapeHtml(info.badge) + "</i>" : "") + '<span class="skc-tier">' + info.tierText + " · SKALAMA " + cardYear() + "</span></div>" +
+      (sp && sp.type === "art" ? '<div class="skc-flame"></div>' : "") + (sparkles ? CARD_SPK : "") + (cls === "lend" ? CARD_CROWN : "") +
+      '<div class="skc-glare"></div><div class="skc-shine"></div></div></div>';
   }
   // Nome nunca cortado: o tamanho que cabe é medido UMA vez por nome (cache) e reaproveitado.
   // Animação: no máximo 4 cartas visíveis ao mesmo tempo (classe is-anim). Cada área (galeria, perfil) tem o seu observer,
   // desligado (disconnect) antes de redesenhar e ao sair da tela: nada de segurar cartas antigas na memória.
-  const CARD_NAME_FIT = new Map(), CARD_OBS = new Map(), CARD_MAX_ANIM = 4;
+  const CARD_NAME_FIT = new Map(), CARD_OBS = new Map(), CARD_MAX_ANIM = 6, CARD_RO = new Map();
+  const cardCoarse = () => matchMedia("(pointer: coarse)").matches;
   let cardRenders = 0;
   function cardsUnobserve(root) {
     const obs = root && CARD_OBS.get(root);
     if (obs) { obs.disconnect(); CARD_OBS.delete(root); }
-    root?.querySelectorAll(".skc.is-anim").forEach((c) => c.classList.remove("is-anim", "is-on"));
+    const ro = root && CARD_RO.get(root);
+    if (ro) { ro.disconnect(); CARD_RO.delete(root); }
+    root?.querySelectorAll(".skc.is-anim,.skc.is-shine").forEach((c) => c.classList.remove("is-anim", "is-on", "is-shine"));
   }
   function cardsAfterRender(root) {
     cardRenders++;
@@ -5538,20 +5556,63 @@
     });
     cardsObserve(root);
   }
+  // Escala pela largura real da coluna (--k = coluna / 300, até o máximo da grade): nunca encosta nem sobrepõe.
+  function cardsFitGrids(root) {
+    const grids = [...root.querySelectorAll(".cards-grid")];
+    if (!grids.length || !("ResizeObserver" in window)) return;
+    // Só a LARGURA importa; a escala é aplicada no quadro seguinte (mudar --k muda a altura e não pode realimentar o observer).
+    let raf = 0;
+    const ro = new ResizeObserver((entries) => {
+      if (!entries.some((e) => Math.abs((e.target.__skcW || 0) - e.contentRect.width) > 0.5)) return;
+      entries.forEach((e) => { e.target.__skcW = e.contentRect.width; });
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => grids.forEach((grid) => {
+      const slot = grid.querySelector(".skc-slot"); if (!slot) return;
+      const [lo, hi] = String(grid.dataset.kmax || "1").split("|").map(Number), max = (innerWidth >= 760 ? hi ?? lo : lo) || 1;
+      const cs = getComputedStyle(slot), w = slot.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight); // folga do slot para o brilho
+      const k = Math.max(0.3, Math.min(max, w / 300));
+      if (grid.style.getPropertyValue("--k") !== String(k)) grid.style.setProperty("--k", String(k));
+      }));
+    });
+    grids.forEach((grid) => ro.observe(grid));
+    CARD_RO.set(root, ro);
+  }
+  // Animação só nas cartas visíveis: no máximo 6 ao mesmo tempo (especiais primeiro). No celular, o brilho que passa
+  // fica só na carta mais perto do centro da tela.
   function cardsObserve(root) {
     cardsUnobserve(root);
+    cardsFitGrids(root);
     const cards = [...root.querySelectorAll(".skc")];
     if (!cards.length) return;
     if (!("IntersectionObserver" in window)) { cards.slice(0, CARD_MAX_ANIM).forEach((c) => c.classList.add("is-on", "is-anim")); return; }
-    const visible = new Set();
+    const visible = new Map();
     const obs = new IntersectionObserver((entries) => {
-      entries.forEach((e) => (e.isIntersecting ? visible.add(e.target) : visible.delete(e.target)));
-      const pick = new Set(cards.filter((c) => visible.has(c)).slice(0, CARD_MAX_ANIM));
-      cards.forEach((c) => { const on = pick.has(c); c.classList.toggle("is-anim", on); c.classList.toggle("is-on", on); });
-    }, { rootMargin: "40px" });
+      entries.forEach((e) => (e.isIntersecting ? visible.set(e.target, e.intersectionRatio) : visible.delete(e.target)));
+      const vis = cards.filter((c) => visible.has(c));
+      const pick = new Set([...vis.filter((c) => c.classList.contains("skc-sp")), ...vis.filter((c) => !c.classList.contains("skc-sp"))].slice(0, CARD_MAX_ANIM));
+      let shine = null;
+      if (cardCoarse() && vis.length) {
+        const mid = innerHeight / 2;
+        shine = vis.reduce((best, c) => { const r = c.getBoundingClientRect(), d = Math.abs(r.top + r.height / 2 - mid); return !best || d < best.d ? { c, d } : best; }, null).c;
+      }
+      cards.forEach((c) => { const on = pick.has(c); c.classList.toggle("is-anim", on); c.classList.toggle("is-on", on); c.classList.toggle("is-shine", on && (!shine || c === shine)); });
+    }, { rootMargin: "40px", threshold: [0, 0.35, 0.7, 1] });
     cards.forEach((c) => obs.observe(c));
     CARD_OBS.set(root, obs);
   }
+  // Reflexo que segue o mouse (só no PC; no celular fica parado).
+  let cardGlareRaf = 0;
+  document.addEventListener("pointermove", (event) => {
+    if (event.pointerType !== "mouse" || cardGlareRaf) return;
+    const card = event.target.closest?.(".skc");
+    if (!card) return;
+    cardGlareRaf = requestAnimationFrame(() => {
+      cardGlareRaf = 0;
+      const r = card.getBoundingClientRect();
+      card.style.setProperty("--mx", (((event.clientX - r.left) / r.width) * 100).toFixed(1) + "%");
+      card.style.setProperty("--my", (((event.clientY - r.top) / r.height) * 100).toFixed(1) + "%");
+    });
+  }, { passive: true });
   function cardOpen(slug) { if (slug) location.hash = "#jogador/" + slug; }
   document.addEventListener("click", (event) => {
     const share = event.target.closest?.("[data-card-share]");
@@ -5578,7 +5639,7 @@
     if (PF.slug) renderProfile();
     renderHomeLinks();
   }
-  const CARD_FILTERS = [["all", "Todas"], ["elite", "💎 Elite"], ["ouro", "🥇 Ouro"], ["prata", "🥈 Prata"], ["bronze", "🥉 Bronze"], ["gk", "🧤 Goleiros"]];
+  const CARD_FILTERS = [["all", "Todas"], ["prata", "🥈 Prata"], ["ouro", "🥇 Ouro"], ["dia", "💎 Diamante"], ["elite", "🔮 Elite"], ["lend", "👑 Lendário"], ["gk", "🧤 Goleiros"]];
   function renderCards() {
     const box = $("cartas");
     if (!box) return;
@@ -5590,18 +5651,22 @@
     box.dataset.key = key;
     const slot = (info) => '<div class="skc-slot"><div class="skc-fit">' + cardHtml(info) + "</div></div>";
     const specials = CARD_SP_ORDER.map((type) => data.cur[type]).filter(Boolean);
-    const list = data.players.filter((c) => f === "all" || (f === "gk" ? c.keeper : c.tier === f)).map((c) => cardInfo(c.slug, cardSpecialOf(c.slug, data), data));
+    // "Cartas por nota": sempre a carta de NÍVEL de cada um (a especial fica só no palco de cima), ninguém aparece duas vezes.
+    const list = data.players.filter((c) => f === "all" || (f === "gk" ? c.keeper : c.tier === f)).map((c) => cardInfo(c.slug, null, data));
+    const spRow = (types, kmax, cls) => { const row = types.map((t) => data.cur[t]).filter(Boolean); return row.length ? '<div class="cards-grid cards-sp-' + cls + '" data-kmax="' + kmax + '">' + row.map((sp) => slot(cardInfo(sp.slug, sp, data))).join("") + "</div>" : ""; };
+    const kBig = "0.52|1.05", kSmall = "0.52|0.78"; // celular | PC (≥ 760px): limite da escala; a coluna real manda (cardsFitGrids)
     const nothing = !officialGames().length;
     box.innerHTML = '<div class="cards-wrap"><a class="pv-back cards-back" href="./" data-cards-back>← Voltar</a>' +
       '<header class="cards-head"><img src="./assets/escudo-skalama-oficial.png" alt="" width="48" height="64"><div><h2 id="cardsTitle">Coleção de cartas <span>Skalama</span></h2><p>Temporada ' + cardYear() + " · Modo Liga e Super Liga</p></div></header>" +
       (nothing ? '<p class="cards-empty">As cartas aparecem depois dos primeiros jogos.</p>' :
-        (specials.length ? '<section class="cards-sec" aria-labelledby="cardsSpTitle"><h3 class="cards-h" id="cardsSpTitle">Especiais do mês <small>' + escapeHtml(monthLabel(data.curKey)) + (specials.some((s) => s.partial) ? " · parcial" : "") + '</small></h3><div class="cards-grid">' + specials.map((sp) => slot(cardInfo(sp.slug, sp, data))).join("") + "</div></section>" : "") +
+        (specials.length ? '<section class="cards-stage" aria-labelledby="cardsSpTitle"><h3 class="cards-stage-h" id="cardsSpTitle">⭐ Especiais do mês</h3><p class="cards-stage-sub">' + escapeHtml(monthLabel(data.curKey).split(" ")[0]) + (specials.some((x) => x.partial) ? " (parcial)" : "") + " · uma de cada · um jogador só pode ter uma especial</p>" +
+          spRow(["mes", "art"], kBig, "big") + spRow(["gk", "con"], kSmall, "small") + "</section>" : "") +
         '<section class="cards-sec" aria-labelledby="cardsAllTitle"><h3 class="cards-h" id="cardsAllTitle">Cartas por nota <small>' + data.players.length + (data.players.length === 1 ? " carta" : " cartas") + "</small></h3>" +
         '<div class="cards-filters" role="group" aria-label="Filtrar cartas">' + CARD_FILTERS.map(([key, label]) => '<button type="button" class="cards-filter' + (f === key ? " is-on" : "") + '" data-cards-filter="' + key + '" aria-pressed="' + (f === key) + '">' + label + "</button>").join("") + "</div>" +
-        (list.length ? '<div class="cards-grid">' + list.map(slot).join("") + "</div>" : '<p class="cards-empty">Nenhuma carta neste filtro.</p>') + "</section>" +
+        (list.length ? '<div class="cards-grid cards-all" data-kmax="1">' + list.map(slot).join("") + "</div>" : '<p class="cards-empty">Nenhuma carta neste filtro.</p>') + "</section>" +
         (data.waiting.length ? '<section class="cards-wait" aria-labelledby="cardsWaitTitle"><h3 id="cardsWaitTitle">Ainda sem carta (menos de 3 jogos)</h3><p>A carta aparece depois do 3º jogo oficial (goleiro: 3 jogos no gol).</p><ul>' + data.waiting.map((c) => "<li>" + plink(c.name, displayName(c.name) + " · " + c.games + (c.games === 1 ? " jogo" : " jogos")) + "</li>").join("") + "</ul></section>" : "")) +
-      '<section class="cards-legend" aria-label="Como funcionam as cartas"><div><b>🥉 Bronze · 🥈 Prata · 🥇 Ouro</b>Nota média abaixo de 6,0 · de 6,0 a 6,9 · de 7,0 a 7,9. Mínimo de 3 jogos oficiais.</div><div><b>💎 Elite (nota 8,0+)</b>Moldura holográfica, brilho em volta da carta e fundo com raios. Só os melhores chegam nela.</div>' +
-      '<div><b>⭐ Jogador do mês</b>Maior nota média do mês (mínimo 3 jogos).</div><div><b>🧤 Goleiro do mês</b>Melhor goleiro do mês, com a regra dos destaques (mínimo 3 jogos no gol).</div><div><b>🔥 Artilheiro do mês</b>Mais gols no mês (empate: menos jogos, depois maior nota).</div><div><b>📈 Constância</b>Menor variação de nota no mês, com pelo menos 4 jogos e média 7,0 ou mais.</div></section></div>';
+      '<section class="cards-legend" aria-label="Como funcionam as cartas"><div><b>🥈 Prata</b>Nota média abaixo de 6,0. A carta de entrada: todo mundo com 3 jogos oficiais ganha uma.</div><div><b>🥇 Ouro (6,0 a 6,9)</b>Dourada clássica, com brilho passando.</div><div><b>💎 Diamante (7,0 a 7,9)</b>Azul gelo com facetas de cristal, moldura girando e estrelinhas.</div><div><b>🔮 Elite (8,0 a 8,9)</b>Roxa: moldura holográfica, brilho roxo forte e reflexo de figurinha rara.</div><div><b>👑 Lendário (9,0+)</b>Preta com coroa, moldura arco-íris girando rápido, fundo em movimento e nome dourado. Raríssima.</div>' +
+      '<div><b>⭐ Jogador do mês</b>Maior nota média do mês (mínimo 3 jogos). Ouro vibrante com raios de sol. Carta grande, no topo.</div><div><b>🔥 Artilheiro do mês</b>Mais gols no mês (empate: menos jogos, depois maior nota). Fogo vivo. Carta grande, no topo.</div><div><b>🧤 Goleiro do mês</b>Melhor goleiro do mês (mínimo 3 jogos no gol). Verde.</div><div><b>📈 Constância</b>Menor variação de nota no mês, com 4 jogos ou mais e média 7,0+. Azul Skalama.</div></section></div>';
     cardsAfterRender(box);
   }
   document.addEventListener("click", (event) => {
@@ -5664,14 +5729,15 @@
   }
   // ----- Divulgação: arte "Carta do jogador" (canvas) -----
   const AX_CARD_COLORS = {
-    bronze: { f: ["#FFD9B0", "#8A4A17", "#E8A970"], b: ["#F0C59A", "#C27B3E", "#7E4314"], t: "#1F0E00", sub: "#4A2508", line: "rgba(0,0,0,.15)", bar: "#0B0B0B", barT: "#FFC400", acc: "#0B0B0B", accT: "#FFC400" },
-    prata: { f: ["#FFFFFF", "#8E8E88", "#E6E6E2"], b: ["#F4F4F1", "#C9C9C4", "#8E8E88"], t: "#141414", sub: "#3A3A35", line: "rgba(0,0,0,.15)", bar: "#0B0B0B", barT: "#FFC400", acc: "#0B0B0B", accT: "#FFC400" },
-    ouro: { f: ["#FFF1A8", "#B8860B", "#FFE27A"], b: ["#FFE07A", "#E0A800", "#9C7400"], t: "#1A1200", sub: "#5C4500", line: "rgba(0,0,0,.15)", bar: "#0B0B0B", barT: "#FFC400", acc: "#0B0B0B", accT: "#FFC400" },
-    elite: { f: ["#FFF6C8", "#FFC400", "#FF8A00", "#7AF0FF"], b: ["#FFE98F", "#F2B600", "#8F6A00"], t: "#1A1200", sub: "#5C4500", line: "rgba(0,0,0,.15)", bar: "#0B0B0B", barT: "#FFC400", acc: "#0B0B0B", accT: "#FFC400", glow: "rgba(255,196,0,.55)" },
-    mes: { f: ["#FFF1A8", "#8A6500", "#FFC400"], b: ["#2C2C2C", "#131313", "#000000"], t: "#FFFFFF", sub: "#FFC400", line: "rgba(255,255,255,.14)", bar: "#FFC400", barT: "#0B0B0B", acc: "#FFC400", accT: "#0B0B0B", rib: "#FFC400", ribT: "#0B0B0B", glow: "rgba(255,196,0,.4)", ovr: "#FFC400" },
-    gk: { f: ["#C9F7D8", "#14532D", "#3DBA6E"], b: ["#2E8F55", "#1F6E3A", "#0B3A1E"], t: "#FFFFFF", sub: "#C9F7D8", line: "rgba(255,255,255,.16)", bar: "#0B0B0B", barT: "#3DBA6E", acc: "#0B0B0B", accT: "#3DBA6E", rib: "#0B0B0B", ribT: "#3DBA6E", glow: "rgba(61,186,110,.35)" },
-    art: { f: ["#FFE0B0", "#7A1A0C", "#FF7A1A"], b: ["#FF8A2B", "#D9361C", "#6E0F08"], t: "#FFFFFF", sub: "#FFE0B0", line: "rgba(255,255,255,.18)", bar: "#0B0B0B", barT: "#FFB347", acc: "#0B0B0B", accT: "#FFB347", rib: "#0B0B0B", ribT: "#FFB347", glow: "rgba(255,106,0,.35)" },
-    con: { f: ["#D6E0FF", "#1A2F75", "#7A9BFF"], b: ["#3B5FCC", "#23439C", "#0E1D4D"], t: "#FFFFFF", sub: "#D6E0FF", line: "rgba(255,255,255,.16)", bar: "#0B0B0B", barT: "#7A9BFF", acc: "#0B0B0B", accT: "#7A9BFF", rib: "#0B0B0B", ribT: "#7A9BFF", glow: "rgba(79,123,255,.35)" },
+    prata: { f: ["#FFFFFF", "#8E8E88", "#E6E6E2", "#8E8E88", "#FFFFFF"], b: ["#F4F4F1", "#C9C9C4", "#8E8E88"], t: "#141414", sub: "#3A3A35", line: "rgba(0,0,0,.15)", bar: "#0B0B0B", barT: "#FFC400" },
+    ouro: { f: ["#FFF1A8", "#B8860B", "#FFE27A", "#B8860B", "#FFF1A8"], b: ["#FFE07A", "#E0A800", "#9C7400"], t: "#1A1200", sub: "#5C4500", line: "rgba(0,0,0,.15)", bar: "#0B0B0B", barT: "#FFC400" },
+    dia: { f: ["#FFFFFF", "#A5F3FC", "#22D3EE", "#FFFFFF", "#BAE6FD", "#67E8F9", "#FFFFFF"], b: ["#E0FBFF", "#67E8F9", "#0E7490"], t: "#04222B", sub: "#0B4A5A", line: "rgba(0,0,0,.13)", bar: "#04222B", barT: "#A5F3FC", glow: "rgba(34,211,238,.5)", facets: true },
+    elite: { f: ["#F3E8FF", "#A855F7", "#22D3EE", "#F0ABFC", "#7C3AED", "#FDE68A", "#F3E8FF"], b: ["#7C3AED", "#4C1D95", "#1E0A3C"], t: "#FFFFFF", sub: "#E9D5FF", line: "rgba(255,255,255,.18)", bar: ["#4C1D95", "#9333EA", "#C084FC", "#9333EA", "#4C1D95"], barT: "#FFFFFF", ovr: "#F3E8FF", glow: "rgba(168,85,247,.7)", rays: "rgba(255,255,255,.08)" },
+    lend: { f: ["#FFD700", "#FF3D6E", "#A855F7", "#22D3EE", "#4ADE80", "#FFD700", "#FF8A00", "#FFD700"], b: ["#2A0010", "#120008", "#000000"], t: "#FFE58A", sub: "#FFD700", line: "rgba(255,215,0,.2)", bar: ["#7A0019", "#FFD700", "#FFF7D6", "#FFD700", "#7A0019"], barT: "#1A0008", ovr: "#FFD700", glow: "rgba(255,215,0,.65)", rays: "rgba(255,215,0,.1)", fw: 9, crown: true },
+    mes: { f: ["#FFFBE0", "#FFE14D", "#FF9500", "#FFFBE0", "#FFFFFF", "#FFE14D"], b: ["#FFE347", "#FFB300", "#E06A00"], t: "#1A0F00", sub: "#5A3300", line: "rgba(0,0,0,.15)", bar: "#0B0B0B", barT: "#FFD400", acc: "#0B0B0B", accT: "#FFD400", rib: "#0B0B0B", ribT: "#FFD400", glow: "rgba(255,196,0,.75)", rays: "rgba(255,255,255,.25)", fw: 9 },
+    art: { f: ["#FFF0C2", "#FF8A00", "#C81E00", "#FFF0C2", "#FFFFFF", "#FF8A00"], b: ["#FF9A1F", "#FF3D00", "#8A0C00"], t: "#FFFFFF", sub: "#FFE7B0", line: "rgba(255,255,255,.18)", bar: "#0B0B0B", barT: "#FFB21F", acc: "#0B0B0B", accT: "#FFB21F", rib: "#0B0B0B", ribT: "#FFB21F", glow: "rgba(255,77,0,.75)", flame: true, fw: 9 },
+    gk: { f: ["#C9F7D8", "#3DBA6E", "#14532D", "#C9F7D8", "#FFFFFF", "#3DBA6E"], b: ["#2E8F55", "#1F6E3A", "#0B3A1E"], t: "#FFFFFF", sub: "#C9F7D8", line: "rgba(255,255,255,.16)", bar: "#0B0B0B", barT: "#3DBA6E", acc: "#0B0B0B", accT: "#3DBA6E", rib: "#0B0B0B", ribT: "#3DBA6E", glow: "rgba(61,186,110,.45)", net: true, fw: 9 },
+    con: { f: ["#D6E0FF", "#7A9BFF", "#1A2F75", "#D6E0FF", "#FFFFFF", "#7A9BFF"], b: ["#3B5FCC", "#23439C", "#0E1D4D"], t: "#FFFFFF", sub: "#D6E0FF", line: "rgba(255,255,255,.16)", bar: "#0B0B0B", barT: "#7A9BFF", acc: "#0B0B0B", accT: "#7A9BFF", rib: "#0B0B0B", ribT: "#7A9BFF", glow: "rgba(79,123,255,.45)", chart: true, fw: 9 },
   };
   function axCardInfo() {
     const data = cardsData(), slug = ART.cardSlug && data.bySlug.get(ART.cardSlug)?.eligible ? ART.cardSlug : data.players[0]?.slug;
@@ -5688,87 +5754,92 @@
     ctx.lineTo(x + w * 0.5, y + h); ctx.lineTo(x, y + h * 0.86); ctx.lineTo(x, y + h * 0.06); ctx.closePath();
   }
   // Desenha a carta (300×490 de referência) na escala s, com o canto de cima à esquerda em (x, y).
+  // Mesmo layout da carta do site; as animações viram degradês parados (o canvas não anima).
   function axDrawCardShape(ctx, info, x, y, s) {
-    const c = AX_CARD_COLORS[info.cls] || AX_CARD_COLORS.ouro, W = 300 * s, H = 490 * s, sp = info.sp;
+    const c = AX_CARD_COLORS[info.cls] || AX_CARD_COLORS.ouro, W = 300 * s, H = 490 * s, sp = info.sp, fw = (c.fw || 6) * s;
+    const grad = (x0, y0, x1, y1, stops) => { const g = ctx.createLinearGradient(x0, y0, x1, y1); stops.forEach((col, i) => g.addColorStop(i / Math.max(1, stops.length - 1), col)); return g; };
+    // Brilho em volta e moldura
     ctx.save();
-    if (c.glow) { ctx.shadowColor = c.glow; ctx.shadowBlur = 60 * s; }
-    axCardShape(ctx, x, y, W, H);
-    const fr = ctx.createLinearGradient(x, y, x + W, y + H);
-    c.f.forEach((col, i) => fr.addColorStop(i / Math.max(1, c.f.length - 1), col));
-    if (info.cls === "elite") { fr.addColorStop(0, "#FFF6C8"); fr.addColorStop(0.25, "#FFC400"); fr.addColorStop(0.45, "#FF8A00"); fr.addColorStop(0.65, "#7AF0FF"); fr.addColorStop(0.85, "#FFC400"); fr.addColorStop(1, "#FFF6C8"); }
-    ctx.fillStyle = fr; ctx.fill();
+    if (c.glow) { ctx.shadowColor = c.glow; ctx.shadowBlur = 70 * s; }
+    axCardShape(ctx, x, y, W, H); ctx.fillStyle = grad(x, y, x + W, y + H, c.f); ctx.fill();
     ctx.restore();
-    const ix = x + 6 * s, iy = y + 6 * s, iw = W - 12 * s, ih = H - 12 * s;
+    // Miolo
+    const ix = x + fw, iy = y + fw, iw = W - fw * 2, ih = H - fw * 2;
     ctx.save();
     axCardShape(ctx, ix, iy, iw, ih); ctx.clip();
-    const bg = ctx.createLinearGradient(ix, iy, ix + iw * 0.3, iy + ih);
-    bg.addColorStop(0, c.b[0]); bg.addColorStop(0.55, c.b[1]); bg.addColorStop(1, c.b[2]);
-    ctx.fillStyle = bg; ctx.fillRect(ix, iy, iw, ih);
-    const light = ctx.createRadialGradient(ix + iw * 0.62, iy + ih * 0.28, 0, ix + iw * 0.62, iy + ih * 0.28, iw * 0.55);
-    light.addColorStop(0, info.cls === "mes" ? "rgba(255,196,0,.33)" : "rgba(255,255,255,.4)"); light.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = grad(ix, iy, ix + iw * 0.3, iy + ih, c.b); ctx.fillRect(ix, iy, iw, ih);
+    const light = ctx.createRadialGradient(ix + iw * 0.58, iy + ih * 0.29, 0, ix + iw * 0.58, iy + ih * 0.29, iw * 0.6);
+    light.addColorStop(0, info.cls === "mes" ? "rgba(255,251,224,.9)" : "rgba(255,255,255,.4)"); light.addColorStop(1, "rgba(255,255,255,0)");
     ctx.fillStyle = light; ctx.fillRect(ix, iy, iw, ih);
-    ctx.strokeStyle = "rgba(255,255,255,.06)"; ctx.lineWidth = 2 * s;
-    for (let k = -ih; k < iw + ih; k += 12 * s) { ctx.beginPath(); ctx.moveTo(ix + k, iy); ctx.lineTo(ix + k - ih * 0.58, iy + ih); ctx.stroke(); }
+    if (c.rays) { ctx.save(); ctx.fillStyle = c.rays; const cx0 = ix + iw * 0.55, cy0 = iy + ih * 0.31; for (let a = 0; a < 360; a += 12) { const r1 = (a * Math.PI) / 180, r2 = ((a + 6) * Math.PI) / 180; ctx.beginPath(); ctx.moveTo(cx0, cy0); ctx.lineTo(cx0 + Math.cos(r1) * H, cy0 + Math.sin(r1) * H); ctx.lineTo(cx0 + Math.cos(r2) * H, cy0 + Math.sin(r2) * H); ctx.closePath(); ctx.fill(); } ctx.restore(); }
+    if (c.facets) { ctx.save(); ctx.strokeStyle = "rgba(255,255,255,.3)"; ctx.lineWidth = s; for (let k = -ih * 2; k < iw + ih * 2; k += 34 * s) { ctx.beginPath(); ctx.moveTo(ix + k, iy); ctx.lineTo(ix + k + ih * 0.577, iy + ih); ctx.stroke(); ctx.beginPath(); ctx.moveTo(ix + k, iy); ctx.lineTo(ix + k - ih * 0.577, iy + ih); ctx.stroke(); } ctx.restore(); }
+    else { ctx.strokeStyle = "rgba(255,255,255,.06)"; ctx.lineWidth = 2 * s; for (let k = -ih; k < iw + ih; k += 12 * s) { ctx.beginPath(); ctx.moveTo(ix + k, iy); ctx.lineTo(ix + k - ih * 0.58, iy + ih); ctx.stroke(); } }
+    if (c.net) { ctx.save(); ctx.globalAlpha = 0.12; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2 * s; for (let k = 0; k < 9; k++) { ctx.beginPath(); ctx.moveTo(x + k * 36 * s, y); ctx.lineTo(x + k * 36 * s, y + H); ctx.stroke(); } for (let k = 0; k < 14; k++) { ctx.beginPath(); ctx.moveTo(x, y + k * 36 * s); ctx.lineTo(x + W, y + k * 36 * s); ctx.stroke(); } ctx.restore(); }
+    if (c.chart) { ctx.save(); ctx.globalAlpha = 0.22; ctx.strokeStyle = "#fff"; ctx.lineWidth = 4 * s; ctx.beginPath(); [[10, 330], [50, 300], [90, 312], [130, 280], [170, 290], [210, 262], [250, 270], [290, 240]].forEach(([px, py], k) => (k ? ctx.lineTo(x + px * s, y + py * s) : ctx.moveTo(x + px * s, y + py * s))); ctx.stroke(); ctx.restore(); }
+    if (c.flame) { ctx.save(); ctx.globalCompositeOperation = "screen"; [[0.2, 0.3, 0.6, "rgba(255,210,90,.8)"], [0.5, 0.26, 0.7, "rgba(255,229,143,.8)"], [0.8, 0.3, 0.55, "rgba(255,194,58,.8)"]].forEach(([fx, rx, ry, col]) => { const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 1); g.addColorStop(0, col); g.addColorStop(1, "rgba(0,0,0,0)"); ctx.save(); ctx.translate(ix + iw * fx, iy + ih); ctx.scale(iw * rx, ih * 0.62 * ry); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 1, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }); ctx.restore(); }
+    if (info.cls === "mes") [[40, 90, 9], [250, 150, 7], [60, 200, 6], [230, 60, 5], [150, 40, 4], [270, 220, 6], [30, 150, 4]].forEach(([sx, sy, r]) => { ctx.save(); ctx.globalAlpha = 0.55; axStar(ctx, x + sx * s, y + sy * s, r * s, "#FFFFFF"); ctx.restore(); });
     const shield = axImg(AX_SHIELD);
     if (shield) { ctx.save(); ctx.globalAlpha = sp ? 0.1 : 0.08; if ("filter" in ctx) ctx.filter = "grayscale(1)"; const sw = 250 * s, sh = (sw * shield.naturalHeight) / shield.naturalWidth; ctx.drawImage(shield, x + W / 2 - sw / 2, y + H * 0.66 - sh / 2, sw, sh); ctx.restore(); }
-    // Motivos das especiais
-    if (sp && sp.type === "mes") [[40, 90, 9], [250, 150, 7], [60, 200, 6], [230, 60, 5], [150, 40, 4], [270, 220, 6], [30, 150, 4]].forEach(([sx, sy, r]) => { ctx.save(); ctx.globalAlpha = 0.55; axStar(ctx, x + sx * s, y + sy * s, r * s, "#FFC400"); ctx.restore(); });
-    if (sp && sp.type === "gk") { ctx.save(); ctx.globalAlpha = 0.12; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2 * s; for (let k = 0; k < 9; k++) { ctx.beginPath(); ctx.moveTo(x + k * 36 * s, y); ctx.lineTo(x + k * 36 * s, y + H); ctx.stroke(); } for (let k = 0; k < 14; k++) { ctx.beginPath(); ctx.moveTo(x, y + k * 36 * s); ctx.lineTo(x + W, y + k * 36 * s); ctx.stroke(); } ctx.restore(); }
-    if (sp && sp.type === "con") { ctx.save(); ctx.globalAlpha = 0.22; ctx.strokeStyle = "#fff"; ctx.lineWidth = 4 * s; ctx.beginPath(); [[10, 330], [50, 300], [90, 312], [130, 280], [170, 290], [210, 262], [250, 270], [290, 240]].forEach(([px, py], k) => (k ? ctx.lineTo(x + px * s, y + py * s) : ctx.moveTo(x + px * s, y + py * s))); ctx.stroke(); ctx.restore(); }
-    if (sp && sp.type === "art") { ctx.save(); ctx.globalAlpha = 0.18; ctx.fillStyle = "#FFD27A"; ctx.beginPath(); ctx.ellipse(x + 150 * s, y + 380 * s, 100 * s, 110 * s, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
-    const dy = sp ? 16 * s : 0;
-    // Faixa das especiais
+    // Especiais: emblema redondo, faixa "TIPO · MÊS"
     if (sp) {
-      const text = (CARD_SP[sp.type][0] + " · " + cardMon(sp.key) + (sp.partial ? " · PARCIAL" : "")).toUpperCase();
-      ctx.font = "900 " + 13 * s + 'px "Barlow Condensed", sans-serif'; axSpacing(ctx, 2 * s);
-      const tw = ctx.measureText(text).width + 28 * s;
-      ctx.fillStyle = c.rib; axRound(ctx, x + W / 2 - tw / 2, y + 6 * s, tw, 25 * s, 10 * s); ctx.fill();
-      ctx.fillStyle = c.ribT; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(text, x + W / 2, y + 19 * s); axSpacing(ctx, 0);
+      ctx.save(); ctx.beginPath(); ctx.arc(x + W / 2, iy + 27 * s, 29 * s, 0, Math.PI * 2); ctx.fillStyle = c.rib; ctx.fill(); ctx.lineWidth = 3 * s; ctx.strokeStyle = c.f[0]; ctx.stroke();
+      // Mesmo ícone SVG do site (Path2D lê os caminhos do SVG).
+      const paths = { mes: [["M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4 6.1 20.5l1.2-6.5L2.5 9.4l6.6-.9z", 1]], art: [["M12 22c-4 0-7-3-6.5-7 .4-3 2.6-4 2.3-7 2 1.3 2.6 3 2.4 4.6 1.2-1 1.3-3 .7-4.9 3.6 2 6.2 5.4 5.7 9-.4 3-3 5.3-4.6 5.3Z", 1]],
+        gk: [["M7 11V5.5a1.5 1.5 0 0 1 3 0V10m0-4.5a1.5 1.5 0 0 1 3 0V10m0-3.5a1.5 1.5 0 0 1 3 0V11m0-2a1.5 1.5 0 0 1 3 0v5a7 7 0 0 1-7 7h-1a7 7 0 0 1-6-3.4L3.5 13a1.5 1.5 0 0 1 2.6-1.5L7 13", 0]], con: [["M3 17l5-5 4 3 7-8", 0], ["M15 7h4v4", 0]] }[sp.type];
+      if (typeof Path2D === "function") { ctx.translate(x + W / 2 - 15 * s, iy + 12 * s); ctx.scale(1.25 * s, 1.25 * s); ctx.fillStyle = ctx.strokeStyle = c.ribT; ctx.lineWidth = sp.type === "con" ? 2.6 : 2; ctx.lineCap = ctx.lineJoin = "round"; paths.forEach(([d, fill]) => { const path = new Path2D(d); if (fill) ctx.fill(path); else ctx.stroke(path); }); }
+      ctx.restore();
+      const text = (CARD_SP[sp.type][0] + " · " + cardMon(sp.key) + (sp.partial ? " · PARCIAL" : "")).toUpperCase(), fs = (sp.type === "mes" || sp.type === "art" ? 17 : 15) * s;
+      ctx.font = "900 " + fs + 'px "Barlow Condensed", sans-serif'; axSpacing(ctx, 2 * s);
+      const tw = ctx.measureText(text).width + 32 * s;
+      ctx.fillStyle = c.rib; axRound(ctx, x + W / 2 - tw / 2, iy + 58 * s, tw, fs + 12 * s, 8 * s); ctx.fill();
+      ctx.fillStyle = c.ribT; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(text, x + W / 2, iy + 58 * s + (fs + 12 * s) / 2 + s); axSpacing(ctx, 0);
     }
-    // Topo: nota, posição, divisória, escudo
+    if (c.crown) { ctx.save(); ctx.fillStyle = "#FFD700"; const cw = 46 * s, ch = 30 * s, cx0 = x + W / 2 - cw / 2, cy0 = iy + 4 * s; ctx.beginPath(); [[2, 14], [1, 3], [7, 8], [12, 1], [17, 8], [23, 3], [22, 14]].forEach(([px, py], k) => (k ? ctx.lineTo(cx0 + (px / 24) * cw, cy0 + (py / 16) * ch) : ctx.moveTo(cx0 + (px / 24) * cw, cy0 + (py / 16) * ch))); ctx.closePath(); ctx.fill(); ctx.restore(); }
+    const oy = sp ? 60 * s : 0, py = sp ? 56 * s : 0;
+    // Nota e posição (canto de cima à esquerda); escudo do time no canto de cima à direita
     ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
-    const cx = x + 54 * s;
-    ctx.fillStyle = c.ovr || c.t; axFont(ctx, 0, 62 * s, true); ctx.fillText(String(info.ovr), cx, y + 84 * s + dy);
-    ctx.fillStyle = c.sub; ctx.font = "900 " + 20 * s + 'px "Barlow Condensed", sans-serif'; axSpacing(ctx, 2 * s); ctx.fillText(info.keeper ? "GOL" : "LIN", cx, y + 110 * s + dy); axSpacing(ctx, 0);
-    ctx.fillStyle = c.line; ctx.fillRect(cx - 17 * s, y + 122 * s + dy, 34 * s, 2 * s);
+    const cx = ix + 54 * s;
+    ctx.fillStyle = c.ovr || c.t; axFont(ctx, 0, 62 * s, true); ctx.fillText(String(info.ovr), cx, iy + 84 * s + oy);
+    ctx.fillStyle = c.sub; ctx.font = "900 " + 20 * s + 'px "Barlow Condensed", sans-serif'; axSpacing(ctx, 2 * s); ctx.fillText(info.keeper ? "GOL" : "LIN", cx, iy + 108 * s + oy); axSpacing(ctx, 0);
     const crest = axImg(info.crest);
-    if (crest) { const r = crest.naturalWidth / crest.naturalHeight, w = r >= 1 ? 42 * s : 42 * s * r, h = r >= 1 ? 42 * s / r : 42 * s; ctx.drawImage(crest, cx - w / 2, y + 134 * s + dy + (42 * s - h) / 2, w, h); }
-    if (shield) { const h = 40 * s, w = (h * shield.naturalWidth) / shield.naturalHeight; ctx.drawImage(shield, x + W - 24 * s - w, y + 24 * s + dy, w, h); }
+    if (crest) { const r = crest.naturalWidth / crest.naturalHeight, w = r >= 1 ? 46 * s : 46 * s * r, h = r >= 1 ? (46 * s) / r : 46 * s; ctx.drawImage(crest, ix + iw - 22 * s - 46 * s + (46 * s - w) / 2, iy + 26 * s + (sp ? 66 * s : 0) + (46 * s - h) / 2, w, h); }
     // Foto (silhueta)
     ctx.save(); ctx.globalAlpha = 0.5; ctx.fillStyle = "#000";
-    const px = x + 78 * s + (W - 88 * s) / 2, py = y + 32 * s + dy;
-    ctx.beginPath(); ctx.arc(px, py + 62 * s, 38 * s, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(px - 73 * s, py + 182 * s); ctx.bezierCurveTo(px - 68 * s, py + 136 * s, px - 39 * s, py + 110 * s, px, py + 110 * s); ctx.bezierCurveTo(px + 39 * s, py + 110 * s, px + 68 * s, py + 136 * s, px + 73 * s, py + 182 * s); ctx.closePath(); ctx.fill();
+    const k = sp ? 120 / 176 : 1, pcx = ix + 70 * s + (iw - 90 * s) / 2, ptop = iy + 40 * s + py, base = ptop + 176 * s * (sp ? 120 / 176 : 1);
+    ctx.beginPath(); ctx.arc(pcx, base - (176 - 62) * s * k, 38 * s * k, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(pcx - 73 * s * k, base); ctx.bezierCurveTo(pcx - 68 * s * k, base - 46 * s * k, pcx - 39 * s * k, base - 72 * s * k, pcx, base - 72 * s * k); ctx.bezierCurveTo(pcx + 39 * s * k, base - 72 * s * k, pcx + 68 * s * k, base - 46 * s * k, pcx + 73 * s * k, base); ctx.closePath(); ctx.fill();
     ctx.restore();
-    // Nome
-    const name = displayName(info.name).toUpperCase();
+    // Nome em faixa de ponta a ponta
+    const name = displayName(info.name).toUpperCase(), bandX = ix + 6 * s, bandW = iw - 12 * s;
     let size = (name.length > 14 ? 22 : name.length > 11 ? 26 : 31) * s;
     ctx.font = "900 " + size + 'px "Barlow Condensed", sans-serif';
-    while (ctx.measureText(name).width > 220 * s && size > 10 * s) { size -= s; ctx.font = "900 " + size + 'px "Barlow Condensed", sans-serif'; }
-    const nw = ctx.measureText(name).width + 32 * s, ny = y + (sp ? 224 : 220) * s;
-    ctx.fillStyle = c.bar; axRound(ctx, x + W / 2 - nw / 2, ny, nw, size + 12 * s, 8 * s); ctx.fill();
-    ctx.fillStyle = c.barT; ctx.textBaseline = "middle"; ctx.fillText(name, x + W / 2, ny + (size + 12 * s) / 2 + s);
-    // Estatísticas 3×2
-    const sy = y + (sp ? 270 : 272) * s, colW = (W - 60 * s) / 3, rowH = (sp ? 46 : 52) * s;
-    info.stats.forEach(([k, v], i) => {
-      const col = i % 3, row = Math.floor(i / 3), scx = x + 30 * s + colW * col + colW / 2, top = sy + row * rowH;
-      if (col) { ctx.fillStyle = c.line; ctx.fillRect(x + 30 * s + colW * col, top, s, rowH - 6 * s); }
-      ctx.fillStyle = c.sub; axFont(ctx, 800, 10 * s); axSpacing(ctx, 1.5 * s); ctx.textBaseline = "top"; ctx.fillText(k, scx, top); axSpacing(ctx, 0);
-      ctx.fillStyle = c.t; axFont(ctx, 0, (sp ? 24 : 27) * s, true); ctx.fillText(String(v), scx, top + 15 * s);
+    while (ctx.measureText(name).width > bandW - 20 * s && size > 10 * s) { size -= s; ctx.font = "900 " + size + 'px "Barlow Condensed", sans-serif'; }
+    const ny = iy + (sp ? 224 : 220) * s, bh = size + 14 * s;
+    ctx.fillStyle = Array.isArray(c.bar) ? grad(bandX, 0, bandX + bandW, 0, c.bar) : c.bar; ctx.fillRect(bandX, ny, bandW, bh);
+    ctx.fillStyle = c.barT; ctx.textBaseline = "middle"; ctx.fillText(name, x + W / 2, ny + bh / 2 + s);
+    // Estatísticas 3×2 (rótulo 11, número 30; especiais 24)
+    const sy = iy + (sp ? 270 : 272) * s, colW = (iw - 60 * s) / 3, rowH = (sp ? 48 : 55) * s;
+    info.stats.forEach(([key, v], i) => {
+      const col = i % 3, row = Math.floor(i / 3), scx = ix + 30 * s + colW * col + colW / 2, top = sy + row * rowH;
+      if (col) { ctx.fillStyle = c.line; ctx.fillRect(ix + 30 * s + colW * col, top, s, rowH - 6 * s); }
+      ctx.fillStyle = c.sub; axFont(ctx, 800, 11 * s); axSpacing(ctx, 1.5 * s); ctx.textBaseline = "top"; ctx.fillText(key, scx, top); axSpacing(ctx, 0);
+      ctx.fillStyle = c.t; axFont(ctx, 0, (sp ? 24 : 30) * s, true); ctx.fillText(String(v), scx, top + 16 * s);
     });
     ctx.textBaseline = "alphabetic";
-    // Destaque das especiais
+    // Pílula de destaque das especiais (com borda)
     if (sp) {
       axFont(ctx, 0, 26 * s, true); const bw = ctx.measureText(sp.hl[0]).width; axFont(ctx, 800, 11 * s); axSpacing(ctx, 1.5 * s); const lw = ctx.measureText(sp.hl[1]).width; axSpacing(ctx, 0);
-      const pw = bw + lw + 34 * s, ph = 38 * s, pyy = y + H - 74 * s - ph;
-      ctx.fillStyle = c.acc; axRound(ctx, x + W / 2 - pw / 2, pyy, pw, ph, 12 * s); ctx.fill();
+      const pw = bw + lw + 34 * s, ph = 38 * s, pyy = iy + ih - 74 * s - ph;
+      ctx.fillStyle = c.acc; axRound(ctx, x + W / 2 - pw / 2, pyy, pw, ph, 12 * s); ctx.fill(); ctx.lineWidth = 2 * s; ctx.strokeStyle = c.f[0]; ctx.stroke();
       ctx.fillStyle = c.accT; ctx.textAlign = "left"; axFont(ctx, 0, 26 * s, true); ctx.fillText(sp.hl[0], x + W / 2 - pw / 2 + 14 * s, pyy + 29 * s);
       axFont(ctx, 800, 11 * s); axSpacing(ctx, 1.5 * s); ctx.fillText(sp.hl[1], x + W / 2 - pw / 2 + 20 * s + bw, pyy + 25 * s); axSpacing(ctx, 0); ctx.textAlign = "center";
     }
     // Rodapé
-    const fy = y + H - (sp ? 50 : 46) * s;
-    if (info.badge && !sp) { axFont(ctx, 800, 10 * s); axSpacing(ctx, 1.5 * s); const bw = ctx.measureText(info.badge).width + 20 * s; ctx.fillStyle = c.acc; axRound(ctx, x + W / 2 - bw / 2, fy - 34 * s, bw, 20 * s, 10 * s); ctx.fill(); ctx.fillStyle = c.accT; ctx.textBaseline = "middle"; ctx.fillText(info.badge, x + W / 2, fy - 24 * s); axSpacing(ctx, 0); }
+    const fy = iy + ih - (sp ? 50 : 46) * s;
+    if (info.badge && !sp) { axFont(ctx, 800, 10 * s); axSpacing(ctx, 1.5 * s); const bw = ctx.measureText(info.badge).width + 20 * s; ctx.fillStyle = c.acc || "#0B0B0B"; axRound(ctx, x + W / 2 - bw / 2, fy - 34 * s, bw, 20 * s, 10 * s); ctx.fill(); ctx.fillStyle = c.accT || "#FFC400"; ctx.textBaseline = "middle"; ctx.fillText(info.badge, x + W / 2, fy - 24 * s); axSpacing(ctx, 0); }
     ctx.fillStyle = c.sub; axFont(ctx, 800, 9 * s); axSpacing(ctx, 3 * s); ctx.textBaseline = "alphabetic"; ctx.fillText(info.tierText + " · SKALAMA " + cardYear(), x + W / 2, fy); axSpacing(ctx, 0);
+    // Reflexo holográfico parado (Elite, Lendário e especiais)
+    if (sp || info.cls === "elite" || info.cls === "lend") { ctx.save(); ctx.globalCompositeOperation = "overlay"; ctx.globalAlpha = 0.5; ctx.fillStyle = grad(ix, iy, ix + iw, iy + ih, ["rgba(0,0,0,0)", "rgba(255,0,200,.4)", "rgba(0,229,255,.4)", "rgba(255,243,92,.35)", "rgba(0,0,0,0)"]); ctx.fillRect(ix, iy, iw, ih); ctx.restore(); }
     ctx.restore();
   }
   function axDrawCard(ctx, W, H, story, info) {
