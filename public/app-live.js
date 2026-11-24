@@ -5533,6 +5533,9 @@
   // Animação: no máximo 4 cartas visíveis ao mesmo tempo (classe is-anim). Cada área (galeria, perfil) tem o seu observer,
   // desligado (disconnect) antes de redesenhar e ao sair da tela: nada de segurar cartas antigas na memória.
   const CARD_NAME_FIT = new Map(), CARD_OBS = new Map(), CARD_MAX_ANIM = 6, CARD_RO = new Map();
+  // Escala já calculada de cada grade (por largura da tela): ao redesenhar (ex.: trocar o filtro) a carta já nasce no tamanho certo, sem a página "pular".
+  const CARD_K = new Map();
+  const cardKStyle = (cls) => { const k = CARD_K.get(cls + "|" + innerWidth); return k ? ' style="--k:' + k + '"' : ""; };
   const cardCoarse = () => matchMedia("(pointer: coarse)").matches;
   let cardRenders = 0;
   function cardsUnobserve(root) {
@@ -5571,6 +5574,8 @@
       const [lo, hi] = String(grid.dataset.kmax || "1").split("|").map(Number), max = (innerWidth >= 760 ? hi ?? lo : lo) || 1;
       const cs = getComputedStyle(slot), w = slot.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight); // folga do slot para o brilho
       const k = Math.max(0.3, Math.min(max, w / 300));
+      const cls = [...grid.classList].find((c) => c !== "cards-grid") || "cards-grid";
+      CARD_K.set(cls + "|" + innerWidth, String(k));
       if (grid.style.getPropertyValue("--k") !== String(k)) grid.style.setProperty("--k", String(k));
       }));
     });
@@ -5653,7 +5658,7 @@
     const specials = CARD_SP_ORDER.map((type) => data.cur[type]).filter(Boolean);
     // "Cartas por nota": sempre a carta de NÍVEL de cada um (a especial fica só no palco de cima), ninguém aparece duas vezes.
     const list = data.players.filter((c) => f === "all" || (f === "gk" ? c.keeper : c.tier === f)).map((c) => cardInfo(c.slug, null, data));
-    const spRow = (types, kmax, cls) => { const row = types.map((t) => data.cur[t]).filter(Boolean); return row.length ? '<div class="cards-grid cards-sp-' + cls + '" data-kmax="' + kmax + '">' + row.map((sp) => slot(cardInfo(sp.slug, sp, data))).join("") + "</div>" : ""; };
+    const spRow = (types, kmax, cls) => { const row = types.map((t) => data.cur[t]).filter(Boolean); return row.length ? '<div class="cards-grid cards-sp-' + cls + '" data-kmax="' + kmax + '"' + cardKStyle("cards-sp-" + cls) + ">" + row.map((sp) => slot(cardInfo(sp.slug, sp, data))).join("") + "</div>" : ""; };
     const kBig = "0.52|1.05", kSmall = "0.52|0.78"; // celular | PC (≥ 760px): limite da escala; a coluna real manda (cardsFitGrids)
     const nothing = !officialGames().length;
     box.innerHTML = '<div class="cards-wrap"><a class="pv-back cards-back" href="./" data-cards-back>← Voltar</a>' +
@@ -5663,7 +5668,7 @@
           spRow(["mes", "art"], kBig, "big") + spRow(["gk", "con"], kSmall, "small") + "</section>" : "") +
         '<section class="cards-sec" aria-labelledby="cardsAllTitle"><h3 class="cards-h" id="cardsAllTitle">Cartas por nota <small>' + data.players.length + (data.players.length === 1 ? " carta" : " cartas") + "</small></h3>" +
         '<div class="cards-filters" role="group" aria-label="Filtrar cartas">' + CARD_FILTERS.map(([key, label]) => '<button type="button" class="cards-filter' + (f === key ? " is-on" : "") + '" data-cards-filter="' + key + '" aria-pressed="' + (f === key) + '">' + label + "</button>").join("") + "</div>" +
-        (list.length ? '<div class="cards-grid cards-all" data-kmax="1">' + list.map(slot).join("") + "</div>" : '<p class="cards-empty">Nenhuma carta neste filtro.</p>') + "</section>" +
+        (list.length ? '<div class="cards-grid cards-all" data-kmax="1"' + cardKStyle("cards-all") + ">" + list.map(slot).join("") + "</div>" : '<p class="cards-empty">Nenhuma carta neste filtro.</p>') + "</section>" +
         (data.waiting.length ? '<section class="cards-wait" aria-labelledby="cardsWaitTitle"><h3 id="cardsWaitTitle">Ainda sem carta (menos de 3 jogos)</h3><p>A carta aparece depois do 3º jogo oficial (goleiro: 3 jogos no gol).</p><ul>' + data.waiting.map((c) => "<li>" + plink(c.name, displayName(c.name) + " · " + c.games + (c.games === 1 ? " jogo" : " jogos")) + "</li>").join("") + "</ul></section>" : "")) +
       '<section class="cards-legend" aria-label="Como funcionam as cartas"><div><b>🥈 Prata</b>Nota média abaixo de 6,0. A carta de entrada: todo mundo com 3 jogos oficiais ganha uma.</div><div><b>🥇 Ouro (6,0 a 6,9)</b>Dourada clássica, com brilho passando.</div><div><b>💎 Diamante (7,0 a 7,9)</b>Azul gelo com facetas de cristal, moldura girando e estrelinhas.</div><div><b>🔮 Elite (8,0 a 8,9)</b>Roxa: moldura holográfica, brilho roxo forte e reflexo de figurinha rara.</div><div><b>👑 Lendário (9,0+)</b>Preta com coroa, moldura arco-íris girando rápido, fundo em movimento e nome dourado. Raríssima.</div>' +
       '<div><b>⭐ Jogador do mês</b>Maior nota média do mês (mínimo 3 jogos). Ouro vibrante com raios de sol. Carta grande, no topo.</div><div><b>🔥 Artilheiro do mês</b>Mais gols no mês (empate: menos jogos, depois maior nota). Fogo vivo. Carta grande, no topo.</div><div><b>🧤 Goleiro do mês</b>Melhor goleiro do mês (mínimo 3 jogos no gol). Verde.</div><div><b>📈 Constância</b>Menor variação de nota no mês, com 4 jogos ou mais e média 7,0+. Azul Skalama.</div></section></div>';
