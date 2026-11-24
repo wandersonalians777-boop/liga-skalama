@@ -4194,6 +4194,7 @@
     not_waiting: () => "Esse jogador não está mais na lista de espera. Atualize a lista.",
     not_player: () => "Só vota quem jogou pelo menos um jogo oficial nessa noite.",
     self_vote: () => "Não dá para votar em você mesmo.",
+    already_voted: () => "Você já votou nesta votação. O voto não pode ser trocado.",
     bad_candidate: () => "Escolha alguém que jogou nessa noite.",
     forbidden: () => "Só o organizador pode fazer isso.",
     no_pin: () => "Você ainda não tem PIN. Peça seu link pessoal ao organizador para criar.",
@@ -4586,7 +4587,7 @@
       const who = meRow && meRow.has_pin ? pvMeBlock("vtName", meRow.name, "vt")
         : blocked ? pvMeBlock("vtNameNo", meRow.name, "vt") + '<p class="pv-hint pv-warn">Você ainda não tem PIN. Peça seu link pessoal ao organizador para criar e votar.</p>'
         : pvNameField("vtName", parts.map((p) => ({ name: p.name, keeper: false, has_pin: p.has_pin !== false })), "");
-      $("vtForm").innerHTML = '<h2 class="pv-h" id="vtFormTitle">Vote no craque da noite</h2><p class="pv-hint">Só vota quem jogou nessa noite. Você pode trocar o voto até a votação fechar.</p>' + who +
+      $("vtForm").innerHTML = '<h2 class="pv-h" id="vtFormTitle">Vote no craque da noite</h2><p class="pv-hint">Só vota quem jogou nessa noite. Cada um vota uma vez: depois de votar, não dá para trocar.</p>' + who +
         (blocked ? "" : '<p class="pv-label">PIN (4 números)</p>' + pvPinHtml("vtPin") + (meRow ? "" : '<p class="pv-hint">Primeira vez? Peça seu link pessoal ao organizador para criar o PIN.</p>')) +
         '<div' + (blocked ? " hidden" : "") + '><p class="pv-label" id="vtCandLabel">Quem foi o craque?</p><div class="vt-cands" id="vtCands" role="radiogroup" aria-labelledby="vtCandLabel"></div>' +
         '<button type="button" class="pv-btn pv-green vt-submit" id="vtSubmit" disabled>Escolha um jogador</button></div><p class="pv-msg" id="vtMsg" role="status" aria-live="polite"></p>' +
@@ -4609,10 +4610,11 @@
     if (!round || !VT.cand) return;
     if (!name) { VT.msg = "Escolha seu nome."; VT.tone = "bad"; renderVoting(); $("vtName")?.focus(); return; }
     if (!/^\d{4}$/.test(pin)) { VT.msg = "Digite os 4 números do PIN."; VT.tone = "bad"; renderVoting(); document.querySelector("#vtPin input")?.focus(); return; }
+    if (!(await askConfirm({ title: "Votar em " + displayName(VT.cand) + "?", message: "Depois de confirmar, o voto não pode ser trocado.", confirmText: "Confirmar voto", tone: "green" }))) return;
     VT.busy = true; renderVoting();
     const r = await pvRpc("vote_cast", { p_key: round.round_key, p_voter: name, p_pin: pin, p_candidate: VT.cand });
     VT.busy = false;
-    if (r.ok) { pvSetMe(name); pvPinClear("vtPin"); VT.data = r.view || VT.data; VT.msg = (r.created ? "PIN criado! Guarde esses 4 números. " : "") + "✓ Voto registrado em " + displayName(r.mine) + ". Dá para trocar até a votação fechar."; VT.tone = "good"; }
+    if (r.ok) { pvSetMe(name); pvPinClear("vtPin"); VT.data = r.view || VT.data; VT.msg = (r.created ? "PIN criado! Guarde esses 4 números. " : "") + "✓ Voto registrado em " + displayName(r.mine) + ". Obrigado! O resultado sai quando a votação fechar."; VT.tone = "good"; }
     else { VT.msg = pvError(r); VT.tone = "bad"; if (r.error === "pin_wrong" || r.error === "locked") pvPinClear("vtPin"); }
     renderVoting();
   }
@@ -5114,7 +5116,7 @@
     if (VTA.key !== key || Date.now() - VTA.at > 30000) { VTA.key = key; VTA.at = Date.now(); vtaLoad(key); }
     const round = VTA.data?.round && VTA.data.round.round_key === key ? VTA.data.round : null;
     const head = '<h3 class="lv-label">⭐ CRAQUE DA NOITE · ' + escapeHtml(pvDayMonth(key)) + "</h3>";
-    if (!round) return head + '<p class="lv-vote-text">Depois do último jogo, abra a votação: quem jogou vota pelo link com nome e PIN, por 24 horas.</p><button type="button" class="lv-btn lv-green" data-lv-vote="open">⭐ Abrir votação do craque da noite</button>';
+    if (!round) return head + '<p class="lv-vote-text">Depois do último jogo, abra a votação: quem jogou vota pelo link com nome e PIN, por 12 horas.</p><button type="button" class="lv-btn lv-green" data-lv-vote="open">⭐ Abrir votação do craque da noite</button>';
     if (round.open) return head + '<p class="lv-vote-text">Votação aberta · <b>' + round.voted + " de " + round.eligible + "</b> já votaram · fecha " + escapeHtml(new Date(round.closes_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })) + '</p><div class="lv-vote-row"><button type="button" class="lv-btn lv-white" data-lv-vote="link">Copiar link</button><button type="button" class="lv-btn lv-white" data-lv-vote="close">Fechar votação agora</button></div>';
     const w = VTA.data?.winner;
     return head + '<p class="lv-vote-text">' + (w?.name ? "Craque da noite: <b>" + escapeHtml(displayName(w.name)) + "</b> (" + w.votes + (w.votes === 1 ? " voto" : " votos") + ")" : "Votação encerrada sem votos.") + '</p><a class="lv-btn lv-white" href="#votacao">Ver resultado</a>';
@@ -5133,7 +5135,7 @@
     const key = lvVoteKey();
     if (kind === "link") { try { await navigator.clipboard.writeText(location.origin + "/#votacao"); notify("Link da votação copiado."); } catch { notify("Link: " + location.origin + "/#votacao"); } return; }
     if (kind === "open") {
-      if (!(await askConfirm({ title: "Abrir a votação do craque da noite?", message: "Fica aberta por 24 horas. Só vota quem jogou pelo menos um jogo oficial nessa noite, com nome e PIN.", confirmText: "Abrir votação", tone: "green" }))) return;
+      if (!(await askConfirm({ title: "Abrir a votação do craque da noite?", message: "Fica aberta por 12 horas. Cada um vota uma vez, sem trocar depois. Só vota quem jogou pelo menos um jogo oficial nessa noite, com nome e PIN.", confirmText: "Abrir votação", tone: "green" }))) return;
       const r = await pvRpc("vote_admin_open", { p_key: key, p_avgs: nightScoreAvgs(key) });
       if (r.ok) { VTA.data = r.view; VTA.at = Date.now(); VOTE.homeAt = 0; renderNightVoteCard(); notify("Votação aberta! Mande o link no grupo."); } else notify(r.error === "no_games" ? "Não há jogos oficiais suficientes nessa noite para votar." : pvError(r), true);
     } else if (kind === "close") {
