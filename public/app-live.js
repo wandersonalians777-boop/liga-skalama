@@ -231,7 +231,7 @@
     const publicTeams = $("publicTeamsSection");
     if (publicTeams) publicTeams.hidden = !locked || !(state?.teams || []).length;
     document.querySelectorAll("button,input,select,textarea").forEach((element) => {
-      if (element.id === "themeToggle" || element.id === "adminAccessButton" || element.id === "footerAdminButton" || element.closest(".home-top") || element.closest("#historico") || element.closest("#adminLogin") || element.closest("#artStudio") || element.closest("#pushBox") || element.closest("#cartas") || element.closest("#jogador") || element.hasAttribute("data-view-button") || element.matches(".home-tab,.home-more,.home-link")) return;
+      if (element.id === "themeToggle" || element.id === "adminAccessButton" || element.id === "footerAdminButton" || element.closest(".home-top") || element.closest("#historico") || element.closest("#estatisticas") || element.closest("#adminLogin") || element.closest("#artStudio") || element.closest("#pushBox") || element.closest("#cartas") || element.closest("#jogador") || element.hasAttribute("data-view-button") || element.matches(".home-tab,.home-more,.home-link")) return;
       if (locked) {
         if (!element.hasAttribute("data-access-locked")) { element.dataset.accessWasDisabled = String(element.disabled); element.setAttribute("data-access-locked", ""); }
         element.disabled = true;
@@ -1666,11 +1666,14 @@
     }
     return s;
   }
-  function rkBar(st) {
+  // Componente único de vitórias/empates/derrotas (Rankings e Estatísticas individuais): três pílulas "3 V · 1 E · 2 D" e a barra.
+  function vedHtml(v, e, d) {
     const word = (n, one, many) => n + " " + (n === 1 ? one : many), part = (cls, n) => (n ? '<i class="' + cls + '" style="flex:' + n + '"></i>' : "");
-    return '<span class="rk-bar" role="img" aria-label="' + word(st.v, "vitória", "vitórias") + ", " + word(st.e, "empate", "empates") + ", " + word(st.d, "derrota", "derrotas") + '">' + part("v", st.v) + part("e", st.e) + part("d", st.d) + "</span>" +
-      '<span class="rk-ved" aria-hidden="true"><span class="cv">' + st.v + 'V</span> · <span class="ce">' + st.e + 'E</span> · <span class="cd">' + st.d + "D</span></span>";
+    return '<span class="vd" role="img" aria-label="' + word(v, "vitória", "vitórias") + ", " + word(e, "empate", "empates") + ", " + word(d, "derrota", "derrotas") + '">' +
+      '<span class="vd-p"><span class="cv">' + v + "<small>V</small></span><span class=\"ce\">" + e + "<small>E</small></span><span class=\"cd\">" + d + "<small>D</small></span></span>" +
+      '<span class="vd-bar">' + part("v", v) + part("e", e) + part("d", d) + "</span></span>";
   }
+  function rkBar(st) { return vedHtml(st.v, st.e, st.d); }
   function rkPositions(rows) { let pos = 0, last; return rows.map((r, i) => { if (i === 0 || r.value !== last) { pos = i + 1; last = r.value; } return pos; }); }
   // Melhor carta do jogador: a especial do mês (mesma prioridade da coleção), senão a de nível; sem carta = avatar.
   function rkCard(name, stats, big) {
@@ -1928,6 +1931,10 @@
     if (!line) return "goleiro";
     return keeper > line ? "goleiro · " + line + " na linha" : "linha · " + keeper + " no gol";
   }
+  // ----- Estatísticas individuais (aba Histórico; prévia aprovada pelo dono): filtro, ordenação, score com a cor da carta -----
+  // Filtro e ordem ficam só na memória da página. Empate no critério ordenado divide a posição.
+  const ST_UI = { filter: "all", sort: "score" }, ST_HTML = new WeakMap();
+  const ST_TIER_ICON = { prata: "🥈", ouro: "🥇", dia: "💎", elite: "🔮", lend: "👑" };
   function renderIndividualStats() {
     const totals = new Map();
     const games = [...officialGames()].sort((a, b) => (hxTime(a.finishedAt)?.getTime() || 0) - (hxTime(b.finishedAt)?.getTime() || 0));
@@ -1935,25 +1942,51 @@
       const row = totals.get(p.player) || { player: p.player, role: p.role, keeperGames: 0, score: 0, games: 0, goals: 0, assists: 0, goalsAgainst: 0, wins: 0, draws: 0, losses: 0 };
       if (p.role === "goleiro") row.keeperGames++;
       row.score += Number(p.score) || 0; row.games++; row.goals += Number(p.goalsFor) || 0; row.assists += Number(p.assists) || 0; row.goalsAgainst += Number(p.goalsAgainst) || 0;
-      if (p.result === "vitória") row.wins++; else if (p.result === "empate") row.draws++; else row.losses++;
+      // Pênaltis contam como vitória/derrota (mesma regra da classificação).
+      const res = rkResult(game, p.team); if (res === "v") row.wins++; else if (res === "e") row.draws++; else row.losses++;
       // Time do jogo mais recente do jogador.
-      row.teamKey = p.team; row.teamLabel = teamName(game, p.team);
+      row.teamKey = p.team; row.teamLabel = teamDisplayName(teamName(game, p.team));
       totals.set(p.player, row);
     }
-    const rows = [...totals.values()].map((row) => ({ ...row, avg: row.score / row.games })).sort((a, b) => b.avg - a.avg || a.player.localeCompare(b.player, "pt-BR"));
-    if (!rows.length) { $("individualStats").innerHTML = '<p class="empty-state">As estatísticas individuais aparecem após as partidas finalizadas.</p>'; return; }
-    const best = (field) => { const max = Math.max(...rows.map((row) => Number(row[field].toFixed ? row[field].toFixed(1) : row[field]))); return max > 0 ? max : null; },
-      topAvg = best("avg"), topGoals = best("goals"), topAssists = best("assists"),
-      lead = (value, top) => (top !== null && Number(value.toFixed ? value.toFixed(1) : value) === top ? " is-lead" : ""),
-      roleText = (row) => { const r = roleSummary(row); return r.charAt(0).toUpperCase() + r.slice(1); };
-    $("individualStats").innerHTML = '<table class="hx-stats"><thead><tr><th scope="col">Jogador</th><th scope="col">Jogos</th><th scope="col">Score médio</th><th scope="col">Gols</th><th scope="col">Assist.</th><th scope="col">Sofridos</th><th scope="col"><abbr title="Vitórias · Empates · Derrotas">V · E · D</abbr></th></tr></thead><tbody>' +
-      rows.map((row) => {
-        const isKeeper = row.keeperGames > row.games - row.keeperGames;
-        return '<tr><th scope="row"><span class="hx-player">' + hxCrest(row.teamKey, row.teamLabel, "sm") + '<span class="hx-pinfo"><strong>' + plink(row.player) + (isKeeper ? ' <b class="hx-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "</strong><small>" + escapeHtml((row.teamLabel || "") + " · " + roleText(row)) + "</small></span></span></th>" +
-          '<td class="hx-n">' + row.games + '</td><td class="hx-n' + lead(row.avg, topAvg) + '">' + row.avg.toFixed(1).replace(".", ",") + '</td><td class="hx-n' + lead(row.goals, topGoals) + '">' + row.goals + '</td><td class="hx-n' + lead(row.assists, topAssists) + '">' + row.assists + '</td><td class="hx-n">' + row.goalsAgainst + "</td>" +
-          '<td><span class="hx-ved" aria-label="' + row.wins + " vitórias, " + row.draws + " empates, " + row.losses + ' derrotas"><i class="v">' + row.wins + '</i><i class="e">' + row.draws + '</i><i class="d">' + row.losses + "</i></span></td></tr>";
-      }).join("") + "</tbody></table>";
+    const all = [...totals.values()].map((row) => ({ ...row, avg: row.score / row.games, avg1: Math.round((row.score / row.games) * 10) / 10, keeper: row.keeperGames > row.games - row.keeperGames }));
+    const box = $("individualStats");
+    stControlsSync();
+    let html;
+    if (!all.length) html = '<p class="empty-state">As estatísticas individuais aparecem após as partidas finalizadas.</p>';
+    else {
+      const key = { score: (r) => r.avg1, goals: (r) => r.goals, assists: (r) => r.assists, games: (r) => r.games }[ST_UI.sort];
+      const rows = all.filter((r) => ST_UI.filter === "all" || (ST_UI.filter === "gk" ? r.keeper : !r.keeper))
+        .sort((a, b) => key(b) - key(a) || b.avg - a.avg || a.player.localeCompare(b.player, "pt-BR"));
+      let pos = 0, last;
+      const ps = rows.map((r, i) => { const k = key(r); if (i === 0 || k !== last) { pos = i + 1; last = k; } return pos; });
+      const maxG = Math.max(0, ...rows.map((r) => r.goals)), maxA = Math.max(0, ...rows.map((r) => r.assists));
+      const num = (v, max) => '<span class="st-num' + (max > 0 && v === max ? ' is-best" title="Melhor da coluna' : "") + '">' + v + (max > 0 && v === max ? '<span class="st-crown" aria-hidden="true">👑</span>' : "") + "</span>";
+      const chip = (r) => { const t = cardTier(r.avg); return '<span class="st-chip t-' + t + '"><i aria-hidden="true">' + ST_TIER_ICON[t] + "</i>" + fmt1(r.avg) + "</span>"; };
+      const roleText = (r) => { const t = roleSummary(r); return t.charAt(0).toUpperCase() + t.slice(1); };
+      const who = (r) => '<span class="st-who">' + dxAvatar(r.player, r.teamKey, r.teamLabel, false) + '<span class="st-nmw"><a class="st-nm" href="#jogador/' + pSlug(r.player) + '">' + escapeHtml(displayName(r.player)) + "</a>" + (r.keeper ? '<b class="st-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "<small>" + escapeHtml((r.teamLabel ? r.teamLabel + " · " : "") + roleText(r)) + "</small></span></span>";
+      const conc = (r) => (r.keeper ? '<span class="st-conc">' + r.goalsAgainst + "</span>" : '<span class="st-conc is-team" title="Gols que o time sofreu nos jogos dele">' + r.goalsAgainst + '<span class="sr-only"> (gols que o time sofreu)</span></span>');
+      const th = (k, label) => '<th scope="col" aria-sort="' + (ST_UI.sort === k ? "descending" : "none") + '"' + (ST_UI.sort === k ? ' class="is-sorted"' : "") + '><button type="button" data-st-sort="' + k + '">' + label + ' <span class="st-ar" aria-hidden="true">↓</span></button></th>';
+      html = '<table class="st-table"><thead><tr><th scope="col">#</th><th scope="col">JOGADOR</th>' + th("games", "JOGOS") + th("score", "SCORE") + th("goals", "GOLS") + th("assists", "ASSIST.") + '<th scope="col" title="Goleiro: gols sofridos por ele. Linha: gols que o time sofreu.">SOFRIDOS</th><th scope="col">VITÓRIAS · EMPATES · DERROTAS</th></tr></thead><tbody>' +
+        rows.map((r, i) => '<tr' + (ps[i] === 1 ? ' class="is-top"' : "") + '><td class="st-pos">' + ps[i] + 'º</td><th scope="row">' + who(r) + "</th><td>" + r.games + "</td><td>" + chip(r) + "</td><td>" + num(r.goals, maxG) + "</td><td>" + num(r.assists, maxA) + "</td><td>" + conc(r) + "</td><td>" + vedHtml(r.wins, r.draws, r.losses) + "</td></tr>").join("") + "</tbody></table>" +
+        '<ol class="st-cards">' + rows.map((r, i) => '<li class="st-card' + (ps[i] === 1 ? " is-top" : "") + '"><span class="st-pos">' + ps[i] + 'º</span><span class="st-mid">' + who(r) +
+          '<span class="st-line"><span><b>' + r.games + "</b> " + (r.games === 1 ? "jogo" : "jogos") + "</span><span><b>" + num(r.goals, maxG) + "</b> " + (r.goals === 1 ? "gol" : "gols") + "</span><span><b>" + num(r.assists, maxA) + "</b> assist.</span>" + (r.keeper ? "<span><b>" + r.goalsAgainst + "</b> " + (r.goalsAgainst === 1 ? "sofrido" : "sofridos") + "</span>" : "") + "</span>" +
+          vedHtml(r.wins, r.draws, r.losses) + "</span>" + chip(r) + "</li>").join("") + "</ol>";
+    }
+    if (ST_HTML.get(box) === html) return;
+    ST_HTML.set(box, html);
+    const focused = document.activeElement?.dataset?.stSort;
+    box.innerHTML = html;
+    if (focused) box.querySelector('[data-st-sort="' + focused + '"]')?.focus();
   }
+  function stControlsSync() {
+    document.querySelectorAll("#statsControls [data-st-filter]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.stFilter === ST_UI.filter)));
+    document.querySelectorAll("#statsControls [data-st-sort]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.stSort === ST_UI.sort)));
+  }
+  document.addEventListener("click", (event) => {
+    const f = event.target.closest?.("[data-st-filter]"), o = event.target.closest?.("[data-st-sort]");
+    if (f) { ST_UI.filter = f.dataset.stFilter; renderIndividualStats(); }
+    else if (o) { ST_UI.sort = o.dataset.stSort; renderIndividualStats(); }
+  });
   // " · nos pênaltis (4 × 3)" quando o jogo terminou empatado e foi decidido nos pênaltis.
   function penaltySummary(game) {
     if (game.winner === "Empate" || Number(game.homeScore) !== Number(game.awayScore)) return "";
