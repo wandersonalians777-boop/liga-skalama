@@ -5448,8 +5448,9 @@
       cardAdd(rows.get(slug), p, game);
       if (!game.superLigaId) { if (!liga.has(slug)) liga.set(slug, cardEmptyRow(slug, p.player)); cardAdd(liga.get(slug), p, game); }
     }
-    // Um jogador só pode ter UMA especial no mês. Ordem: Jogador do mês → Artilheiro → Goleiro → Constância;
-    // se o primeiro da lista já ganhou uma, vai para o próximo da lista daquela categoria (com os mesmos mínimos).
+    // Um jogador só pode ter UMA especial no mês, menos a de Artilheiro: ela é sempre do artilheiro de verdade, mesmo que ele
+    // já tenha outra. Ordem: Jogador do mês → Artilheiro → Goleiro → Constância; nas outras, se o primeiro da lista já ganhou
+    // uma, vai para o próximo da lista daquela categoria (com os mesmos mínimos).
     const out = {}, used = new Set(), avg = (r) => (r.games ? r.sum / r.games : 0), kAvg = (r) => (r.kGames ? r.kSum / r.kGames : 0), byName = (a, b) => a.name.localeCompare(b.name, "pt-BR");
     const take = (list) => { const r = list.find((x) => !used.has(x.slug)); if (r) used.add(r.slug); return r; };
     const mes = take([...rows.values()].filter((r) => r.games >= 3).sort((a, b) => avg(b) - avg(a) || b.games - a.games || byName(a, b)));
@@ -5457,7 +5458,7 @@
     // Artilheiro: mesma contagem do Artilheiro do mês (Modo Liga, sem gol contra); empate: menos jogos, depois maior nota.
     const goals = new Map();
     for (const game of games) if (!game.superLigaId) (game.goals || []).filter((g) => !g.ownGoal && g.player).forEach((g) => { const k = pSlug(g.player); goals.set(k, (goals.get(k) || 0) + 1); });
-    const art = take([...goals.entries()].map(([slug, n]) => ({ ...(liga.get(slug) || cardEmptyRow(slug, slug)), slug, n })).filter((r) => r.n > 0).sort((a, b) => b.n - a.n || a.games - b.games || avg(b) - avg(a) || byName(a, b)));
+    const art = ((list) => { if (list[0]) used.add(list[0].slug); return list[0]; })([...goals.entries()].map(([slug, n]) => ({ ...(liga.get(slug) || cardEmptyRow(slug, slug)), slug, n })).filter((r) => r.n > 0).sort((a, b) => b.n - a.n || a.games - b.games || avg(b) - avg(a) || byName(a, b)));
     if (art) out.art = { type: "art", key, partial, slug: art.slug, name: art.name, ovr: Math.round(avg(rows.get(art.slug) || art) * 10), hl: [String(art.n), art.n === 1 ? "GOL NO MÊS" : "GOLS NO MÊS"] };
     // Goleiro: mesma regra do Goleiro do mês (Modo Liga, mínimo de jogos no gol, maior nota média no gol).
     const gk = take([...liga.values()].filter((r) => r.kGames >= MIN_KEEPER_GAMES).sort((a, b) => kAvg(b) - kAvg(a) || b.kGames - a.kGames || byName(a, b)));
@@ -5715,7 +5716,7 @@
     box.innerHTML = '<div class="cards-wrap"><a class="pv-back cards-back" href="./" data-cards-back>← Voltar</a>' +
       '<header class="cards-head"><img src="./assets/escudo-skalama-oficial.png" alt="" width="48" height="64"><div><h2 id="cardsTitle">Coleção de cartas <span>Skalama</span></h2><p>Temporada ' + cardYear() + " · Modo Liga e Super Liga</p></div></header>" +
       (nothing ? '<p class="cards-empty">As cartas aparecem depois dos primeiros jogos.</p>' :
-        (specials.length ? '<section class="cards-stage" aria-labelledby="cardsSpTitle"><h3 class="cards-stage-h" id="cardsSpTitle">⭐ Especiais do mês</h3><p class="cards-stage-sub">' + escapeHtml(monthLabel(data.curKey).split(" ")[0]) + (specials.some((x) => x.partial) ? " (parcial)" : "") + " · uma de cada · um jogador só pode ter uma especial</p>" +
+        (specials.length ? '<section class="cards-stage" aria-labelledby="cardsSpTitle"><h3 class="cards-stage-h" id="cardsSpTitle">⭐ Especiais do mês</h3><p class="cards-stage-sub">' + escapeHtml(monthLabel(data.curKey).split(" ")[0]) + (specials.some((x) => x.partial) ? " (parcial)" : "") + " · uma de cada · só o artilheiro pode repetir</p>" +
           spRow(["mes", "art"], kBig, "big") + spRow(["gk", "con"], kSmall, "small") + "</section>" : "") +
         '<section class="cards-sec" aria-labelledby="cardsAllTitle"><h3 class="cards-h" id="cardsAllTitle">Cartas por nota <small>' + data.players.length + (data.players.length === 1 ? " carta" : " cartas") + "</small></h3>" +
         '<div class="cards-filters" role="group" aria-label="Filtrar cartas">' + CARD_FILTERS.map(([key, label]) => '<button type="button" class="cards-filter' + (f === key ? " is-on" : "") + '" data-cards-filter="' + key + '" aria-pressed="' + (f === key) + '">' + label + "</button>").join("") + "</div>" +
@@ -5767,7 +5768,7 @@
     if (!base) return "";
     const sp = base.eligible && cardSpecialOf(slug, data);
     const past = [];
-    for (const m of data.months) if (m.key !== data.curKey) for (const type of CARD_SP_ORDER) if (m.specials[type]?.slug === slug) past.push({ key: m.key, type });
+    for (const m of data.months) for (const type of CARD_SP_ORDER) if (m.specials[type]?.slug === slug && !(m.key === data.curKey && sp && sp.type === type)) past.push({ key: m.key, type });
     return (sp ? '<section class="pf-card" aria-labelledby="pfSeasonTitle"><h3 id="pfSeasonTitle" class="pf-h">CARTA DA TEMPORADA</h3><div class="pf-seasonfit">' + cardHtml(cardInfo(slug, null, data), "none") + "</div></section>" : "") +
       (past.length ? '<section class="pf-card" aria-labelledby="pfSpTitle"><h3 id="pfSpTitle" class="pf-h">CARTAS ESPECIAIS</h3><ul class="pf-ach">' + past.map((x) => '<li><span aria-hidden="true">' + CARD_SP[x.type][1] + "</span><strong>" + CARD_SP[x.type][0] + "</strong><small>" + escapeHtml(monthLabel(x.key)) + "</small></li>").join("") + "</ul></section>" : "");
   }
