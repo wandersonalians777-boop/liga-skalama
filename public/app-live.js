@@ -1612,7 +1612,7 @@
   const DX_SIL = '<svg class="dx-sil" viewBox="0 0 60 60" aria-hidden="true" focusable="false"><circle cx="30" cy="22" r="12"/><path d="M6 60c2-16 12-24 24-24s22 8 24 24Z"/></svg>';
   function dxAvatar(name, team, label, big) {
     const photo = name ? cardPhotoUrl(pSlug(name)) : "", crest = team ? crestFor(team, label) : "";
-    return '<span class="dx-av' + (big ? " is-big" : "") + '" aria-hidden="true"><span class="dx-circle">' + (photo ? '<img class="dx-ph" src="' + escapeHtml(photo) + '" alt="" loading="lazy" decoding="async" width="520" height="475">' : DX_SIL) + "</span>" +
+    return '<span class="dx-av' + (big ? " is-big" : "") + '" aria-hidden="true"><span class="dx-circle">' + (photo ? '<img class="dx-ph" src="' + escapeHtml(photo) + '" alt="" loading="lazy" decoding="async" width="' + (PLAYER_PHOTO_SIZE[photo]?.[0] || 400) + '" height="' + (PLAYER_PHOTO_SIZE[photo]?.[1] || 400) + '">' : DX_SIL) + "</span>" +
       (crest ? '<img class="dx-cr" src="' + escapeHtml(crest) + '" alt="" width="26" height="26">' : "") + "</span>";
   }
   // Card preto de destaque (Jogador/Goleiro da noite, destaques do mês): nome, time, nota grande e números ao lado.
@@ -5251,8 +5251,8 @@
   }
   // Fotos fixas por jogador (arquivos em assets/jogadores/), ligadas pelo slug do nome original (nunca pelo displayName).
   // Valem mesmo com PLAYER_PHOTOS_ENABLED = false; se um dia houver foto pelo banco, a do banco vence.
-  const PLAYER_PHOTO_FILES = { [pSlug("WANDERSON")]: "./assets/jogadores/wanderson.webp" };
-  const PLAYER_PHOTO_SIZE = { "./assets/jogadores/wanderson.webp": [520, 475] };
+  const PLAYER_PHOTO_FILES = { [pSlug("WANDERSON")]: "./assets/jogadores/wanderson.webp", [pSlug("LUÍS FELIPE*")]: "./assets/jogadores/luis-felipe.webp" };
+  const PLAYER_PHOTO_SIZE = { "./assets/jogadores/wanderson.webp": [520, 475], "./assets/jogadores/luis-felipe.webp": [520, 511] };
   function cardPhotoUrl(slug) { return playerPhotoUrl(slug) || PLAYER_PHOTO_FILES[slug] || ""; }
   function playerCurrentTeam(slug) {
     for (const team of state.teams || []) if (lineupForTeam(team.name).some((n) => pSlug(n) === slug)) return teamLabel(team.name);
