@@ -2495,7 +2495,7 @@ body.light-theme .pzp-note{color:#5a5a54}
 @property --skc-ang{syntax:'<angle>';initial-value:0deg;inherits:false}
 /* Carta (prévia v5 aprovada pelo dono). Sem filter no elemento da carta: sombra e brilho são gradientes radiais em ::before/::after. */
 .skc{--f1:#FFF1A8;--f2:#B8860B;--f3:#FFE27A;--b1:#FFE07A;--b2:#E0A800;--b3:#9C7400;--t:#1A1200;--sub:#5C4500;--line:#00000026;--bar:#0B0B0B;--barT:#FFC400;--glow:transparent;--glow2:transparent;--acc:#0B0B0B;--accT:#FFC400;--spc:#fff;--fw:6px;
-  position:relative;isolation:isolate;width:300px;height:490px;flex:none;color:var(--t);font-family:"Inter",system-ui,sans-serif;text-align:left;transition:transform .15s}
+  position:relative;isolation:isolate;width:300px;height:490px;flex:none;color:var(--t);font-family:"Inter",system-ui,sans-serif;text-align:left;transition:translate .15s}
 .skc::before{content:"";position:absolute;z-index:-1;left:6%;right:6%;bottom:-18px;height:90px;border-radius:50%;background:radial-gradient(closest-side,#000000a6,#0000)}
 .skc::after{content:"";position:absolute;z-index:-1;inset:-34px;border-radius:44%;pointer-events:none;background:radial-gradient(closest-side,var(--glow) 0,var(--glow) 55%,#0000 82%),radial-gradient(farthest-side,var(--glow2),#0000 100%)}
 .skc[role]{cursor:pointer}
@@ -2599,10 +2599,10 @@ body.light-theme .pzp-note{color:#5a5a54}
   .skc-spk:nth-of-type(n+5){display:none}
 }
 /* carta escalada dentro da coluna (--k vem da largura real da coluna: cardsFitGrids) */
-.skc-slot{min-width:0;padding:16px 8px 26px;margin:-16px -8px -26px;contain:layout paint;content-visibility:auto;contain-intrinsic-size:auto calc(490px * var(--k,.54) + 42px)}
+.skc-slot{min-width:0;padding:16px 8px 26px;margin:-16px -8px -26px;contain:layout paint;content-visibility:auto;contain-intrinsic-size:auto calc(490px * var(--k,.54))}
 .skc-fit{position:relative;width:100%;height:calc(490px * var(--k,.54))}
 .skc-fit>.skc{position:absolute;left:50%;top:0;transform:translateX(-50%) scale(var(--k,.54));transform-origin:top center}
-.skc-fit>.skc[role]:hover{transform:translateX(-50%) translateY(-4px) scale(var(--k,.54))}
+.skc-fit>.skc[role]:hover{translate:0 -4px} /* a escala (transform) não tem transição: muda na hora quando a coluna muda */
 @media(prefers-reduced-motion:reduce){.skc *,.skc *::after,.skc .skc-in::after{animation:none!important}.skc .skc-shine{opacity:0!important}.skc-spk{opacity:.8!important}.skc,.hk,.hk-go{transition:none}}
 /* página #cartas (sempre escura, nos dois temas) */
 .cards-page{background:#0B0B0B;background-image:radial-gradient(ellipse at 50% -10%,#3b2e00 0,transparent 55%);color:#fff;min-height:100vh}
@@ -2635,7 +2635,7 @@ body.light-theme .pzp-note{color:#5a5a54}
 .cards-sp-big{--k:.52}
 .cards-sp-small{--k:.52;margin-top:30px!important}
 @media(min-width:760px){.cards-sp-big{--k:1.05}.cards-sp-small{--k:.78}}
-.cards-stage .skc-slot{padding:34px 24px 44px;margin:-34px -24px -44px;contain-intrinsic-size:auto calc(490px * var(--k,.52) + 78px)}
+.cards-stage .skc-slot{padding:34px 24px 44px;margin:-34px -24px -44px;contain-intrinsic-size:auto calc(490px * var(--k,.52))}
 .cards-empty{padding:18px;border:1px dashed #3a3a35;border-radius:16px;color:#BDBDB5;text-align:center;font-weight:700}
 .cards-wait{margin:0 0 30px;padding:16px;border:1px solid #2a2a2a;border-radius:16px;background:#161616}
 .cards-wait h3{margin:0;font-size:15px;color:#fff}

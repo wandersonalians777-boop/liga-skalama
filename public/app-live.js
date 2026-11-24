@@ -5576,7 +5576,11 @@
       const k = Math.max(0.3, Math.min(max, w / 300));
       const cls = [...grid.classList].find((c) => c !== "cards-grid") || "cards-grid";
       CARD_K.set(cls + "|" + innerWidth, String(k));
-      if (grid.style.getPropertyValue("--k") !== String(k)) grid.style.setProperty("--k", String(k));
+      if (grid.style.getPropertyValue("--k") !== String(k)) {
+        grid.style.setProperty("--k", String(k));
+        // O Safari às vezes não reaplica a escala herdada da grade: grava também em cada carta.
+        grid.querySelectorAll(".skc-fit,.skc-fit>.skc").forEach((el) => el.style.setProperty("--k", String(k)));
+      }
       }));
     });
     grids.forEach((grid) => ro.observe(grid));
@@ -5668,15 +5672,30 @@
           spRow(["mes", "art"], kBig, "big") + spRow(["gk", "con"], kSmall, "small") + "</section>" : "") +
         '<section class="cards-sec" aria-labelledby="cardsAllTitle"><h3 class="cards-h" id="cardsAllTitle">Cartas por nota <small>' + data.players.length + (data.players.length === 1 ? " carta" : " cartas") + "</small></h3>" +
         '<div class="cards-filters" role="group" aria-label="Filtrar cartas">' + CARD_FILTERS.map(([key, label]) => '<button type="button" class="cards-filter' + (f === key ? " is-on" : "") + '" data-cards-filter="' + key + '" aria-pressed="' + (f === key) + '">' + label + "</button>").join("") + "</div>" +
-        (list.length ? '<div class="cards-grid cards-all" data-kmax="1"' + cardKStyle("cards-all") + ">" + list.map(slot).join("") + "</div>" : '<p class="cards-empty">Nenhuma carta neste filtro.</p>') + "</section>" +
+        cardsListHtml(list, slot) + "</section>" +
         (data.waiting.length ? '<section class="cards-wait" aria-labelledby="cardsWaitTitle"><h3 id="cardsWaitTitle">Ainda sem carta (menos de 3 jogos)</h3><p>A carta aparece depois do 3º jogo oficial (goleiro: 3 jogos no gol).</p><ul>' + data.waiting.map((c) => "<li>" + plink(c.name, displayName(c.name) + " · " + c.games + (c.games === 1 ? " jogo" : " jogos")) + "</li>").join("") + "</ul></section>" : "")) +
       '<section class="cards-legend" aria-label="Como funcionam as cartas"><div><b>🥈 Prata</b>Nota média abaixo de 6,0. A carta de entrada: todo mundo com 3 jogos oficiais ganha uma.</div><div><b>🥇 Ouro (6,0 a 6,9)</b>Dourada clássica, com brilho passando.</div><div><b>💎 Diamante (7,0 a 7,9)</b>Azul gelo com facetas de cristal, moldura girando e estrelinhas.</div><div><b>🔮 Elite (8,0 a 8,9)</b>Roxa: moldura holográfica, brilho roxo forte e reflexo de figurinha rara.</div><div><b>👑 Lendário (9,0+)</b>Preta com coroa, moldura arco-íris girando rápido, fundo em movimento e nome dourado. Raríssima.</div>' +
       '<div><b>⭐ Jogador do mês</b>Maior nota média do mês (mínimo 3 jogos). Ouro vibrante com raios de sol. Carta grande, no topo.</div><div><b>🔥 Artilheiro do mês</b>Mais gols no mês (empate: menos jogos, depois maior nota). Fogo vivo. Carta grande, no topo.</div><div><b>🧤 Goleiro do mês</b>Melhor goleiro do mês (mínimo 3 jogos no gol). Verde.</div><div><b>📈 Constância</b>Menor variação de nota no mês, com 4 jogos ou mais e média 7,0+. Azul Skalama.</div></section></div>';
     cardsAfterRender(box);
   }
+  function cardsListHtml(list, slot) {
+    return list.length ? '<div class="cards-grid cards-all" data-kmax="1"' + cardKStyle("cards-all") + ">" + list.map(slot).join("") + "</div>" : '<p class="cards-empty">Nenhuma carta neste filtro.</p>';
+  }
+  // Trocar o filtro refaz SÓ a lista "Cartas por nota": o palco e os botões não se mexem (nada de a página pular no meio do toque).
+  function renderCardsFilter() {
+    const box = $("cartas"), sec = box?.querySelector(".cards-sec"), old = sec?.querySelector(".cards-all, .cards-empty");
+    if (!old) { box.dataset.key = ""; renderCards(); return; }
+    const data = cardsData(), f = CARDS.filter;
+    const list = data.players.filter((c) => f === "all" || (f === "gk" ? c.keeper : c.tier === f)).map((c) => cardInfo(c.slug, null, data));
+    sec.querySelectorAll("[data-cards-filter]").forEach((b) => { const on = b.dataset.cardsFilter === f; b.classList.toggle("is-on", on); b.setAttribute("aria-pressed", String(on)); });
+    cardsUnobserve(box);
+    old.outerHTML = cardsListHtml(list, (info) => '<div class="skc-slot"><div class="skc-fit">' + cardHtml(info) + "</div></div>");
+    box.dataset.key = CARDS.sig + "|" + f + "|" + officialGames().length;
+    cardsAfterRender(box);
+  }
   document.addEventListener("click", (event) => {
     const f = event.target.closest?.("[data-cards-filter]");
-    if (f) { CARDS.filter = f.dataset.cardsFilter; $("cartas").dataset.key = ""; renderCards(); $("cartas").querySelector('[data-cards-filter="' + CARDS.filter + '"]')?.focus(); return; }
+    if (f) { CARDS.filter = f.dataset.cardsFilter; renderCardsFilter(); return; }
     if (event.target.closest?.("[data-cards-back]")) { event.preventDefault(); cardsClose(); }
   });
   function cardsClose() {
