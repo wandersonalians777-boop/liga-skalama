@@ -2494,16 +2494,19 @@ body.light-theme .pzp-note{color:#5a5a54}
 /* ===== Coleção de cartas Skalama (carta, galeria #cartas, perfil, cards de atalho) ===== */
 @property --skc-ang{syntax:'<angle>';initial-value:0deg;inherits:false}
 .skc{--f1:#FFF1A8;--f2:#B8860B;--f3:#FFE27A;--b1:#FFE07A;--b2:#E0A800;--b3:#9C7400;--t:#1A1200;--sub:#5C4500;--line:#00000026;--bar:#0B0B0B;--barT:#FFC400;--glow:transparent;--acc:#0B0B0B;--accT:#FFC400;
-  position:relative;width:300px;height:490px;flex:none;color:var(--t);font-family:"Inter",system-ui,sans-serif;text-align:left;filter:drop-shadow(0 16px 26px #0009) drop-shadow(0 0 22px var(--glow));transition:transform .15s}
+  position:relative;isolation:isolate;width:300px;height:490px;flex:none;color:var(--t);font-family:"Inter",system-ui,sans-serif;text-align:left;transition:transform .15s}
+/* Sombra e brilho sem filter (o filter com drop-shadow pesava demais no Safari do iPhone): dois pseudo-elementos atrás da carta. */
+.skc::before{content:"";position:absolute;z-index:-1;left:6%;right:6%;bottom:-18px;height:90px;border-radius:50%;background:radial-gradient(closest-side,#000000a6,#0000)}
+.skc::after{content:"";position:absolute;z-index:-1;inset:-22px;border-radius:40%;background:radial-gradient(closest-side,var(--glow),#0000 92%);pointer-events:none}
 .skc[role]{cursor:pointer}
 .skc[role]:focus{outline:none}
 .skc[role]:focus-visible{outline:4px solid #6f8fe8;outline-offset:6px;border-radius:24px}
 .skc-fr,.skc-in{position:absolute;clip-path:polygon(16% 0,84% 0,100% 6%,100% 86%,50% 100%,0 86%,0 6%)}
 .skc-fr{inset:0;background:linear-gradient(135deg,var(--f1),var(--f2) 35%,var(--f3) 55%,var(--f2) 80%,var(--f1))}
 .skc-in{inset:6px;overflow:hidden;background:radial-gradient(circle at 62% 28%,#ffffff66 0,transparent 42%),repeating-linear-gradient(120deg,#ffffff0f 0 2px,transparent 2px 12px),linear-gradient(170deg,var(--b1),var(--b2) 55%,var(--b3))}
-.skc-in::before{content:"";position:absolute;inset:0;background:url("./assets/escudo-skalama-oficial.png") 50% 66%/250px no-repeat;opacity:.08;filter:grayscale(1)}
+.skc-in::before{content:"";position:absolute;inset:0;background:url("./assets/escudo-skalama-cinza.png") 50% 66%/250px no-repeat;opacity:.08}
 .skc-shine{position:absolute;top:-40%;left:-70%;width:55%;height:180%;background:linear-gradient(90deg,transparent,#ffffff50,transparent);transform:rotate(18deg);z-index:5;pointer-events:none;opacity:0}
-.skc.is-on .skc-shine{opacity:1;animation:skc-sh 5.5s ease-in-out infinite}
+.skc.is-anim .skc-shine,.skc[role]:hover .skc-shine,.skc[role]:focus-visible .skc-shine{opacity:1;animation:skc-sh 5.5s ease-in-out infinite}
 @keyframes skc-sh{0%,72%{left:-70%}100%{left:135%}}
 .skc-top{position:absolute;left:22px;top:30px;width:64px;display:flex;flex-direction:column;align-items:center;z-index:3}
 .skc-ovr{font:400 62px/.85 "Anton",sans-serif;letter-spacing:-1px}
@@ -2529,7 +2532,8 @@ body.light-theme .pzp-note{color:#5a5a54}
 .skc-prata{--f1:#fff;--f2:#8E8E88;--f3:#E6E6E2;--b1:#F4F4F1;--b2:#C9C9C4;--b3:#8E8E88;--t:#141414;--sub:#3A3A35}
 .skc-elite{--glow:#FFC40088;--b1:#FFE98F;--b2:#F2B600;--b3:#8F6A00}
 .skc-elite .skc-fr{background:conic-gradient(from var(--skc-ang),#FFF6C8,#FFC400,#FF8A00,#FFF6C8,#7AF0FF,#FFC400,#FFF6C8)}
-.skc-elite.is-on .skc-fr{animation:skc-spin 4s linear infinite}
+.skc-elite.is-anim .skc-fr,.skc-elite[role]:hover .skc-fr,.skc-elite[role]:focus-visible .skc-fr{animation:skc-spin 4s linear infinite}
+@media(pointer:coarse){.skc-elite.is-anim .skc-fr{animation:none}}
 @keyframes skc-spin{to{--skc-ang:360deg}}
 .skc-elite .skc-in{background:radial-gradient(circle at 62% 28%,#fff8 0,transparent 42%),repeating-conic-gradient(from 0deg at 62% 30%,#ffffff1a 0 6deg,transparent 6deg 14deg),linear-gradient(170deg,var(--b1),var(--b2) 55%,var(--b3))}
 .skc-elite .skc-ovr{background:linear-gradient(180deg,#000,#3a2a00);-webkit-background-clip:text;background-clip:text;color:transparent}
@@ -2553,11 +2557,11 @@ body.light-theme .pzp-note{color:#5a5a54}
 .skc-art{--f1:#FFE0B0;--f2:#7A1A0C;--f3:#FF7A1A;--b1:#FF8A2B;--b2:#D9361C;--b3:#6E0F08;--t:#fff;--sub:#FFE0B0;--line:#ffffff2e;--bar:#0B0B0B;--barT:#FFB347;--acc:#0B0B0B;--accT:#FFB347;--ribBg:#0B0B0B;--ribT:#FFB347;--glow:#FF6A0055}
 .skc-con{--f1:#D6E0FF;--f2:#1A2F75;--f3:#7A9BFF;--b1:#3B5FCC;--b2:#23439C;--b3:#0E1D4D;--t:#fff;--sub:#D6E0FF;--line:#ffffff2a;--bar:#0B0B0B;--barT:#7A9BFF;--acc:#0B0B0B;--accT:#7A9BFF;--ribBg:#0B0B0B;--ribT:#7A9BFF;--glow:#4F7BFF55}
 /* carta escalada dentro da coluna */
-.skc-slot{min-width:0}
+.skc-slot{min-width:0;padding:16px 8px 26px;margin:-16px -8px -26px;contain:layout paint style;content-visibility:auto;contain-intrinsic-size:auto calc(490px * var(--k,.54) + 42px)}
 .skc-fit{position:relative;width:100%;height:calc(490px * var(--k,.54))}
 .skc-fit>.skc{position:absolute;left:50%;top:0;transform:translateX(-50%) scale(var(--k,.54));transform-origin:top center}
 .skc-fit>.skc[role]:hover{transform:translateX(-50%) translateY(-4px) scale(var(--k,.54))}
-@media(prefers-reduced-motion:reduce){.skc.is-on .skc-shine{animation:none;opacity:0}.skc-elite.is-on .skc-fr{animation:none}.skc,.hk,.hk-go{transition:none}}
+@media(prefers-reduced-motion:reduce){.skc .skc-shine,.skc.is-anim .skc-shine,.skc[role]:hover .skc-shine{animation:none!important;opacity:0}.skc-elite .skc-fr{animation:none!important}.skc,.hk,.hk-go{transition:none}}
 /* página #cartas (sempre escura, nos dois temas) */
 .cards-page{background:#0B0B0B;background-image:radial-gradient(ellipse at 50% -10%,#3b2e00 0,transparent 55%);color:#fff;min-height:100vh}
 .cards-wrap{max-width:1200px;margin:0 auto;padding:16px 16px 60px}

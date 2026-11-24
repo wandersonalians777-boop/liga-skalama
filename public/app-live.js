@@ -4611,6 +4611,7 @@
   }
   window.addEventListener("hashchange", () => {
     if (/^#jogador\//.test(location.hash)) return;
+    if (location.hash !== "#cartas") cardsUnmount();
     const was = document.body.classList.contains("pv-standalone");
     if (!pvRoute() && was) setView("home");
   });
@@ -5209,6 +5210,12 @@
     const slug = PF.slug, name = pfKnownName(slug);
     const liga = playerData(slug, "liga"), sup = playerData(slug, "super");
     if (!PF.mode) PF.mode = liga.games || !sup.games ? "liga" : "super";
+    // Nada mudou para este jogador: não mexe no DOM (renderAll roda a cada poucos segundos com jogo rolando).
+    cardsData();
+    const pfKey = JSON.stringify([slug, PF.mode, CARDS.sig, name, playerCurrentTeam(slug), shared && !!client, isEditLocked(), playerPhotoUrl(slug), (VOTE.winners || []).length]);
+    if (box.dataset.key === pfKey && box.firstElementChild) return;
+    cardsUnobserve(box);
+    box.dataset.key = pfKey;
     const d = PF.mode === "super" ? sup : liga, total = liga.games + sup.games, isKeeper = liga.keeperGames + sup.keeperGames > total - (liga.keeperGames + sup.keeperGames);
     const photo = playerPhotoUrl(slug), initials = displayName(name || slug).split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
     const first = [liga.first, sup.first].filter(Boolean).sort((a, b) => a - b)[0];
@@ -5245,6 +5252,8 @@
   }
   function openProfile(slug, fromSite) {
     PF.slug = slug; PF.mode = ""; PF.fromSite = fromSite;
+    // Galeria por baixo do perfil para de animar enquanto o perfil está aberto.
+    if ($("cartas")?.firstElementChild) cardsUnobserve($("cartas"));
     PF.lastFocus = PF.lastFocus || document.activeElement;
     const box = $("jogador");
     box.hidden = false; document.body.classList.add("pf-open");
@@ -5256,6 +5265,8 @@
     const box = $("jogador");
     if (!box || box.hidden) return;
     box.hidden = true; PF.slug = ""; document.body.classList.remove("pf-open");
+    cardsUnobserve(box); box.innerHTML = ""; box.dataset.key = "";
+    if (location.hash === "#cartas" && $("cartas")?.firstElementChild) cardsObserve($("cartas"));
     const focus = PF.lastFocus; PF.lastFocus = null;
     if (focus && document.contains(focus)) focus.focus();
   }
@@ -5412,7 +5423,9 @@
   function cardsData() {
     if (!state) return { players: [], waiting: [], cur: {}, months: [], bySlug: new Map() };
     const games = officialGames().slice().sort((a, b) => cardTime(a) - cardTime(b)), winners = cardWinners(), curKey = cardNowMonth();
-    const sig = JSON.stringify([games.length, games.at(-1)?.id, games.at(-1)?.finishedAt, winners.map((w) => w.round_key + w.name), state.scoreRules?.assist, state.roster, curKey, [...DN.map]]);
+    // Assinatura leve de todos os jogos (placar, gols, notas, trocas): qualquer correção num jogo salvo também refaz as cartas.
+    const gamesSig = games.map((g) => g.id + ":" + (g.homeScore || 0) + "-" + (g.awayScore || 0) + ":" + (g.goals || []).length + ":" + (g.substitutions || []).length + ":" + (g.performance || []).reduce((sum, p) => sum + (Number(p.score) || 0) * 7 + (Number(p.goalsFor) || 0) * 3 + (Number(p.assists) || 0) + (Number(p.goalsAgainst) || 0) * 5, 0).toFixed(1)).join("|");
+    const sig = JSON.stringify([gamesSig, winners.map((w) => w.round_key + w.name), state.scoreRules?.assist, state.roster, curKey, [...DN.map]]);
     if (CARDS.sig === sig && CARDS.data) return CARDS.data;
     const rows = new Map();
     for (const game of games) for (const p of gamePerformance(game)) {
@@ -5501,16 +5514,43 @@
       '<div class="skc-ft">' + (info.badge ? "<i>" + escapeHtml(info.badge) + "</i>" : "") + '<span class="skc-tier">' + info.tierText + " · SKALAMA " + cardYear() + "</span></div>" +
       '<div class="skc-shine"></div></div></div>';
   }
-  // Nome nunca cortado: diminui a fonte se não couber na plaquinha. Animação só nas cartas visíveis.
-  let cardObserver = null;
+  // Nome nunca cortado: o tamanho que cabe é medido UMA vez por nome (cache) e reaproveitado.
+  // Animação: no máximo 4 cartas visíveis ao mesmo tempo (classe is-anim). Cada área (galeria, perfil) tem o seu observer,
+  // desligado (disconnect) antes de redesenhar e ao sair da tela: nada de segurar cartas antigas na memória.
+  const CARD_NAME_FIT = new Map(), CARD_OBS = new Map(), CARD_MAX_ANIM = 4;
+  let cardRenders = 0;
+  function cardsUnobserve(root) {
+    const obs = root && CARD_OBS.get(root);
+    if (obs) { obs.disconnect(); CARD_OBS.delete(root); }
+    root?.querySelectorAll(".skc.is-anim").forEach((c) => c.classList.remove("is-anim", "is-on"));
+  }
   function cardsAfterRender(root) {
+    cardRenders++;
     root.querySelectorAll(".skc-nm b").forEach((el) => {
-      let size = parseFloat(el.style.fontSize) || 31, guard = 0;
-      while (el.scrollWidth > el.clientWidth + 0.5 && size > 12 && guard++ < 30) { size -= 1; el.style.fontSize = size + "px"; }
+      const start = parseFloat(el.style.fontSize) || 31, key = el.textContent + "|" + start;
+      let size = CARD_NAME_FIT.get(key);
+      if (size == null) {
+        size = start; let guard = 0;
+        while (el.scrollWidth > el.clientWidth + 0.5 && size > 12 && guard++ < 30) { size -= 1; el.style.fontSize = size + "px"; }
+        CARD_NAME_FIT.set(key, size);
+      }
+      if (size !== start) el.style.fontSize = size + "px";
     });
-    if (!("IntersectionObserver" in window)) { root.querySelectorAll(".skc").forEach((c) => c.classList.add("is-on")); return; }
-    cardObserver = cardObserver || new IntersectionObserver((entries) => entries.forEach((e) => e.target.classList.toggle("is-on", e.isIntersecting)), { rootMargin: "60px" });
-    root.querySelectorAll(".skc").forEach((c) => cardObserver.observe(c));
+    cardsObserve(root);
+  }
+  function cardsObserve(root) {
+    cardsUnobserve(root);
+    const cards = [...root.querySelectorAll(".skc")];
+    if (!cards.length) return;
+    if (!("IntersectionObserver" in window)) { cards.slice(0, CARD_MAX_ANIM).forEach((c) => c.classList.add("is-on", "is-anim")); return; }
+    const visible = new Set();
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach((e) => (e.isIntersecting ? visible.add(e.target) : visible.delete(e.target)));
+      const pick = new Set(cards.filter((c) => visible.has(c)).slice(0, CARD_MAX_ANIM));
+      cards.forEach((c) => { const on = pick.has(c); c.classList.toggle("is-anim", on); c.classList.toggle("is-on", on); });
+    }, { rootMargin: "40px" });
+    cards.forEach((c) => obs.observe(c));
+    CARD_OBS.set(root, obs);
   }
   function cardOpen(slug) { if (slug) location.hash = "#jogador/" + slug; }
   document.addEventListener("click", (event) => {
@@ -5528,6 +5568,11 @@
   });
   // ----- Página "Cartas dos jogadores" -----
   function cardsOpen() { cardLoadWinners(); renderCards(); }
+  function cardsUnmount() {
+    const box = $("cartas");
+    if (!box || !box.firstElementChild) return;
+    cardsUnobserve(box); box.innerHTML = ""; box.dataset.key = "";
+  }
   function cardsRefresh() {
     if (location.hash === "#cartas") renderCards();
     if (PF.slug) renderProfile();
@@ -5538,6 +5583,11 @@
     const box = $("cartas");
     if (!box) return;
     const data = cardsData(), f = CARDS.filter;
+    // Nada mudou (mesmos dados, mesmo filtro): não mexe no DOM.
+    const key = CARDS.sig + "|" + f + "|" + officialGames().length;
+    if (box.dataset.key === key && box.firstElementChild) return;
+    cardsUnobserve(box);
+    box.dataset.key = key;
     const slot = (info) => '<div class="skc-slot"><div class="skc-fit">' + cardHtml(info) + "</div></div>";
     const specials = CARD_SP_ORDER.map((type) => data.cur[type]).filter(Boolean);
     const list = data.players.filter((c) => f === "all" || (f === "gk" ? c.keeper : c.tier === f)).map((c) => cardInfo(c.slug, cardSpecialOf(c.slug, data), data));
@@ -5556,7 +5606,7 @@
   }
   document.addEventListener("click", (event) => {
     const f = event.target.closest?.("[data-cards-filter]");
-    if (f) { CARDS.filter = f.dataset.cardsFilter; renderCards(); $("cartas").querySelector('[data-cards-filter="' + CARDS.filter + '"]')?.focus(); return; }
+    if (f) { CARDS.filter = f.dataset.cardsFilter; $("cartas").dataset.key = ""; renderCards(); $("cartas").querySelector('[data-cards-filter="' + CARDS.filter + '"]')?.focus(); return; }
     if (event.target.closest?.("[data-cards-back]")) { event.preventDefault(); cardsClose(); }
   });
   function cardsClose() {
