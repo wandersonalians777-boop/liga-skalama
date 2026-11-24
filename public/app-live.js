@@ -11,7 +11,7 @@
   // Cadastro do Elenco: até 80 nomes; só os ativos (até 32) entram no sorteio.
   const ROSTER_MAX = 80,
     ACTIVE_MAX = 32;
-  const SCORE_RULES = Object.freeze({ assist: 0.5 });
+  const SCORE_RULES = Object.freeze({ assist: 0.6 });
   // Mínimo de jogos no gol para entrar em qualquer estatística de goleiro (rankings, mês, noite e Super Liga).
   const MIN_KEEPER_GAMES = 3;
   const startersFor = (total) => total >= 16 ? Math.min(20, total) : Math.floor(Math.max(total, MIN_PLAYERS) / 5) * 5;
@@ -1473,17 +1473,43 @@
     }
     return current;
   }
-  // Score individual com a regra nova: cada goleiro fica só com os gols sofridos enquanto estava no gol,
-  // e quem foi para o gol em parte do jogo conta como goleiro naquele jogo. Os dados salvos não são alterados.
-  const perfCache = new WeakMap();
-  function gamePerformance(game) {
-    if (!game) return [];
-    const stored = game.performance || [];
-    if (!stored.length) return stored;
-    const cached = perfCache.get(game);
-    if (cached) return cached;
-    const assist = Math.max(0, Number(state?.scoreRules?.assist ?? SCORE_RULES.assist)),
-      rows = stored.map((row) => ({ ...row }));
+  // ---------- Nota de cada jogo (score), fórmula aprovada pelo dono ----------
+  // Base 6,5 · resultado: vitória +1,5 · vitória nos pênaltis +1,0 · empate +0,5 · derrota nos pênaltis +0,5 · derrota −1,0
+  // Gols: +1,0 por gol até o 3º, +0,5 do 4º em diante · Assistência: +0,6 cada (state.scoreRules.assist manda, se existir)
+  // Linha: time sem sofrer gol +0,3; cada gol sofrido pelo time −0,25 (no máximo −1,0)
+  // Goleiro (quem estava no gol: keeperSpells/keeperAtGoal): sem sofrer gol +1,5; cada gol sofrido −0,75 (no máximo −2,25)
+  // Gol contra −2,0 cada · Advertência (verbal, amarelo ou vermelho) −1,0 cada · Resultado entre 0 e 10, uma casa decimal.
+  const scoreAssist = () => Math.max(0, Number(state?.scoreRules?.assist ?? SCORE_RULES.assist));
+  function scoreFor(row, ctx) {
+    const scored = Number(row.goalsFor) || 0, assists = Number(row.assists) || 0, own = Number(row.ownGoals) || 0;
+    const result = { win: 1.5, penWin: 1.0, draw: 0.5, penLoss: 0.5, loss: -1.0 }[ctx.results[row.team]] ?? 0;
+    const goals = Math.min(scored, 3) * 1.0 + Math.max(0, scored - 3) * 0.5;
+    const conceded = row.role === "goleiro" ? Number(row.goalsAgainst) || 0 : ctx.against[row.team] || 0;
+    const defense = row.role === "goleiro" ? (conceded ? -Math.min(0.75 * conceded, 2.25) : 1.5) : conceded ? -Math.min(0.25 * conceded, 1.0) : 0.3;
+    const warnings = ctx.warnings.get(playerKey(row.player)) || 0;
+    const raw = 6.5 + result + goals + assists * ctx.assist + defense - 2.0 * own - 1.0 * warnings;
+    return Math.round(Math.max(0, Math.min(10, raw)) * 10 + 1e-9) / 10;
+  }
+  // Contexto do jogo: resultado de cada time (pênaltis = placar igual e winner = um dos times, como em penaltySummary),
+  // gols sofridos por time e advertências de cada jogador NESTE jogo.
+  function scoreContext(game) {
+    const hs = Number(game.homeScore) || 0, as = Number(game.awayScore) || 0, results = {}, against = { [game.home]: as, [game.away]: hs };
+    const pens = hs === as && game.winner && game.winner !== "Empate" && (game.winner === game.home || game.winner === game.away);
+    for (const [team, gf, ga] of [[game.home, hs, as], [game.away, as, hs]]) {
+      results[team] = pens ? (game.winner === team ? "penWin" : "penLoss") : gf > ga ? "win" : gf < ga ? "loss" : "draw";
+    }
+    const warnings = new Map();
+    for (const item of game.incidents || []) {
+      if (item.type !== "warning" || !item.player || (item.gameId && game.id && item.gameId !== game.id)) continue;
+      const key = playerKey(item.player);
+      warnings.set(key, (warnings.get(key) || 0) + 1);
+    }
+    return { results, against, warnings, assist: scoreAssist() };
+  }
+  // Recalcula as notas de um jogo (salvo ou recém-encerrado) sem alterar os dados gravados: goleiro = quem estava no gol
+  // (cada um só com os gols sofridos enquanto estava lá; quem foi ao gol em parte do jogo conta como goleiro nesse jogo).
+  function scoreRows(game, stored) {
+    const rows = stored.map((row) => ({ ...row })), ctx = scoreContext(game);
     for (const side of ["home", "away"]) {
       const team = game[side], other = game[side === "home" ? "away" : "home"], spells = keeperSpells(game, side);
       if (!spells.length) continue;
@@ -1495,29 +1521,40 @@
       }
       for (const row of rows) {
         if (row.team !== team || !against.has(row.player)) continue;
-        const goalsAgainst = against.get(row.player);
-        if (row.role === "goleiro" && Number(row.goalsAgainst) === goalsAgainst) continue;
-        const delta = row.result === "vitória" ? 1.5 : row.result === "derrota" ? -1.5 : 0.5;
         row.role = "goleiro";
-        row.goalsAgainst = goalsAgainst;
-        row.score = Number(Math.max(0, Math.min(10, 7 + delta + (Number(row.goalsFor) || 0) + (Number(row.assists) || 0) * assist - 1.5 * Math.min(goalsAgainst, 2) - 2 * (Number(row.ownGoals) || 0))).toFixed(1));
+        row.goalsAgainst = against.get(row.player);
       }
     }
-    perfCache.set(game, rows);
+    for (const row of rows) {
+      if (row.role !== "goleiro") row.goalsAgainst = ctx.against[row.team] || 0;
+      row.score = scoreFor(row, ctx);
+    }
     return rows;
   }
-  function performanceForGame(game, homeScore, awayScore, gameGoals) {
-    const stats = [], assistPoints = Math.max(0, Number(state.scoreRules?.assist ?? SCORE_RULES.assist));
+  // Todas as telas leem a nota daqui (nunca de game.performance[].score direto). Cache por jogo.
+  const perfCache = new WeakMap();
+  function gamePerformance(game) {
+    if (!game) return [];
+    const stored = game.performance || [];
+    if (!stored.length) return stored;
+    const cached = perfCache.get(game);
+    if (cached && cached.assist === scoreAssist()) return cached.rows;
+    const rows = scoreRows(game, stored);
+    perfCache.set(game, { rows, assist: scoreAssist() });
+    return rows;
+  }
+  function performanceForGame(game, homeScore, awayScore, gameGoals, winner, incidents) {
+    const stats = [];
     for (const team of [game.home, game.away].filter(Boolean).map((name) => ({ name }))) {
       const isHome = team.name === game.home, teamPlayers = [...new Set([...((isHome ? game.homeStart : game.awayStart) || []), ...lineupForTeam(team.name, game), ...(game.substitutions || []).filter((item) => item.team === team.name).map((item) => item.in)])], goalsFor = isHome ? homeScore : awayScore, goalsAgainst = isHome ? awayScore : homeScore;
-      const result = goalsFor > goalsAgainst ? "vitória" : goalsFor < goalsAgainst ? "derrota" : "empate", delta = result === "vitória" ? 1.5 : result === "derrota" ? -1.5 : 0.5, goalie = isHome ? game.homeKeeper : game.awayKeeper;
+      const result = goalsFor > goalsAgainst ? "vitória" : goalsFor < goalsAgainst ? "derrota" : "empate", goalie = isHome ? game.homeKeeper : game.awayKeeper;
       for (const player of teamPlayers) {
         const isKeeper = player === goalie || player === (isHome ? game.homeKeeperStart : game.awayKeeperStart), scored = gameGoals.filter((goal) => goal.player === player && !goal.ownGoal).length, ownGoals = gameGoals.filter((goal) => goal.player === player && goal.ownGoal).length, assists = gameGoals.filter((goal) => (goal.assistedBy || goal.assisted_by) === player).length;
-        const score = Math.max(0, Math.min(10, 7 + delta + (isKeeper ? scored : Math.min(scored, 2)) + assists * assistPoints - (isKeeper ? 1.5 * Math.min(goalsAgainst, 2) : 0.5 * goalsAgainst) - 2 * ownGoals));
-        stats.push({ player, team: team.name, role: isKeeper ? "goleiro" : "linha", score: Number(score.toFixed(1)), result, goalsFor: scored, assists, goalsAgainst, ownGoals });
+        stats.push({ player, team: team.name, role: isKeeper ? "goleiro" : "linha", score: 0, result, goalsFor: scored, assists, goalsAgainst, ownGoals });
       }
     }
-    return stats;
+    // A nota sai da mesma conta usada na leitura (scoreRows), com o resultado, os gols e as advertências deste jogo.
+    return scoreRows({ ...game, homeScore, awayScore, winner, goals: gameGoals, incidents: incidents || [] }, stats);
   }
   function standingsForGames(games, teamMeta = new Map()) {
     const rows = new Map(), seen = new Set();
@@ -5074,12 +5111,22 @@
     const w = VTA.data?.winner;
     return head + '<p class="lv-vote-text">' + (w?.name ? "Craque da noite: <b>" + escapeHtml(displayName(w.name)) + "</b> (" + w.votes + (w.votes === 1 ? " voto" : " votos") + ")" : "Votação encerrada sem votos.") + '</p><a class="lv-btn lv-white" href="#votacao">Ver resultado</a>';
   }
+  // Médias da noite pela nota atual (gamePerformance), no formato de nome do banco (norm_name): desempate da votação.
+  function nightScoreAvgs(key) {
+    const sum = {};
+    officialGames().filter((game) => nightKeyOf(game) === key).forEach((game) => gamePerformance(game).forEach((row) => {
+      const name = String(row.player || "").replace(/\*+\s*$/, "").trim().toUpperCase();
+      if (!name || !Number.isFinite(Number(row.score))) return;
+      (sum[name] = sum[name] || []).push(Number(row.score));
+    }));
+    return Object.fromEntries(Object.entries(sum).map(([name, list]) => [name, Math.round((list.reduce((a, b) => a + b, 0) / list.length) * 100) / 100]));
+  }
   async function lvVoteAction(kind) {
     const key = lvVoteKey();
     if (kind === "link") { try { await navigator.clipboard.writeText(location.origin + "/#votacao"); notify("Link da votação copiado."); } catch { notify("Link: " + location.origin + "/#votacao"); } return; }
     if (kind === "open") {
       if (!(await askConfirm({ title: "Abrir a votação do craque da noite?", message: "Fica aberta por 24 horas. Só vota quem jogou pelo menos um jogo oficial nessa noite, com nome e PIN.", confirmText: "Abrir votação", tone: "green" }))) return;
-      const r = await pvRpc("vote_admin_open", { p_key: key });
+      const r = await pvRpc("vote_admin_open", { p_key: key, p_avgs: nightScoreAvgs(key) });
       if (r.ok) { VTA.data = r.view; VTA.at = Date.now(); VOTE.homeAt = 0; renderNightVoteCard(); notify("Votação aberta! Mande o link no grupo."); } else notify(r.error === "no_games" ? "Não há jogos oficiais suficientes nessa noite para votar." : pvError(r), true);
     } else if (kind === "close") {
       if (!(await askConfirm({ title: "Fechar a votação agora?", message: "O resultado aparece na hora e ninguém mais vota.", confirmText: "Fechar votação", tone: "red" }))) return;
@@ -5892,7 +5939,7 @@
     if (document.activeElement !== $("startTime"))
       $("startTime").value = state.startTime || "";
     if (document.activeElement !== $("assistScoreRule")) $("assistScoreRule").value = String(Number(state.scoreRules?.assist ?? SCORE_RULES.assist));
-    document.querySelectorAll(".assist-rule-display").forEach((node) => { node.textContent = "+" + Number(state.scoreRules?.assist ?? SCORE_RULES.assist).toFixed(1); });
+    document.querySelectorAll(".assist-rule-display").forEach((node) => { node.textContent = "+" + Number(state.scoreRules?.assist ?? SCORE_RULES.assist).toFixed(1).replace(".", ","); });
     renderRoster();
     renderTeams();
     renderFixtures();
@@ -7324,6 +7371,8 @@
         homeScore,
         awayScore,
         gameGoals,
+        winner,
+        state.incidents || [],
       ),
       durationSeconds = Math.floor(timerElapsed()),
       entry = {

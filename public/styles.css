@@ -2714,3 +2714,8 @@ body:not(.light-theme) .hk-rules .hk-go{background:#FFC400;color:#0D0D0D}
 body .home-link.hk-hall{border-color:#2a2a2a;background:radial-gradient(circle at 100% 0,#4a3a00 0,transparent 60%),#0D0D0D;color:#fff}
 body .home-link.hk-cards{background:linear-gradient(135deg,#FFD84D,#FFC400 55%,#E0A800);color:#0D0D0D}
 .hk-fan{right:62px;bottom:6px}
+/* Como o score é calculado (fórmula nova) */
+.score-rules p,.score-rules-list{font-size:12px!important;line-height:1.6}
+.score-rules-list{margin:6px 0 0;padding-left:18px;color:var(--muted)}
+.score-rules-list li+li{margin-top:2px}
+.score-rules-list b,.score-rules p b{color:var(--ink)}
