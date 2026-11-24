@@ -1474,7 +1474,9 @@
     return current;
   }
   // ---------- Nota de cada jogo (score), fórmula aprovada pelo dono ----------
-  // Base 6,5 · resultado: vitória +1,5 · vitória nos pênaltis +1,0 · empate +0,5 · derrota nos pênaltis +0,5 · derrota −1,0
+  // Base 6,5 · resultado: vitória +1,5 · vitória nos pênaltis +1,0 · empate +0,5 · derrota: −castigo (nunca dá ponto)
+  // Castigo da derrota: 0,5 (por 1 gol ou nos pênaltis) ou 1,0 (por 2+); linha: −0,5 por gol e por assistência dele;
+  // goleiro: −0,5 se sofreu no máximo 1 gol na vez dele; o castigo nunca fica abaixo de 0.
   // Gols: +1,0 por gol até o 3º, +0,5 do 4º em diante · Assistência: +0,6 cada (state.scoreRules.assist manda, se existir)
   // Linha: time sem sofrer gol +0,3; cada gol sofrido pelo time −0,25 (no máximo −1,0)
   // Goleiro (quem estava no gol: keeperSpells/keeperAtGoal): sem sofrer gol +1,5; cada gol sofrido −0,75 (no máximo −2,25)
@@ -1482,9 +1484,15 @@
   const scoreAssist = () => Math.max(0, Number(state?.scoreRules?.assist ?? SCORE_RULES.assist));
   function scoreFor(row, ctx) {
     const scored = Number(row.goalsFor) || 0, assists = Number(row.assists) || 0, own = Number(row.ownGoals) || 0;
-    const result = { win: 1.5, penWin: 1.0, draw: 0.5, penLoss: 0.5, loss: -1.0 }[ctx.results[row.team]] ?? 0;
-    const goals = Math.min(scored, 3) * 1.0 + Math.max(0, scored - 3) * 0.5;
+    const kind = ctx.results[row.team];
     const conceded = row.role === "goleiro" ? Number(row.goalsAgainst) || 0 : ctx.against[row.team] || 0;
+    let result = { win: 1.5, penWin: 1.0, draw: 0.5 }[kind] ?? 0;
+    if (kind === "loss" || kind === "penLoss") {
+      let penalty = kind === "penLoss" || (ctx.margin[row.team] || 0) <= 1 ? 0.5 : 1.0;
+      penalty -= row.role === "goleiro" ? (conceded <= 1 ? 0.5 : 0) : 0.5 * (scored + assists);
+      result = -Math.max(0, penalty);
+    }
+    const goals = Math.min(scored, 3) * 1.0 + Math.max(0, scored - 3) * 0.5;
     const defense = row.role === "goleiro" ? (conceded ? -Math.min(0.75 * conceded, 2.25) : 1.5) : conceded ? -Math.min(0.25 * conceded, 1.0) : 0.3;
     const warnings = ctx.warnings.get(playerKey(row.player)) || 0;
     const raw = 6.5 + result + goals + assists * ctx.assist + defense - 2.0 * own - 1.0 * warnings;
@@ -1504,7 +1512,7 @@
       const key = playerKey(item.player);
       warnings.set(key, (warnings.get(key) || 0) + 1);
     }
-    return { results, against, warnings, assist: scoreAssist() };
+    return { results, against, margin: { [game.home]: Math.abs(hs - as), [game.away]: Math.abs(hs - as) }, warnings, assist: scoreAssist() };
   }
   // Recalcula as notas de um jogo (salvo ou recém-encerrado) sem alterar os dados gravados: goleiro = quem estava no gol
   // (cada um só com os gols sofridos enquanto estava lá; quem foi ao gol em parte do jogo conta como goleiro nesse jogo).
