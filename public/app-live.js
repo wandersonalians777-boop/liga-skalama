@@ -20,7 +20,10 @@
   // para não quebrar histórico, gols e escalações já salvos.
   const DEFAULT_TEAM_LABELS = { "Time Verde": "Time Lobo" };
   const defaultTeamLabel = (name) => DEFAULT_TEAM_LABELS[name] || name;
-  const teamLabel = (name) => superTeam(name)?.name || state?.teamLabels?.[name] || defaultTeamLabel(name);
+  // Nome do time como foi gravado (para gravar de novo) e como aparece na tela (sem ponto(s) no fim: "LUÍS FELIPE." → "LUÍS FELIPE").
+  const teamLabelRaw = (name) => superTeam(name)?.name || state?.teamLabels?.[name] || defaultTeamLabel(name);
+  const teamDisplayName = (label) => { const raw = String(label || ""), clean = raw.replace(/[\s.]*\.+\s*$/, "").trim(); return clean || raw; };
+  const teamLabel = (name) => teamDisplayName(teamLabelRaw(name));
   // Super Liga: até 8 times, cada um com uma cor (as 4 do site e mais 4).
   const SUPER_COLORS = [
     ...teamColors,
@@ -601,7 +604,7 @@
     const name = game && game[side];
     if (!name) return "";
     if (superTeam(name)) return superTeam(name).name;
-    return game.roundId && game.roundId === state.roundId ? teamLabel(name) : (game[side + "Label"] || teamLabel(name));
+    return game.roundId && game.roundId === state.roundId ? teamLabel(name) : teamDisplayName(game[side + "Label"] || teamLabel(name));
   }
   // Converte o nome interno do time ("Time Sol") no apelido exibido daquela partida.
   function renderLoanControls() {
@@ -1584,9 +1587,45 @@
     }
     return [...rows.values()].map((row) => ({ ...row, gd: row.gf - row.ga })).sort((a,b) => b.points-a.points || b.gd-a.gd || b.gf-a.gf || a.label.localeCompare(b.label,'pt-BR'));
   }
+  // Classificação (Tela principal, Rodadas anteriores e Super Liga): uma linha-cartão por time (prévia aprovada pelo dono).
   function standingsTable(rows, emptyText) {
     if (!rows.length) return '<p class="empty-state">' + emptyText + '</p>';
-    return '<div class="table-scroll"><table class="standings-table"><thead><tr><th>#</th><th>Time</th><th>Pts</th><th>V</th><th>E</th><th>D</th><th>J</th><th>SG</th></tr></thead><tbody>' + rows.map((row,index) => '<tr class="' + (index < 3 ? 'standings-top standings-top-' + (index+1) : '') + '"><td>' + (index+1) + '</td><th><span class="st-team">' + hxCrest(row.name, row.label, "sm") + '<span>' + escapeHtml(row.label) + '</span></span></th><td>' + row.points + '</td><td>' + row.wins + '</td><td>' + row.draws + '</td><td>' + row.losses + '</td><td>' + row.played + '</td><td>' + (row.gd > 0 ? '+' : '') + row.gd + '</td></tr>').join('') + '</tbody></table></div>';
+    const pill = (cls, n, word) => '<i class="' + cls + '">' + n + '<span class="sr-only"> ' + word + "</span></i>";
+    const sg = (gd) => '<span class="stx-sg' + (gd > 0 ? " is-pos" : gd < 0 ? " is-neg" : "") + '" role="cell">' + (gd > 0 ? "+" + gd : gd < 0 ? "−" + Math.abs(gd) : "0") + "</span>";
+    return '<div class="stx" role="table" aria-label="Classificação"><div class="stx-hd" role="row"><span role="columnheader">#</span><span role="columnheader">TIME</span><span role="columnheader"><abbr title="jogos">J</abbr></span><span role="columnheader">PTS</span><span role="columnheader">V · E · D</span><span role="columnheader">SG</span></div>' +
+      rows.map((row, index) => { const label = teamDisplayName(row.label); return '<div class="stx-tr' + (index === 0 ? " is-lead" : "") + '" role="row"><span class="stx-pos" role="cell">' + (index + 1) + '</span><span class="stx-tm" role="cell">' + hxCrest(row.name, row.label, "sm") + '<span class="stx-tx"><b class="stx-nm dx-fit">' + escapeHtml(label) + "</b>" + (index === 0 ? '<small>👑 líder</small>' : "") + '</span></span><span class="stx-j" role="cell">' + row.played + '</span><span class="stx-pts" role="cell">' + row.points + '</span><span class="stx-ved" role="cell">' + pill("v", row.wins, row.wins === 1 ? "vitória" : "vitórias") + pill("e", row.draws, row.draws === 1 ? "empate" : "empates") + pill("d", row.losses, row.losses === 1 ? "derrota" : "derrotas") + "</span>" + sg(row.gd) + "</div>"; }).join("") +
+      '</div><p class="stx-leg">J = jogos · verde = vitórias · cinza = empates · vermelho = derrotas</p>';
+  }
+  // Nomes numa linha só: diminui a fonte até caber (nunca corta, nunca reticências).
+  function dxFit(root = document) {
+    root.querySelectorAll?.(".dx-fit").forEach((el) => {
+      if (!el.offsetParent) return;
+      el.style.fontSize = "";
+      let size = parseFloat(getComputedStyle(el).fontSize), guard = 0;
+      while (el.scrollWidth > el.clientWidth + 0.5 && size > 10 && guard++ < 60) { size -= 0.5; el.style.fontSize = size + "px"; }
+    });
+  }
+  window.addEventListener("resize", () => dxFit());
+  document.addEventListener("click", (event) => { if (event.target.closest?.('[role="tab"], summary')) requestAnimationFrame(() => requestAnimationFrame(() => dxFit())); });
+  document.addEventListener("toggle", () => requestAnimationFrame(() => dxFit()), true);
+  // Avatar redondo dos destaques: foto fixa do jogador (PLAYER_PHOTO_FILES) ou silhueta, com o escudo do time no canto.
+  const DX_SIL = '<svg class="dx-sil" viewBox="0 0 60 60" aria-hidden="true" focusable="false"><circle cx="30" cy="22" r="12"/><path d="M6 60c2-16 12-24 24-24s22 8 24 24Z"/></svg>';
+  function dxAvatar(name, team, label, big) {
+    const photo = name ? cardPhotoUrl(pSlug(name)) : "", crest = team ? crestFor(team, label) : "";
+    return '<span class="dx-av' + (big ? " is-big" : "") + '" aria-hidden="true"><span class="dx-circle">' + (photo ? '<img class="dx-ph" src="' + escapeHtml(photo) + '" alt="" loading="lazy" decoding="async" width="520" height="475">' : DX_SIL) + "</span>" +
+      (crest ? '<img class="dx-cr" src="' + escapeHtml(crest) + '" alt="" width="26" height="26">' : "") + "</span>";
+  }
+  // Card preto de destaque (Jogador/Goleiro da noite, destaques do mês): nome, time, nota grande e números ao lado.
+  function dxMini(kicker, rows, big, lines, wide) {
+    const first = rows[0], names = rows.map((r) => displayName(r.player)).join(" · ");
+    const who = first ? '<a class="dx-who" href="#jogador/' + pSlug(first.player) + '" aria-label="' + escapeHtml("Abrir a carta de " + names) + '">' + dxAvatar(first.player, first.team, first.label) + '<span class="dx-nm dx-fit">' + escapeHtml(names) + "</span></a>" + (first.label ? '<p class="dx-team">time ' + escapeHtml(teamDisplayName(first.label)) + "</p>" : "") : "";
+    return '<article class="dx-mini' + (wide ? " is-wide" : "") + '"><p class="dx-k">' + escapeHtml(kicker) + "</p>" + (first ? who + '<div class="dx-sc"><b>' + escapeHtml(big) + "</b><span>" + lines.map(([n, w]) => "<strong>" + escapeHtml(String(n)) + "</strong> " + escapeHtml(w)).join("<br>") + "</span></div>" : '<p class="dx-empty">' + escapeHtml(lines) + "</p>") + "</article>";
+  }
+  // Time de um jogador num conjunto de jogos: o da última partida dele.
+  function dxTeamOf(games, player) {
+    let out = null;
+    for (const game of games) for (const p of gamePerformance(game)) if (p.player === player) out = { team: p.team, label: gameTeamLabel(game, p.team === game.home ? "home" : "away") };
+    return out || {};
   }
   function renderStandings() {
     const roundId = state.roundId || state.currentGame?.roundId;
@@ -1710,6 +1749,8 @@
           .join("")
       : '<p class="empty-state">' + (keepers.length ? "Entra no ranking quem tiver " + MIN_KEEPER_GAMES + " jogos ou mais no gol." : "Os gols sofridos aparecem após os jogos.") + "</p>";
   }
+  let NIGHT_LEADERS = [];
+  const DX_HTML = new WeakMap();
   function renderNightHighlights() {
     const roundId = state.roundId || state.currentGame?.roundId,
       games = roundId
@@ -1725,7 +1766,7 @@
         games.length +
         " " +
         (games.length === 1 ? "partida concluída" : "partidas concluídas") +
-        " nesta rodada.";
+        " nesta rodada · toque no jogador para ver a carta";
     const totals = new Map();
     for (const game of games)
       for (const player of gamePerformance(game)) {
@@ -1766,39 +1807,19 @@
     };
     const player = leaders("linha"),
       goalie = leaders("goleiro");
-    const paint = (result, nameId, statsId, type) => {
+    const paint = (result, type) => {
+      const keeper = type === "keeper", kicker = keeper ? "GOLEIRO DA NOITE" : "JOGADOR DA NOITE";
       if (!result) {
-        const keeperShort = type === "keeper" && games.length && [...totals.values()].some((row) => row.role === "goleiro");
-        $(nameId).textContent = keeperShort
-          ? "Ainda sem goleiro elegível"
-          : games.length
-          ? "Sem dados individuais"
-          : "Aguardando jogos";
-        $(statsId).textContent = keeperShort
-          ? "É preciso ter pelo menos " + MIN_KEEPER_GAMES + " jogos no gol para entrar no destaque."
-          : games.length
-          ? "Não há score registrado para esta posição."
-          : "O score será calculado após as partidas.";
-        return;
+        const keeperShort = keeper && games.length && [...totals.values()].some((row) => row.role === "goleiro");
+        return dxMini(kicker, [], "", keeperShort ? "É preciso ter pelo menos " + MIN_KEEPER_GAMES + " jogos no gol para entrar no destaque." : games.length ? "Não há score registrado para esta posição." : "O score será calculado após as partidas.");
       }
-      $(nameId).innerHTML = result.rows
-        .map((row) => plink(row.player))
-        .join(" · ");
-      const row = result.rows[0],
-        score = row.average.toFixed(1).replace(".", ",");
-      $(statsId).textContent =
-        "Score médio " +
-        score +
-        " · " +
-        row.games +
-        " " +
-        (row.games === 1 ? "jogo" : "jogos") +
-        (type === "keeper"
-          ? " · " + row.conceded + (row.conceded === 1 ? " gol sofrido" : " gols sofridos")
-          : " · " + row.goals + (row.goals === 1 ? " gol" : " gols"));
+      const rows = result.rows.map((row) => ({ ...row, ...dxTeamOf(games, row.player) })), row = rows[0];
+      return dxMini(kicker, rows, fmt1(row.average), [[row.games, row.games === 1 ? "jogo" : "jogos"], keeper ? [row.conceded, row.conceded === 1 ? "sofrido" : "sofridos"] : [row.goals, row.goals === 1 ? "gol" : "gols"]]);
     };
-    paint(player, "nightPlayerLeader", "nightPlayerStats", "player");
-    paint(goalie, "nightKeeperLeader", "nightKeeperStats", "keeper");
+    NIGHT_LEADERS = [...(player?.rows || []), ...(goalie?.rows || [])].map((row) => pSlug(row.player));
+    const duo = $("nightDuo"), html = paint(player, "player") + paint(goalie, "keeper");
+    if (duo && DX_HTML.get(duo) !== html) { DX_HTML.set(duo, html); duo.innerHTML = html; dxFit(duo); }
+    renderNightVoteCard();
   }
   function renderSeasonHighlights() {
     const now = new Date(),
@@ -1863,54 +1884,20 @@
           (a, b) =>
             b.average - a.average || a.player.localeCompare(b.player, "pt-BR"),
         );
-    const goalLeaders = goalRows.length
-      ? goalRows
-          .filter((row) => row[1] === goalRows[0][1])
-          .map((row) => plink(row[0]))
-          .join(" · ")
-      : "—";
-    const scoreLeaders = (rows) =>
-      rows.length
-        ? rows
-            .filter((row) => row.average === rows[0].average)
-            .map((row) => plink(row.player))
-            .join(" · ")
-        : "—";
-    const scorerValue = goalRows.length
-      ? goalRows[0][1] + " " + (goalRows[0][1] === 1 ? "gol" : "gols")
-      : "Sem gols no mês";
-    const lineValue = lineRows.length
-      ? lineRows[0].average.toFixed(1).replace(".", ",") +
-        " · " +
-        lineRows[0].games +
-        " " +
-        (lineRows[0].games === 1 ? "jogo" : "jogos")
-      : "Sem score registrado";
-    const keeperValue = keeperRows.length
-      ? keeperRows[0].average.toFixed(1).replace(".", ",") +
-        " · " +
-        keeperRows[0].games +
-        " " +
-        (keeperRows[0].games === 1 ? "jogo" : "jogos")
-      : "Nenhum goleiro com " + MIN_KEEPER_GAMES + " jogos ou mais";
-    $("seasonHighlights").innerHTML = games.length
-      ? '<article class="season-highlight-card season-scorer"><span class="season-kicker">ARTILHEIRO DO MÊS</span><strong>' +
-        goalLeaders +
-        "</strong><small>" +
-        scorerValue +
-        '</small></article><article class="season-highlight-card season-line"><span class="season-kicker">DESTAQUE DE LINHA · SCORE MÉDIO</span><strong>' +
-        scoreLeaders(lineRows) +
-        "</strong><small>" +
-        lineValue +
-        '</small></article><article class="season-highlight-card season-keeper"><span class="season-kicker">GOLEIRO DO MÊS · SCORE MÉDIO</span><strong>' +
-        scoreLeaders(keeperRows) +
-        "</strong><small>" +
-        keeperValue +
-        (keeperRows.length
-          ? " · " + keeperRows[0].conceded + (keeperRows[0].conceded === 1 ? " gol sofrido" : " gols sofridos")
-          : "") +
-        "</small></article>"
+    // Mesmo estilo dos destaques da noite: cards pretos com nota/gols grandes em amarelo, avatar e escudo do time.
+    const gamesOf = (player) => [...scores.values()].filter((row) => row.player === player).reduce((sum, row) => sum + row.games, 0);
+    const lead = (rows) => rows.length ? rows.filter((row) => row.average === rows[0].average).map((row) => ({ ...row, ...dxTeamOf(games, row.player) })) : [];
+    const scorers = goalRows.length ? goalRows.filter((row) => row[1] === goalRows[0][1]).map(([player, n]) => ({ player, n, ...dxTeamOf(games, player) })) : [];
+    const lineLead = lead(lineRows), keeperLead = lead(keeperRows);
+    const html = games.length
+      ? '<div class="dx-duo">' +
+        dxMini("ARTILHEIRO DO MÊS", scorers, scorers.length ? String(scorers[0].n) : "", scorers.length ? [["", scorers[0].n === 1 ? "gol no mês" : "gols no mês"], [gamesOf(scorers[0].player), gamesOf(scorers[0].player) === 1 ? "jogo" : "jogos"]] : "Sem gols no mês.") +
+        dxMini("DESTAQUE DE LINHA", lineLead, lineLead.length ? fmt1(lineLead[0].average) : "", lineLead.length ? [[lineLead[0].games, lineLead[0].games === 1 ? "jogo" : "jogos"], [goalsByPlayer.get(lineLead[0].player) || 0, (goalsByPlayer.get(lineLead[0].player) || 0) === 1 ? "gol" : "gols"]] : "Sem score registrado.") +
+        "</div>" +
+        dxMini("GOLEIRO DO MÊS", keeperLead, keeperLead.length ? fmt1(keeperLead[0].average) : "", keeperLead.length ? [[keeperLead[0].games, keeperLead[0].games === 1 ? "jogo" : "jogos"], [keeperLead[0].conceded, keeperLead[0].conceded === 1 ? "sofrido" : "sofridos"]] : "Nenhum goleiro com " + MIN_KEEPER_GAMES + " jogos ou mais.", true)
       : '<p class="empty-state season-empty">Ainda não há partidas finalizadas neste mês.</p>';
+    const box = $("seasonHighlights");
+    if (DX_HTML.get(box) !== html) { DX_HTML.set(box, html); box.innerHTML = html; dxFit(box); }
   }
   // Função pela maioria dos jogos; quem alternou mostra quantos jogos fez na outra posição.
   function roleSummary(row) {
@@ -4598,7 +4585,7 @@
     $("vtCands").innerHTML = parts.filter((p) => pvNorm(p.name) !== voter).map((p) => {
       const c = lvColors(p.team), on = VT.cand === p.name, crest = crestFor(p.team, p.label);
       return '<button type="button" class="vt-cand' + (on ? " is-on" : "") + '" role="radio" aria-checked="' + on + '" data-vt-cand="' + escapeHtml(p.name) + '" style="--tb:' + c.bg + ";--ti:" + c.ink + ";--tl:" + c.line + '">' +
-        '<span class="vt-crest">' + (crest ? '<img src="' + escapeHtml(crest) + '" alt="">' : "") + '</span><span class="vt-ctext"><strong>' + escapeHtml(displayName(p.name)) + "</strong><small>" + escapeHtml([p.label || teamLabel(p.team), vtSummary(stats.get(pvNorm(p.name)))].filter(Boolean).join(" · ")) + "</small></span>" + (on ? '<span class="vt-check" aria-hidden="true">✓</span>' : "") + "</button>";
+        '<span class="vt-crest">' + (crest ? '<img src="' + escapeHtml(crest) + '" alt="">' : "") + '</span><span class="vt-ctext"><strong>' + escapeHtml(displayName(p.name)) + "</strong><small>" + escapeHtml([teamDisplayName(p.label) || teamLabel(p.team), vtSummary(stats.get(pvNorm(p.name)))].filter(Boolean).join(" · ")) + "</small></span>" + (on ? '<span class="vt-check" aria-hidden="true">✓</span>' : "") + "</button>";
     }).join("");
     const submit = $("vtSubmit");
     submit.disabled = !VT.cand || VT.busy;
@@ -5166,9 +5153,21 @@
     const data = VOTE.homeData, round = data?.round && data.round.round_key === key ? data.round : null;
     if (!round) { card.hidden = true; return; }
     card.hidden = false;
-    card.innerHTML = '<span class="season-kicker">CRAQUE DA NOITE (VOTAÇÃO)</span>' + (round.open
-      ? '<strong>Votação aberta</strong><small>' + round.voted + " de " + round.eligible + ' já votaram · <a href="#votacao">Votar</a></small>'
-      : data.winner?.name ? "<strong>" + plink(data.winner.name) + "</strong><small>" + data.winner.votes + (data.winner.votes === 1 ? " voto" : " votos") + " de " + data.winner.total + ' · <a href="#votacao">ver votação</a></small>' : "<strong>Sem votos</strong><small>A votação fechou sem votos.</small>");
+    // Card preto com contorno dourado: vencedor com avatar, barra de votos e selo de prêmios da noite.
+    const kicker = '<p class="dx-k"><span aria-hidden="true">⭐</span> CRAQUE DA NOITE · VOTAÇÃO</p>';
+    const bar = (part, total) => '<div class="dx-bar" aria-hidden="true"><i style="width:' + (total ? Math.min(100, (part / total) * 100) : 0) + '%"></i></div>';
+    let html;
+    if (round.open) {
+      html = kicker + '<p class="dx-cnm">Votação aberta</p>' + bar(round.voted, round.eligible) +
+        '<p class="dx-votes"><span><b>' + round.voted + " de " + round.eligible + "</b> já votaram</span>" + '<a href="#votacao">votar <span aria-hidden="true">›</span></a></p>';
+    } else if (data.winner?.name) {
+      const w = data.winner, part = (data.results || []).find((r) => r.name === w.name) || {}, total = Number(w.total) || 0, votes = Number(w.votes) || 0;
+      const prizes = 1 + NIGHT_LEADERS.filter((slug) => slug === pSlug(w.name)).length;
+      html = kicker + '<div class="dx-crow"><a class="dx-who is-big" href="#jogador/' + pSlug(w.name) + '">' + dxAvatar(w.name, part.team, part.label, true) + '<span class="dx-cbox"><span class="dx-cnm dx-fit">' + escapeHtml(displayName(w.name)) + ' <span aria-hidden="true">›</span></span>' +
+        (prizes > 1 ? '<span class="dx-two">🏆 ' + prizes + " PRÊMIOS NA NOITE</span>" : "") + "</span></a></div>" + bar(votes, total) +
+        '<p class="dx-votes"><span><b>' + votes + " de " + total + (total === 1 ? " voto" : " votos") + "</b> · " + (total ? Math.round((votes / total) * 100) : 0) + '%</span><a href="#votacao">ver votação <span aria-hidden="true">›</span></a></p>';
+    } else html = kicker + '<p class="dx-cnm">Sem votos</p><p class="dx-votes"><span>A votação fechou sem votos.</span><a href="#votacao">ver votação <span aria-hidden="true">›</span></a></p>';
+    if (DX_HTML.get(card) !== html) { DX_HTML.set(card, html); card.innerHTML = html; dxFit(card); }
   }
   // ---------- Perfil do jogador (#jogador/nome) e Hall da fama (#hall) ----------
   // Tudo calculado do histórico oficial (officialGames + gamePerformance); jogo de treino nunca entra.
@@ -6505,7 +6504,7 @@
     axCrest(ctx, w.team, w.label, cx, y + cardH * 0.42, story ? 260 : 190);
     const name = displayName(w.name).toUpperCase();
     ctx.textAlign = "center"; ctx.fillStyle = "#ffffff"; axFit(ctx, name, 0, story ? 120 : 90, W - pad * 2 - 80, true); ctx.fillText(name, cx, y + cardH * (story ? 0.7 : 0.72));
-    ctx.fillStyle = "#c9c9c1"; axFont(ctx, 700, story ? 32 : 26); ctx.fillText(String(w.label || teamLabel(w.team) || "").toUpperCase(), cx, y + cardH * (story ? 0.77 : 0.8));
+    ctx.fillStyle = "#c9c9c1"; axFont(ctx, 700, story ? 32 : 26); ctx.fillText(String(teamDisplayName(w.label) || teamLabel(w.team) || "").toUpperCase(), cx, y + cardH * (story ? 0.77 : 0.8));
     const votes = w.votes + (w.votes === 1 ? " VOTO" : " VOTOS") + " DE " + w.total + (w.total === 1 ? " VOTANTE" : " VOTANTES");
     ctx.fillStyle = AX_Y; axFit(ctx, votes, 800, story ? 38 : 30, W - pad * 2 - 80, false); ctx.fillText(votes, cx, y + cardH * (story ? 0.86 : 0.9));
     axFooter(ctx, W, bottom - 6);
@@ -7405,8 +7404,8 @@
       durationSeconds = Math.floor(timerElapsed()),
       entry = {
         ...current,
-        homeLabel: teamLabel(current.home),
-        awayLabel: teamLabel(current.away),
+        homeLabel: teamLabelRaw(current.home),
+        awayLabel: teamLabelRaw(current.away),
         roundId: current.roundId || state.roundId || null,
         homeScore,
         awayScore,
