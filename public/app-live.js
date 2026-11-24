@@ -1653,6 +1653,76 @@
   function ligaGames() {
     return officialGames().filter((game) => !game.superLigaId);
   }
+  // ----- Rankings da Tela principal (prévia aprovada pelo dono): pódio com a melhor carta, lista com barra V/E/D -----
+  // Empate no valor mostrado divide a posição (1, 2, 3, 3, 5...); a ordem dentro do empate vem de quem chama.
+  const RK_TIER = { prata: "🥈 Prata", ouro: "🥇 Ouro", dia: "💎 Diamante", elite: "🔮 Elite", lend: "👑 Lendário" };
+  const RK_HTML = new WeakMap();
+  // Vitória/derrota nos pênaltis contam como vitória/derrota (mesma regra da classificação).
+  function rkResult(game, team) { const k = scoreContext(game).results[team]; return k === "win" || k === "penWin" ? "v" : k === "draw" ? "e" : "d"; }
+  // Jogos oficiais do Modo Liga do jogador (role: só os jogos naquela função, ex.: goleiro = só no gol).
+  function rkStats(name, role) {
+    const s = { v: 0, e: 0, d: 0, games: 0, sum: 0, conceded: 0, team: "", label: "" };
+    for (const game of ligaGames()) for (const p of gamePerformance(game)) {
+      if (p.player !== name || (role && p.role !== role)) continue;
+      s[rkResult(game, p.team)]++; s.games++; s.sum += Number(p.score) || 0; s.conceded += Number(p.goalsAgainst) || 0;
+      s.team = p.team; s.label = gameTeamLabel(game, p.team === game.home ? "home" : "away");
+    }
+    return s;
+  }
+  function rkBar(st) {
+    const word = (n, one, many) => n + " " + (n === 1 ? one : many), part = (cls, n) => (n ? '<i class="' + cls + '" style="flex:' + n + '"></i>' : "");
+    return '<span class="rk-bar" role="img" aria-label="' + word(st.v, "vitória", "vitórias") + ", " + word(st.e, "empate", "empates") + ", " + word(st.d, "derrota", "derrotas") + '">' + part("v", st.v) + part("e", st.e) + part("d", st.d) + "</span>" +
+      '<span class="rk-ved" aria-hidden="true"><span class="cv">' + st.v + 'V</span> · <span class="ce">' + st.e + 'E</span> · <span class="cd">' + st.d + "D</span></span>";
+  }
+  function rkPositions(rows) { let pos = 0, last; return rows.map((r, i) => { if (i === 0 || r.value !== last) { pos = i + 1; last = r.value; } return pos; }); }
+  // Melhor carta do jogador: a especial do mês (mesma prioridade da coleção), senão a de nível; sem carta = avatar.
+  function rkCard(name, stats, big) {
+    const data = cardsData(), slug = pSlug(name), base = data.bySlug.get(slug);
+    if (base?.eligible) {
+      const sp = cardSpecialOf(slug, data), info = cardInfo(slug, sp, data);
+      if (info) return { html: '<div class="skc-fit rk-cw' + (big ? " is-big" : "") + '">' + cardHtml(info, "link") + "</div>", type: sp ? CARD_SP[sp.type][1] + " " + CARD_SP[sp.type][0] : RK_TIER[info.cls] || "" };
+    }
+    return { html: '<div class="rk-avw">' + dxAvatar(name, stats.team, stats.label, true) + "</div>", type: "Sem carta ainda" };
+  }
+  function rkRender(id, rows, opt) {
+    const box = $(id);
+    if (!box) return;
+    let html;
+    if (!rows.length) html = '<p class="empty-state">' + escapeHtml(opt.empty) + "</p>";
+    else {
+      const pos = rkPositions(rows), games = (n) => n + (n === 1 ? " jogo" : " jogos");
+      const value = (r, cls) => '<span class="' + cls + '">' + escapeHtml(opt.text(r.value)) + "<small>" + escapeHtml(opt.unit(r.value)) + "</small></span>";
+      const pod = (i, cls) => { const r = rows[i]; if (!r) return ""; const c = rkCard(r.name, r.stats, i === 0);
+        return '<div class="rk-item rk-pp ' + cls + '">' + c.html + '<span class="rk-type">' + escapeHtml(c.type) + '</span><a class="rk-pn dx-fit" href="#jogador/' + pSlug(r.name) + '">' + escapeHtml(displayName(r.name)) + "</a>" + value(r, "rk-pv") + '<span class="rk-pj">' + games(r.games) + "</span>" + rkBar(r.stats) + '<span class="rk-step" aria-label="' + pos[i] + 'º lugar">' + pos[i] + "</span></div>"; };
+      const line = (r, i) => '<div class="rk-item rk-row"><span class="rk-pos">' + pos[i] + 'º</span>' + dxAvatar(r.name, "", "", false) + '<span class="rk-who"><a class="rk-nm" href="#jogador/' + pSlug(r.name) + '">' + escapeHtml(displayName(r.name)) + "</a>" + rkBar(r.stats) + '</span><span class="rk-val"><b>' + escapeHtml(opt.text(r.value)) + "</b><small>" + games(r.games) + "</small></span></div>";
+      html = opt.list ? '<div class="rk-list is-all">' + rows.map(line).join("") + "</div>"
+        : '<div class="rk-pod' + (rows.length === 1 ? " is-one" : "") + '">' + pod(1, "rk-p2") + pod(0, "rk-p1") + pod(2, "rk-p3") + "</div>" + (rows.length > 3 ? '<div class="rk-list">' + rows.slice(3).map((r, k) => line(r, k + 3)).join("") + "</div>" : "");
+    }
+    if (RK_HTML.get(box) === html) return;
+    RK_HTML.set(box, html);
+    cardsUnobserve(box);
+    box.innerHTML = html;
+    if (box.querySelector(".skc") && !$("homeLayout")?.classList.contains("view-hidden")) cardsAfterRender(box);
+    rkFit(box); dxFit(box);
+  }
+  // Escala da carta no pódio: a da prévia (celular .42/.36, PC .66/.56), mas nunca maior que a coluna.
+  function rkFit(root = document) {
+    const wide = innerWidth >= 700;
+    root.querySelectorAll?.(".rk-cw").forEach((cw) => {
+      const w = cw.clientWidth;
+      if (!w) return;
+      const max = cw.classList.contains("is-big") ? (wide ? 0.66 : 0.42) : (wide ? 0.56 : 0.36), k = String(Math.min(max, (w - 2) / 300));
+      if (cw.style.getPropertyValue("--k") === k) return;
+      cw.style.setProperty("--k", k);
+      cw.firstElementChild?.style.setProperty("--k", k);
+    });
+  }
+  window.addEventListener("resize", () => rkFit());
+  document.addEventListener("click", (event) => { if (event.target.closest?.('.home-tabs [role="tab"]')) requestAnimationFrame(() => rkFit()); });
+  // Ao sair da Tela principal, os observers das cartas do pódio são desligados; ao voltar, religados.
+  function rkObserve(on) {
+    ["goalRanking", "playerScoreRanking", "keeperRanking"].forEach((id) => { const box = $(id); if (!box) return; if (on && box.querySelector(".skc")) { cardsAfterRender(box); rkFit(box); } else cardsUnobserve(box); });
+  }
   function renderScoreRankings() {
     const all = ligaGames().flatMap(
         (game) => gamePerformance(game),
@@ -1680,38 +1750,15 @@
             b.average - a.average || a.name.localeCompare(b.name, "pt-BR"),
         );
     }
-    const paint = (id, rows, empty) =>
-      ($(id).innerHTML = rows.length
-        ? rows
-            .slice(0, 11)
-            .map(
-              (r, i) =>
-                '<div class="ranking-row' +
-                (i < 3 ? " top-rank top-rank-" + (i + 1) : "") +
-                '"><span class="rank">' +
-                String(i + 1).padStart(2, "0") +
-                "</span><span>" +
-                plink(r.name) +
-                " <small>" +
-                r.games +
-                " " +
-                (r.games === 1 ? "jogo" : "jogos") +
-                "</small></span><strong>" +
-                r.average.toFixed(1).replace(".", ",") +
-                "</strong></div>",
-            )
-            .join("")
-        : '<p class="empty-state">' + empty + "</p>");
-    paint(
-      "playerScoreRanking",
-      averageRows(players),
-      "O score aparece após os jogos.",
-    );
-    paint(
-      "keeperRanking",
-      averageRows(keepers).filter((r) => r.games >= MIN_KEEPER_GAMES),
-      keepers.length ? "Entra no ranking quem tiver " + MIN_KEEPER_GAMES + " jogos ou mais no gol." : "O score aparece após os jogos.",
-    );
+    // Score (linha): empate na nota divide a posição; dentro do empate, mais jogos, depois nome.
+    const r1 = (v) => Math.round(v * 10) / 10;
+    const scoreRows = averageRows(players).map((r) => ({ name: r.name, value: r1(r.average), games: r.games, stats: rkStats(r.name, "linha") }))
+      .sort((a, b) => b.value - a.value || b.games - a.games || a.name.localeCompare(b.name, "pt-BR"));
+    rkRender("playerScoreRanking", scoreRows.slice(0, 11), { unit: () => "nota", text: fmt1, empty: "O score aparece após os jogos." });
+    // Goleiros (só os jogos no gol, mínimo MIN_KEEPER_GAMES): dentro do empate, menos gols sofridos por jogo, depois mais jogos, depois nome.
+    const keeperRows = averageRows(keepers).filter((r) => r.games >= MIN_KEEPER_GAMES).map((r) => { const stats = rkStats(r.name, "goleiro"); return { name: r.name, value: r1(r.average), games: r.games, stats, gpg: stats.games ? stats.conceded / stats.games : 0 }; })
+      .sort((a, b) => b.value - a.value || a.gpg - b.gpg || b.games - a.games || a.name.localeCompare(b.name, "pt-BR"));
+    rkRender("keeperRanking", keeperRows.slice(0, 11), { unit: () => "nota", text: fmt1, empty: keepers.length ? "Entra no ranking quem tiver " + MIN_KEEPER_GAMES + " jogos ou mais no gol." : "O score aparece após os jogos." });
     const conceded = new Map();
     for (const p of keepers) {
       const x = conceded.get(p.player) || { goals: 0, games: 0, team: p.team };
@@ -1725,29 +1772,7 @@
       .sort(
         (a, b) => a.goals - b.goals || a.name.localeCompare(b.name, "pt-BR"),
       );
-    $("keeperConcededRanking").innerHTML = rows.length
-      ? rows
-          .slice(0, 11)
-          .map(
-            (r, i) =>
-              '<div class="ranking-row' +
-              (i < 3 ? " top-rank top-rank-" + (i + 1) : "") +
-              '"><span class="rank">' +
-              String(i + 1).padStart(2, "0") +
-              "</span><span>" +
-              plink(r.name) +
-              " <small>" +
-              r.games +
-              " " +
-              (r.games === 1 ? "jogo" : "jogos") +
-              "</small></span><strong>" +
-              r.goals +
-              " " +
-              (r.goals === 1 ? "gol" : "gols") +
-              "</strong></div>",
-          )
-          .join("")
-      : '<p class="empty-state">' + (keepers.length ? "Entra no ranking quem tiver " + MIN_KEEPER_GAMES + " jogos ou mais no gol." : "Os gols sofridos aparecem após os jogos.") + "</p>";
+    rkRender("keeperConcededRanking", rows.slice(0, 11).map((r) => ({ name: r.name, value: r.goals, games: r.games, stats: rkStats(r.name, "goleiro") })), { unit: (v) => (v === 1 ? "sofrido" : "sofridos"), text: (v) => String(v), list: true, empty: keepers.length ? "Entra no ranking quem tiver " + MIN_KEEPER_GAMES + " jogos ou mais no gol." : "Os gols sofridos aparecem após os jogos." });
   }
   let NIGHT_LEADERS = [];
   const DX_HTML = new WeakMap();
@@ -2354,48 +2379,14 @@
     const ranking = [...totals.entries()].sort(
       (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"),
     );
-    $("goalRanking").innerHTML = ranking.length
-      ? ranking
-          .slice(0, 11)
-          .map(([name, count], index) => {
-            const past = ligaGames().filter(
-              (game) =>
-                gamePerformance(game).some((p) => p.player === name) ||
-                (!gamePerformance(game).length &&
-                  (game.goals || []).some((g) => g.player === name)),
-            ).length;
-            const teams = selectedTeams(),
-              current =
-                state.currentGame &&
-                !state.currentGame.training &&
-                !state.currentGame.superLigaId &&
-                [
-                  ...(teams.home?.players || []),
-                  ...(teams.away?.players || []),
-                ].includes(name)
-                  ? 1
-                  : 0,
-              played = past + current;
-            return (
-              '<div class="ranking-row' +
-              (index < 3 ? " top-rank top-rank-" + (index + 1) : "") +
-              '"><span class="rank">' +
-              String(index + 1).padStart(2, "0") +
-              "</span><span>" +
-              plink(name) +
-              " <small>" +
-              played +
-              " " +
-              (played === 1 ? "jogo" : "jogos") +
-              "</small></span><strong>" +
-              count +
-              " " +
-              (count === 1 ? "gol" : "gols") +
-              "</strong></div>"
-            );
-          })
-          .join("")
-      : '<p class="empty-state">Nenhum gol registrado.</p>';
+    // Artilharia: empate em gols divide a posição; dentro do empate, menos jogos, depois maior nota, depois nome.
+    const teams = selectedTeams(), live = state.currentGame && !state.currentGame.training && !state.currentGame.superLigaId ? [...(teams.home?.players || []), ...(teams.away?.players || [])] : [];
+    const goalRows = ranking.map(([name, count]) => {
+      const past = ligaGames().filter((game) => gamePerformance(game).some((p) => p.player === name) || (!gamePerformance(game).length && (game.goals || []).some((g) => g.player === name))).length;
+      const stats = rkStats(name);
+      return { name, value: count, games: past + (live.includes(name) ? 1 : 0), stats, avg: stats.games ? stats.sum / stats.games : 0 };
+    }).sort((a, b) => b.value - a.value || a.games - b.games || b.avg - a.avg || a.name.localeCompare(b.name, "pt-BR"));
+    rkRender("goalRanking", goalRows.slice(0, 11), { unit: (v) => (v === 1 ? "gol" : "gols"), text: (v) => String(v), empty: "Nenhum gol registrado." });
   }
   const incidentLabels = { foul: "Falta", penalty: "Pênalti", hand: "Mão intencional · 1 minuto fora", keeper: "Bola recuada para o goleiro", other: "Outra ocorrência", warning: "Advertência", sub: "Substituição" };
   function renderIncidents() {
@@ -3550,7 +3541,7 @@
   }
   // "Ver ... completo": a aba mostra os 3 primeiros; o botão abre o ranking inteiro (top 11).
   function homeMoreSync() {
-    const rows = (id) => ($(id)?.querySelectorAll(".ranking-row").length || 0);
+    const rows = (id) => ($(id)?.querySelectorAll(".rk-item").length || 0);
     const conf = {
       gols: { n: rows("goalRanking"), panel: "rankGols", label: (n) => "Ver artilharia completa (" + n + ")" },
       score: { n: rows("playerScoreRanking"), panel: "rankScore", label: (n) => "Ver ranking completo (top " + n + ")" },
@@ -6724,6 +6715,7 @@
     if (view !== "presenca" && view !== "votacao" && view !== "hall" && view !== "cartas") localStorage.setItem("liga-skalama-view", view);
     if (view === "news") { renderNews(); loadNews(); }
     if (view === "home") renderNightVoteCard();
+    rkObserve(view === "home");
   }
   // Visitantes podem olhar qualquer uma das duas abas, sem mudar o modo escolhido pelo organizador.
   let viewerMode = null;
