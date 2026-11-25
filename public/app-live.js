@@ -4720,8 +4720,8 @@
   }
   // Fotos fixas por jogador (arquivos em assets/jogadores/), ligadas pelo slug do nome original (nunca pelo displayName).
   // Valem mesmo com PLAYER_PHOTOS_ENABLED = false; se um dia houver foto pelo banco, a do banco vence.
-  const PLAYER_PHOTO_FILES = { [pSlug("WANDERSON")]: "./assets/jogadores/wanderson.webp", [pSlug("LUÍS FELIPE*")]: "./assets/jogadores/luis-felipe.webp", [pSlug("PATRICK SIQUEIRA")]: "./assets/jogadores/patrick-siqueira.webp" };
-  const PLAYER_PHOTO_SIZE = { "./assets/jogadores/wanderson.webp": [520, 475], "./assets/jogadores/luis-felipe.webp": [520, 511], "./assets/jogadores/patrick-siqueira.webp": [520, 484] };
+  const PLAYER_PHOTO_FILES = { [pSlug("WANDERSON")]: "./assets/jogadores/wanderson.webp", [pSlug("LUÍS FELIPE*")]: "./assets/jogadores/luis-felipe.webp", [pSlug("PATRICK SIQUEIRA")]: "./assets/jogadores/patrick-siqueira.webp", [pSlug("IAGO LIMA")]: "./assets/jogadores/iago-lima.webp", [pSlug("LUCIANO CHAVES")]: "./assets/jogadores/luciano-chaves.webp" };
+  const PLAYER_PHOTO_SIZE = { "./assets/jogadores/wanderson.webp": [520, 475], "./assets/jogadores/luis-felipe.webp": [520, 511], "./assets/jogadores/patrick-siqueira.webp": [520, 484], "./assets/jogadores/iago-lima.webp": [520, 521], "./assets/jogadores/luciano-chaves.webp": [520, 480] };
   function cardPhotoUrl(slug) { return playerPhotoUrl(slug) || PLAYER_PHOTO_FILES[slug] || ""; }
   function playerCurrentTeam(slug) {
     for (const team of state.teams || []) if (lineupForTeam(team.name).some((n) => pSlug(n) === slug)) return teamLabel(team.name);
