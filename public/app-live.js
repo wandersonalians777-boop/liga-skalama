@@ -1693,8 +1693,8 @@
       const pos = rkPositions(rows), games = (n) => n + (n === 1 ? " jogo" : " jogos");
       const value = (r, cls) => '<span class="' + cls + '">' + escapeHtml(opt.text(r.value)) + "<small>" + escapeHtml(opt.unit(r.value)) + "</small></span>";
       const pod = (i, cls) => { const r = rows[i]; if (!r) return ""; const c = rkCard(r.name, r.stats, i === 0);
-        return '<div class="rk-item rk-pp ' + cls + '">' + c.html + '<span class="rk-type">' + escapeHtml(c.type) + '</span><a class="rk-pn dx-fit" href="#jogador/' + pSlug(r.name) + '">' + escapeHtml(displayName(r.name)) + "</a>" + value(r, "rk-pv") + '<span class="rk-pj">' + games(r.games) + "</span>" + rkBar(r.stats) + '<span class="rk-step" aria-label="' + pos[i] + 'º lugar">' + pos[i] + "</span></div>"; };
-      const line = (r, i) => '<div class="rk-item rk-row"><span class="rk-pos">' + pos[i] + 'º</span>' + dxAvatar(r.name, "", "", false) + '<span class="rk-who"><a class="rk-nm" href="#jogador/' + pSlug(r.name) + '">' + escapeHtml(displayName(r.name)) + "</a>" + rkBar(r.stats) + '</span><span class="rk-val"><b>' + escapeHtml(opt.text(r.value)) + "</b><small>" + games(r.games) + "</small></span></div>";
+        return '<div class="rk-item rk-pp ' + cls + '">' + c.html + '<span class="rk-type">' + escapeHtml(c.type) + '</span><span class="rk-pnrow"><a class="rk-pn dx-fit" href="#jogador/' + pSlug(r.name) + '">' + escapeHtml(displayName(r.name)) + "</a>" + (r.keeper ? '<b class="st-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "</span>" + value(r, "rk-pv") + '<span class="rk-pj">' + games(r.games) + "</span>" + rkBar(r.stats) + '<span class="rk-step" aria-label="' + pos[i] + 'º lugar">' + pos[i] + "</span></div>"; };
+      const line = (r, i) => '<div class="rk-item rk-row"><span class="rk-pos">' + pos[i] + 'º</span>' + dxAvatar(r.name, "", "", false) + '<span class="rk-who"><span class="rk-nmrow"><a class="rk-nm" href="#jogador/' + pSlug(r.name) + '">' + escapeHtml(displayName(r.name)) + "</a>" + (r.keeper ? '<b class="st-g" title="Goleiro" aria-label="Goleiro">G</b>' : "") + "</span>" + rkBar(r.stats) + '</span><span class="rk-val"><b>' + escapeHtml(opt.text(r.value)) + "</b><small>" + games(r.games) + "</small></span></div>";
       html = opt.list ? '<div class="rk-list is-all">' + rows.map(line).join("") + "</div>"
         : '<div class="rk-pod' + (rows.length === 1 ? " is-one" : "") + '">' + pod(1, "rk-p2") + pod(0, "rk-p1") + pod(2, "rk-p3") + "</div>" + (rows.length > 3 ? '<div class="rk-list">' + rows.slice(3).map((r, k) => line(r, k + 3)).join("") + "</div>" : "");
     }
@@ -1752,7 +1752,10 @@
     }
     // Score (linha): empate na nota divide a posição; dentro do empate, mais jogos, depois nome.
     const r1 = (v) => Math.round(v * 10) / 10;
-    const scoreRows = averageRows(players).map((r) => ({ name: r.name, value: r1(r.average), games: r.games, stats: rkStats(r.name, "linha") }))
+    // Score: linha e goleiros numa lista só (todos os jogos do Modo Liga de cada um, mínimo 3); goleiro = mais jogos no gol (selo G).
+    const keeperGames = new Map();
+    keepers.forEach((p) => keeperGames.set(p.player, (keeperGames.get(p.player) || 0) + 1));
+    const scoreRows = averageRows(all).filter((r) => r.games >= 3).map((r) => ({ name: r.name, value: r1(r.average), games: r.games, stats: rkStats(r.name), keeper: (keeperGames.get(r.name) || 0) > r.games - (keeperGames.get(r.name) || 0) }))
       .sort((a, b) => b.value - a.value || b.games - a.games || a.name.localeCompare(b.name, "pt-BR"));
     rkRender("playerScoreRanking", scoreRows.slice(0, 11), { unit: () => "nota", text: fmt1, empty: "O score aparece após os jogos." });
     // Goleiros (só os jogos no gol, mínimo MIN_KEEPER_GAMES): dentro do empate, menos gols sofridos por jogo, depois mais jogos, depois nome.

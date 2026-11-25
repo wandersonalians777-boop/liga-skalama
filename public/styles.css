@@ -2952,3 +2952,10 @@ body:not(.light-theme) .st-num.is-best{color:#FFC400}
 body:not(.light-theme) .st-who .dx-circle{border-color:#3a3a3a;background:#2a2a2a}
 body:not(.light-theme) .st-leg .cv{color:#5BE08F}
 body:not(.light-theme) .st-leg .cd{color:#FF8F85}
+
+/* Rankings: selo G de goleiro ao lado do nome (Score junta linha e goleiros) */
+.rk-pnrow{display:flex;align-items:center;justify-content:center;gap:4px;max-width:100%;min-width:0}
+.rk-pnrow .rk-pn{min-width:0}
+.rk-nmrow{display:flex;align-items:center;gap:6px;min-width:0}
+.rk-nmrow .rk-nm{min-width:0}
+.rk-pnrow .st-g,.rk-nmrow .st-g{flex:none;margin-left:0}
